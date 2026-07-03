@@ -1,0 +1,308 @@
+"""FastAPI 入口（CONTRACTS.md app.py 契約）。
+
+- HTTP：/、/teacher、/api/status、/api/network_mode、/api/interactions、
+  /api/diagnoses、/api/seed_reset；web/ 另掛 /static。
+- WS /ws/talk：文字 frame（text_input / audio_end）與 binary frame（完整
+  webm/ogg 錄音）。binary 相容兩種觸發方式：
+  1. binary 之後跟 {"type":"audio_end"} → 收到 audio_end 立即整包處理；
+  2. 單獨 binary（無 audio_end）→ 短暫 debounce 後自動整包處理。
+- startup（lifespan）：init_db() + seed_demo()；引擎預熱丟 daemon thread，
+  不阻擋伺服器啟動。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import json
+import threading
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from server import config, diagnose, store
+from server.asr import ASREngine
+from server.llm import EdgeLLM
+from server.pipeline import VoicePipeline
+from server.tts import TTSEngine
+
+WEB_DIR: Path = config.BASE_DIR / "web"
+
+# 單獨 binary（無 audio_end）時的 debounce 秒數：等這麼久沒等到 audio_end
+# 就把緩衝整包送進 pipeline。
+AUDIO_DEBOUNCE_S: float = 0.35
+
+# ---------------------------------------------------------------------------
+# 全域單例：引擎與 VoicePipeline
+# ---------------------------------------------------------------------------
+
+asr_engine = ASREngine()
+llm_engine = EdgeLLM()
+tts_engine = TTSEngine()
+pipeline = VoicePipeline(asr_engine, llm_engine, tts_engine)
+
+
+def _prewarm_engines() -> None:
+    """背景預熱三引擎（懶載入的模型先摸一次），任何失敗都吞掉。"""
+    try:
+        if asr_engine.available():
+            # 私有懶載入入口；失敗由引擎自行記錄降級
+            asr_engine._ensure_model()
+    except Exception:
+        pass
+    try:
+        if llm_engine.available():
+            llm_engine._get_model()
+    except Exception:
+        pass
+    try:
+        if tts_engine.available():
+            tts_engine._get_voice("zh")
+            tts_engine._get_voice("en")
+    except Exception:
+        pass
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """啟動：建表 + 首次種子資料；引擎預熱走 daemon thread 不擋啟動。"""
+    store.init_db()
+    store.seed_demo()
+    threading.Thread(target=_prewarm_engines, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="TalkyBuddy 說說學伴", lifespan=lifespan)
+
+if WEB_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+
+
+# ---------------------------------------------------------------------------
+# 頁面
+# ---------------------------------------------------------------------------
+
+@app.get("/")
+async def index_page():
+    """學生端頁面。"""
+    return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/teacher")
+async def teacher_page():
+    """教師端頁面。"""
+    return FileResponse(WEB_DIR / "teacher.html")
+
+
+# ---------------------------------------------------------------------------
+# REST API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/status")
+async def api_status():
+    """引擎可用性 + 網路模式 + 待同步筆數。"""
+    return {
+        "asr": bool(asr_engine.available()),
+        "llm": bool(llm_engine.available()),
+        "tts": bool(tts_engine.available()),
+        "network_mode": pipeline.network_mode,
+        "pending": store.pending_count(),
+    }
+
+
+class NetworkModeBody(BaseModel):
+    """POST /api/network_mode 的 body。"""
+
+    mode: str
+
+
+@app.post("/api/network_mode")
+async def api_network_mode(body: NetworkModeBody):
+    """切換網路模式。
+
+    - edge：只更新模式。
+    - cloud：mark_all_synced() → 近 10 筆互動 generate_diagnosis（prev=最新
+      診斷）→ add_diagnosis → 回 {"synced": n, "new_diagnosis": {...}}。
+    """
+    mode = body.mode
+    if mode not in ("edge", "cloud"):
+        raise HTTPException(status_code=400, detail="mode 必須是 'edge' 或 'cloud'")
+
+    pipeline.network_mode = mode
+    if mode == "edge":
+        return {"network_mode": "edge", "synced": 0, "new_diagnosis": None}
+
+    # cloud：補同步 + 產出新診斷（mock Hermes/Bedrock 雲端層）
+    just_synced = store.mark_all_synced()
+    new_diag = None
+    try:
+        recent = store.list_interactions(limit=10)
+        diagnoses = store.list_diagnoses()  # date 升冪 → 最後一筆是最新
+        prev = diagnoses[-1] if diagnoses else None
+        new_diag = diagnose.generate_diagnosis(recent, prev)
+        store.add_diagnosis(new_diag)
+    except Exception:
+        # 診斷失敗不影響同步結果（demo 韌性優先）
+        new_diag = None
+    return {
+        "network_mode": "cloud",
+        "synced": len(just_synced),
+        "new_diagnosis": new_diag,
+    }
+
+
+@app.get("/api/interactions")
+async def api_interactions(limit: int = 50):
+    """最近互動紀錄（新→舊）。"""
+    return store.list_interactions(limit=limit)
+
+
+@app.get("/api/diagnoses")
+async def api_diagnoses():
+    """全部診斷（date 升冪）。"""
+    return store.list_diagnoses()
+
+
+@app.post("/api/seed_reset")
+async def api_seed_reset():
+    """清空兩表並重灌示範資料（demo 重置）。"""
+    store.init_db()
+    with store._lock:  # 借用 store 模組的共用連線與鎖
+        conn = store._get_conn()
+        conn.execute("DELETE FROM interactions")
+        conn.execute("DELETE FROM diagnoses")
+        conn.commit()
+    store.seed_demo()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# WebSocket /ws/talk
+# ---------------------------------------------------------------------------
+
+@app.websocket("/ws/talk")
+async def ws_talk(websocket: WebSocket):
+    """語音/文字對話 WebSocket（協定見 CONTRACTS.md）。
+
+    binary frame 累積進緩衝；收到 {"type":"audio_end"} 立即整包處理；
+    若只收到 binary（前端省略 audio_end），debounce 逾時後自動處理。
+    任何例外都 catch 住，不讓 server 掛掉。
+    """
+    await websocket.accept()
+
+    send_lock = asyncio.Lock()
+
+    async def emit(payload: dict) -> None:
+        """統一出口：序列化送 JSON（多工發送用鎖保護；斷線時吞例外）。"""
+        try:
+            async with send_lock:
+                await websocket.send_json(payload)
+        except Exception:
+            pass
+
+    audio_buffer = bytearray()
+    flush_task: asyncio.Task | None = None
+
+    async def send_turn_result(result, include_asr: bool) -> None:
+        """把 TurnResult 依協定送回：asr_result → reply → tts_audio/unavailable。"""
+        if result is None:  # busy：pipeline 已 emit {"type":"busy"}
+            return
+        if include_asr:
+            await emit({
+                "type": "asr_result",
+                "text": result.asr_text,
+                "confidence": result.asr_conf,
+            })
+        await emit({
+            "type": "reply",
+            "text": result.reply_text,
+            "scores": result.scores,
+            "latency_ms": result.latency_ms,
+            "fallback": bool(result.fallback),
+            "seq": int(result.seq),
+        })
+        if result.tts_wav:
+            await emit({
+                "type": "tts_audio",
+                "wav_b64": base64.b64encode(result.tts_wav).decode("ascii"),
+            })
+        else:
+            await emit({"type": "tts_unavailable"})
+
+    async def process_audio_buffer() -> None:
+        """把緩衝的錄音整包送進 pipeline（空緩衝直接略過）。"""
+        if not audio_buffer:
+            return
+        data = bytes(audio_buffer)
+        audio_buffer.clear()
+        try:
+            result = await pipeline.run_turn_audio(data, emit)
+            await send_turn_result(result, include_asr=True)
+        except Exception:
+            # 單輪失敗不斷線：回 idle 讓前端解除等待
+            await emit({"type": "state", "state": "idle"})
+
+    async def debounce_flush() -> None:
+        """單獨 binary 的相容路徑：等不到 audio_end 就自動觸發。"""
+        try:
+            await asyncio.sleep(AUDIO_DEBOUNCE_S)
+            await process_audio_buffer()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
+
+    def cancel_flush() -> None:
+        nonlocal flush_task
+        if flush_task is not None and not flush_task.done():
+            flush_task.cancel()
+        flush_task = None
+
+    try:
+        while True:
+            msg = await websocket.receive()
+            if msg.get("type") == "websocket.disconnect":
+                break
+
+            # ---- binary frame：一段完整 webm/ogg 錄音 ----
+            if msg.get("bytes") is not None:
+                data = msg["bytes"]
+                if data:
+                    audio_buffer.extend(data)
+                    # 重設 debounce：等 audio_end，等不到就自動處理
+                    cancel_flush()
+                    flush_task = asyncio.create_task(debounce_flush())
+                continue
+
+            # ---- 文字 frame：JSON 指令 ----
+            raw = msg.get("text")
+            if not raw:
+                continue
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                continue
+            mtype = payload.get("type")
+
+            if mtype == "audio_end":
+                cancel_flush()
+                await process_audio_buffer()
+            elif mtype == "text_input":
+                text = str(payload.get("text", "") or "")
+                try:
+                    result = await pipeline.run_turn_text(text, emit)
+                    await send_turn_result(result, include_asr=False)
+                except Exception:
+                    await emit({"type": "state", "state": "idle"})
+            # 其他型別：忽略（前向相容）
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        # 任何未預期例外都不讓 server 掛掉
+        pass
+    finally:
+        cancel_flush()

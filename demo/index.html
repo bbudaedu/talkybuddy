@@ -1,0 +1,4312 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>說說學伴 TalkyBuddy | 實體智能無螢幕伴讀系統展示門戶</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* ==========================================
+           1. 全域變數與重設 (Reset & Design Tokens)
+           ========================================== */
+        :root {
+            --bg-dark: #090d16;
+            --bg-gradient: linear-gradient(135deg, #070a13 0%, #0f1225 50%, #1a0f2b 100%);
+            --panel-bg: rgba(255, 255, 255, 0.03);
+            --panel-bg-hover: rgba(255, 255, 255, 0.06);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --panel-border-glow: rgba(255, 255, 255, 0.15);
+            
+            --accent-orange: #f97316;
+            --accent-orange-glow: rgba(249, 115, 22, 0.35);
+            --accent-teal: #14b8a6;
+            --accent-teal-glow: rgba(20, 184, 166, 0.35);
+            --accent-purple: #a855f7;
+            --accent-purple-glow: rgba(168, 85, 247, 0.35);
+            
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-dark: #0f172a;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            
+            --font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --transition-smooth: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background: var(--bg-dark);
+            background-image: var(--bg-gradient);
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* 背景漂浮光暈 */
+        .bg-glow-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -2;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .bg-glow-node {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.12;
+            animation: floating 25s infinite ease-in-out;
+        }
+
+        .bg-glow-orange {
+            width: 500px;
+            height: 500px;
+            background: var(--accent-orange);
+            top: 15%;
+            left: 10%;
+            animation-delay: 0s;
+        }
+
+        .bg-glow-purple {
+            width: 600px;
+            height: 600px;
+            background: var(--accent-purple);
+            bottom: 10%;
+            right: 10%;
+            animation-delay: -7s;
+        }
+
+        .bg-glow-teal {
+            width: 400px;
+            height: 400px;
+            background: var(--accent-teal);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            animation-delay: -14s;
+        }
+
+        @keyframes floating {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(40px, -60px) scale(1.1); }
+            66% { transform: translate(-50px, 30px) scale(0.95); }
+        }
+
+        /* Canvas Particle overlay */
+        #particle-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        /* 磨砂玻璃卡片通用樣式 */
+        .glass-card {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 20px;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 32px;
+            box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.3);
+            transition: var(--transition-smooth);
+        }
+
+        .glass-card:hover {
+            border-color: var(--panel-border-glow);
+            box-shadow: 0 16px 48px 0 rgba(0, 0, 0, 0.45);
+        }
+
+        /* ==========================================
+           2. 導覽列 (Navigation Bar)
+           ========================================== */
+        header.nav-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 72px;
+            background: rgba(9, 13, 22, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--panel-border);
+            z-index: 100;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 5%;
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            background: linear-gradient(135deg, var(--accent-orange), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-decoration: none;
+        }
+
+        .nav-logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent-orange), var(--accent-purple));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            box-shadow: 0 4px 12px var(--accent-orange-glow);
+        }
+
+        nav.nav-menu {
+            display: flex;
+            gap: 24px;
+        }
+
+        .nav-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: var(--transition-smooth);
+            position: relative;
+            padding: 6px 0;
+        }
+
+        .nav-link:hover, .nav-link.active {
+            color: var(--text-main);
+        }
+
+        .nav-link::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: linear-gradient(to right, var(--accent-orange), var(--accent-teal));
+            transition: var(--transition-smooth);
+        }
+
+        .nav-link:hover::after, .nav-link.active::after {
+            width: 100%;
+        }
+
+        /* ==========================================
+           3. 首頁視覺焦點區 (Hero Section)
+           ========================================== */
+        section.hero-section {
+            padding: 160px 5% 100px;
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 64px;
+            align-items: center;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .hero-content {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .badge-main {
+            align-self: flex-start;
+            background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(20, 184, 166, 0.15));
+            border: 1px solid rgba(249, 115, 22, 0.3);
+            color: #ffaa6e;
+            padding: 6px 16px;
+            border-radius: 30px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .hero-title h1 {
+            font-size: 48px;
+            font-weight: 700;
+            line-height: 1.2;
+            background: linear-gradient(to right, #ffffff, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-title .brand-span {
+            background: linear-gradient(to right, var(--accent-orange), var(--accent-teal));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+            display: inline-block;
+        }
+
+        .hero-desc {
+            font-size: 17px;
+            color: var(--text-muted);
+            line-height: 1.8;
+        }
+
+        .hero-features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin: 16px 0;
+        }
+
+        .hero-feat-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+            transition: var(--transition-smooth);
+        }
+
+        .hero-feat-item:hover {
+            transform: translateY(-4px);
+            border-color: rgba(20, 184, 166, 0.2);
+            background: rgba(20, 184, 166, 0.02);
+        }
+
+        .hero-feat-item .icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .hero-feat-item h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-bottom: 4px;
+        }
+
+        .hero-feat-item p {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 20px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-orange), var(--accent-purple));
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            font-size: 15px;
+            font-weight: 700;
+            border-radius: 30px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 20px var(--accent-orange-glow);
+            transition: var(--transition-smooth);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(249, 115, 22, 0.5);
+            filter: brightness(1.1);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            border: 1px solid var(--panel-border);
+            padding: 14px 32px;
+            font-size: 15px;
+            font-weight: 600;
+            border-radius: 30px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: var(--transition-smooth);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--text-muted);
+        }
+
+        /* Hero Image Panel */
+        .hero-visual {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .hero-img-card {
+            width: 100%;
+            max-width: 450px;
+            position: relative;
+            border-radius: 24px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+            transition: var(--transition-smooth);
+        }
+
+        .hero-img-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            border-color: rgba(249, 115, 22, 0.3);
+            box-shadow: 0 30px 70px rgba(249, 115, 22, 0.15);
+        }
+
+        .hero-img-card img {
+            width: 100%;
+            height: auto;
+            display: block;
+            object-fit: cover;
+        }
+
+        .hero-img-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(9,13,22,0.9), transparent);
+            padding: 24px;
+            text-align: left;
+        }
+
+        .hero-img-overlay h4 {
+            font-size: 16px;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 4px;
+        }
+
+        .hero-img-overlay p {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* ==========================================
+           4. 痛點剖析區 (Pain Points Section)
+           ========================================== */
+        section.section-container {
+            padding: 80px 5%;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 60px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .section-tag {
+            background: rgba(20, 184, 166, 0.08);
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            color: #2dd4bf;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        .section-title h2 {
+            font-size: 36px;
+            font-weight: 700;
+            background: linear-gradient(to right, #ffffff, #e2e8f0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .section-desc {
+            font-size: 15px;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin-top: 8px;
+        }
+
+        /* 統計數據牆 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            margin-bottom: 48px;
+        }
+
+        .stat-card {
+            text-align: center;
+            padding: 24px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 16px;
+            border: 1px solid var(--panel-border);
+        }
+
+        .stat-number {
+            font-size: 44px;
+            font-weight: 800;
+            color: var(--accent-orange);
+            line-height: 1;
+            margin-bottom: 8px;
+            font-family: 'Inter', sans-serif;
+            text-shadow: 0 0 15px var(--accent-orange-glow);
+        }
+
+        .stat-label {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 4px;
+        }
+
+        .stat-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* 三重困境卡片 */
+        .dilemmas-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-bottom: 60px;
+        }
+
+        .dilemma-card {
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .dilemma-num {
+            position: absolute;
+            top: 16px;
+            right: 20px;
+            font-size: 64px;
+            font-weight: 900;
+            color: rgba(255, 255, 255, 0.02);
+            line-height: 1;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .dilemma-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .dilemma-card h3 {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .dilemma-card p {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.7;
+        }
+
+        .dilemma-badge {
+            align-self: flex-start;
+            background: rgba(239, 68, 68, 0.1);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            padding: 2px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        /* 傳統與學伴對比矩陣 */
+        .comparison-container {
+            margin-top: 48px;
+        }
+
+        .comparison-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            text-align: center;
+            color: var(--accent-teal);
+        }
+
+        .comparison-table-wrapper {
+            overflow-x: auto;
+            border-radius: 12px;
+            border: 1px solid var(--panel-border);
+        }
+
+        table.comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        table.comparison-table th, table.comparison-table td {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--panel-border);
+        }
+
+        table.comparison-table th {
+            background: rgba(0, 0, 0, 0.4);
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        table.comparison-table td.table-highlight {
+            background: rgba(20, 184, 166, 0.03);
+            font-weight: 600;
+            color: #2dd4bf;
+        }
+
+        table.comparison-table tr:last-child th, table.comparison-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* ==========================================
+           5. 技術與架構區 (Technology & Architecture)
+           ========================================== */
+        .tech-layout {
+            display: grid;
+            grid-template-columns: 1.1fr 1.3fr;
+            gap: 64px;
+            align-items: center;
+        }
+
+        .tech-info {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .tech-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .tech-item {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--panel-border);
+            padding: 16px;
+            border-radius: 12px;
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        .tech-item-icon {
+            font-size: 20px;
+            padding: 8px;
+            background: rgba(168, 85, 247, 0.1);
+            border-radius: 8px;
+            color: #c084fc;
+        }
+
+        .tech-item-content h4 {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 4px;
+        }
+
+        .tech-item-content p {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        /* 狀態機切換控制面版 */
+        .state-machine-card {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            position: relative;
+        }
+
+        .state-controls {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 6px;
+            border-radius: 30px;
+            border: 1px solid var(--panel-border);
+            align-self: center;
+        }
+
+        .state-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            padding: 8px 20px;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+
+        .state-btn.active {
+            background: var(--text-main);
+            color: var(--text-dark);
+            box-shadow: 0 4px 10px rgba(255, 255, 255, 0.2);
+        }
+
+        /* SVG 架構圖 */
+        .arch-svg-container {
+            width: 100%;
+            height: auto;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 16px;
+            padding: 16px;
+            border: 1px solid var(--panel-border);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* SVG Glow class */
+        .glow-path {
+            stroke-dasharray: 8, 8;
+            animation: dash 1.5s linear infinite;
+            opacity: 0.15;
+            transition: var(--transition-smooth);
+        }
+
+        .glow-path.active {
+            opacity: 1;
+        }
+
+        .glow-path-offline {
+            stroke: var(--accent-teal);
+            filter: drop-shadow(0px 0px 3px var(--accent-teal));
+        }
+
+        .glow-path-online {
+            stroke: var(--accent-purple);
+            filter: drop-shadow(0px 0px 3px var(--accent-purple));
+        }
+
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -20;
+            }
+        }
+
+        .arch-box {
+            transition: var(--transition-smooth);
+            fill: #111524;
+            stroke: var(--panel-border);
+        }
+
+        .arch-box.active-edge {
+            stroke: var(--accent-teal);
+            fill: #0c1a20;
+        }
+
+        .arch-box.active-cloud {
+            stroke: var(--accent-purple);
+            fill: #160f24;
+        }
+
+        /* ==========================================
+           6. 核心互動體驗中心 (Interactive Demo Hub)
+           ========================================== */
+        .demo-hub-card {
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 720px;
+            min-height: 720px;
+        }
+
+        /* Tabs Container */
+        .demo-tabs-bar {
+            display: flex;
+            border-bottom: 1px solid var(--panel-border);
+            background: rgba(0, 0, 0, 0.2);
+            padding: 0 24px;
+        }
+
+        .demo-tab-button {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 20px 24px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+            position: relative;
+        }
+
+        .demo-tab-button:hover {
+            color: var(--text-main);
+        }
+
+        .demo-tab-button.active {
+            color: var(--text-main);
+        }
+
+        .demo-tab-button::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0;
+            height: 3px;
+            background: linear-gradient(to right, var(--accent-orange), var(--accent-teal));
+            transition: var(--transition-smooth);
+        }
+
+        .demo-tab-button.active::after {
+            width: 100%;
+        }
+
+        /* Content panels */
+        .demo-tab-content-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .demo-tab-panel {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+            padding: 24px;
+            display: grid;
+        }
+
+        .demo-tab-panel.active {
+            opacity: 1;
+            pointer-events: auto;
+            z-index: 5;
+        }
+
+        /* ------------------
+           A. 實體玩偶模擬器
+           ------------------ */
+        .simulator-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 24px;
+            height: 100%;
+        }
+
+        /* Left Column: Device 3D Model */
+        .sim-device-col {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sim-device-title {
+            position: absolute;
+            top: 16px;
+            left: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+        }
+
+        /* ==========================================
+           Egg/Penguin Device Model Style
+           ========================================== */
+        .device-egg {
+            width: 145px;
+            height: 185px;
+            background: #374151; /* Dark slate grey body */
+            border-radius: 60% 60% 45% 45% / 70% 70% 50% 50%;
+            box-shadow: 
+                inset -10px -10px 25px rgba(0,0,0,0.3),
+                inset 10px 10px 25px rgba(255,255,255,0.15),
+                0 25px 50px rgba(0,0,0,0.6);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            animation: egg-breathe 6s infinite ease-in-out;
+            transition: var(--transition-smooth);
+            border: 2px solid #1f2937;
+            z-index: 5;
+        }
+
+        /* Knitted texture overlay */
+        .device-egg::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border-radius: inherit;
+            background-image: 
+                radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+                radial-gradient(rgba(0,0,0,0.12) 1px, transparent 1px);
+            background-size: 4px 4px;
+            background-position: 0 0, 2px 2px;
+            pointer-events: none;
+            opacity: 0.8;
+            z-index: 0;
+        }
+
+        @keyframes egg-breathe {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-8px) scale(1.02); }
+        }
+
+        /* Speaks/Listens/Thinks classes for Penguin */
+        .device-egg.listening {
+            animation: egg-pulse-listen 0.35s infinite alternate ease-in-out;
+            box-shadow: 
+                inset -10px -10px 25px rgba(0,0,0,0.3),
+                inset 10px 10px 25px rgba(255,255,255,0.15),
+                0 25px 50px var(--accent-orange-glow),
+                0 0 35px rgba(249, 115, 22, 0.25);
+            border-color: rgba(249, 115, 22, 0.4);
+        }
+
+        .device-egg.speaking {
+            animation: egg-pulse-speak 0.45s infinite alternate ease-in-out;
+            box-shadow: 
+                inset -10px -10px 25px rgba(0,0,0,0.3),
+                inset 10px 10px 25px rgba(255,255,255,0.15),
+                0 25px 50px var(--accent-teal-glow),
+                0 0 35px rgba(20, 184, 166, 0.25);
+            border-color: rgba(20, 184, 166, 0.4);
+        }
+
+        .device-egg.thinking {
+            animation: egg-breathe 2s infinite ease-in-out;
+            box-shadow: 
+                inset -10px -10px 25px rgba(0,0,0,0.3),
+                inset 10px 10px 25px rgba(255,255,255,0.15),
+                0 25px 50px var(--accent-purple-glow),
+                0 0 35px rgba(168, 85, 247, 0.25);
+            border-color: rgba(168, 85, 247, 0.4);
+        }
+
+        @keyframes egg-pulse-listen {
+            0% { transform: scale(1) rotate(-1deg); }
+            100% { transform: scale(1.04) rotate(1deg); }
+        }
+
+        @keyframes egg-pulse-speak {
+            0% { transform: translateY(-3px) scale(1.01); }
+            100% { transform: translateY(-7px) scale(1.05); }
+        }
+
+        /* Headphones elements */
+        .penguin-headband {
+            position: absolute;
+            top: -10px;
+            width: 115px;
+            height: 65px;
+            border: 8px solid #2563eb; /* Royal blue */
+            border-bottom: none;
+            border-radius: 65px 65px 0 0;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .penguin-earcup {
+            position: absolute;
+            top: 35px;
+            width: 24px;
+            height: 44px;
+            background: #1d4ed8;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.35);
+            z-index: 6;
+        }
+
+        .penguin-earcup::after {
+            content: '';
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            width: 12px;
+            height: 32px;
+            background: #60a5fa;
+            border-radius: 6px;
+        }
+
+        .penguin-earcup.left {
+            left: -12px;
+            transform: rotate(-5deg);
+        }
+
+        .penguin-earcup.right {
+            right: -12px;
+            transform: rotate(5deg);
+        }
+
+        /* Face elements */
+        .penguin-face {
+            position: absolute;
+            top: 22px;
+            width: 90px;
+            height: 55px;
+            background: #ffffff;
+            border-radius: 50% 50% 45% 45% / 60% 60% 40% 40%;
+            z-index: 1;
+            box-shadow: inset 0 -3px 6px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: center;
+        }
+
+        .penguin-eye {
+            position: absolute;
+            top: 18px;
+            width: 8px;
+            height: 8px;
+            background: #1e293b;
+            border-radius: 50%;
+        }
+
+        .penguin-eye::before {
+            content: '';
+            position: absolute;
+            top: 1.5px;
+            left: 1.5px;
+            width: 2.5px;
+            height: 2.5px;
+            background: #ffffff;
+            border-radius: 50%;
+        }
+
+        .penguin-eye.left {
+            left: 22px;
+        }
+
+        .penguin-eye.right {
+            right: 22px;
+        }
+
+        .penguin-beak {
+            position: absolute;
+            top: 24px;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 10px solid #f97316; /* Orange beak */
+            border-radius: 3px;
+        }
+
+        /* Scarf elements */
+        .penguin-scarf {
+            position: absolute;
+            top: 72px;
+            width: 116px;
+            height: 16px;
+            background: #06b6d4; /* Cyan scarf */
+            border-radius: 8px;
+            z-index: 3;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+
+        .penguin-scarf-tail {
+            position: absolute;
+            top: 10px;
+            left: 24px;
+            width: 16px;
+            height: 38px;
+            background: #0891b2;
+            border-radius: 0 0 8px 8px;
+            transform: rotate(12deg);
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.25);
+            z-index: 2;
+        }
+
+        /* Belly elements */
+        .penguin-belly {
+            position: absolute;
+            bottom: 12px;
+            width: 100px;
+            height: 90px;
+            background: #ffffff;
+            border-radius: 50% 50% 45% 45% / 65% 65% 55% 55%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset 0 -5px 10px rgba(0,0,0,0.05);
+            border: 1px solid #f1f5f9;
+            z-index: 2;
+        }
+
+        /* Belly Glow / LED Ring */
+        .device-led-ring {
+            width: 60px;
+            height: 60px;
+            background: rgba(0, 0, 0, 0.03);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed rgba(0, 0, 0, 0.05);
+        }
+
+        .device-led-glow {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(249, 115, 22, 0.12); /* Default soft glow */
+            transition: var(--transition-smooth);
+            box-shadow: 0 0 8px rgba(249, 115, 22, 0.15);
+        }
+
+        /* LED ring active states (belly glow) */
+        .device-egg.listening .device-led-glow {
+            background: var(--accent-orange);
+            box-shadow: 
+                0 0 25px 8px var(--accent-orange), 
+                inset 0 2px 4px rgba(255,255,255,0.4);
+        }
+
+        .device-egg.speaking .device-led-glow {
+            background: var(--accent-teal);
+            box-shadow: 
+                0 0 25px 8px var(--accent-teal), 
+                inset 0 2px 4px rgba(255,255,255,0.4);
+        }
+
+        .device-egg.thinking .device-led-glow {
+            background: var(--accent-purple);
+            box-shadow: 0 0 30px 10px var(--accent-purple);
+            animation: led-thinking-blink 1.5s infinite linear;
+        }
+
+        @keyframes led-thinking-blink {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 1; }
+        }
+
+        /* Speaker Grille (Hidden in HTML but style kept) */
+        .device-speaker {
+            width: 80px;
+            height: 50px;
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            justify-items: center;
+            align-items: center;
+            margin-top: 40px;
+        }
+
+        .device-speaker-hole {
+            width: 3px;
+            height: 3px;
+            background-color: #382c18;
+            border-radius: 50%;
+            opacity: 0.75;
+        }
+
+        /* Wood base (Hidden in HTML but style kept) */
+        .device-wood-base {
+            width: 100px;
+            height: 16px;
+            background: linear-gradient(to right, #54341e, #784d2e, #54341e);
+            border-radius: 8px 8px 50% 50% / 8px 8px 12px 12px;
+            position: absolute;
+            bottom: -4px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+
+        /* Shadow below device */
+        .device-egg-shadow {
+            width: 125px;
+            height: 14px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 50%;
+            filter: blur(5px);
+            position: absolute;
+            bottom: 25px;
+            z-index: 1;
+            animation: egg-shadow-scale 6s infinite ease-in-out;
+        }
+
+        @keyframes egg-shadow-scale {
+            0%, 100% { transform: scale(1); opacity: 0.6; }
+            50% { transform: scale(0.9) translateY(2px); opacity: 0.45; filter: blur(6px); }
+        }
+
+        /* Hardware Monitor bars */
+        .sim-monitor-card {
+            width: 100%;
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sim-monitor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding-bottom: 6px;
+        }
+
+        .sim-monitor-header span {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+        }
+
+        .monitor-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 11px;
+        }
+
+        .monitor-label {
+            display: flex;
+            justify-content: space-between;
+            color: var(--text-muted);
+        }
+
+        .monitor-val {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        .monitor-bar-bg {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .monitor-bar-fill {
+            height: 100%;
+            background: var(--accent-teal);
+            border-radius: 2px;
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+
+        /* Right Column: Dialogue box */
+        .sim-chat-col {
+            display: flex;
+            flex-direction: column;
+            background: rgba(0, 0, 0, 0.15);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .sim-chat-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--panel-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0,0,0,0.1);
+        }
+
+        .sim-chat-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .sim-chat-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: red;
+            animation: red-pulse 1s infinite alternate;
+        }
+
+        @keyframes red-pulse {
+            0% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+
+        /* Chat history space */
+        .sim-chat-history {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            scroll-behavior: smooth;
+        }
+
+        .chat-bubble-row {
+            display: flex;
+            width: 100%;
+            opacity: 0;
+            transform: translateY(15px);
+            animation: bubble-slide-in 0.4s forwards cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes bubble-slide-in {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .chat-bubble-row.student { justify-content: flex-end; }
+        .chat-bubble-row.buddy { justify-content: flex-start; }
+
+        .chat-bubble-content {
+            max-width: 75%;
+            padding: 12px 18px;
+            border-radius: 16px;
+            font-size: 14px;
+            line-height: 1.5;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+
+        .student .chat-bubble-content {
+            background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .buddy .chat-bubble-content {
+            background: rgba(17, 21, 35, 0.85);
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            color: #f1f5f9;
+            border-bottom-left-radius: 4px;
+        }
+
+        .chat-bubble-sender {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .student .chat-bubble-sender {
+            color: #fed7aa;
+            text-align: right;
+        }
+
+        .buddy .chat-bubble-sender {
+            color: #2dd4bf;
+        }
+
+        /* SVG Voice Waveform */
+        .chat-waveform-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            padding-top: 8px;
+        }
+
+        .waveform-btn {
+            background: rgba(20, 184, 166, 0.1);
+            border: 1px solid rgba(20, 184, 166, 0.3);
+            color: #2dd4bf;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+        }
+
+        .waveform-visual {
+            display: none;
+            align-items: center;
+            gap: 2px;
+            height: 12px;
+        }
+
+        .waveform-visual.active {
+            display: flex;
+        }
+
+        .wave-bar {
+            width: 2px;
+            height: 4px;
+            background: var(--accent-teal);
+            border-radius: 1px;
+            animation: wave-bounce 0.8s ease-in-out infinite alternate;
+        }
+        .wave-bar:nth-child(2) { height: 10px; animation-delay: -0.2s; }
+        .wave-bar:nth-child(3) { height: 6px; animation-delay: -0.4s; }
+        .wave-bar:nth-child(4) { height: 12px; animation-delay: -0.1s; }
+        .wave-bar:nth-child(5) { height: 5px; animation-delay: -0.5s; }
+
+        @keyframes wave-bounce {
+            0% { transform: scaleY(0.3); }
+            100% { transform: scaleY(1.3); }
+        }
+
+        /* Final Score popup inside chat */
+        .sim-score-card {
+            background: linear-gradient(135deg, rgba(20, 184, 166, 0.08) 0%, rgba(168, 85, 247, 0.08) 100%);
+            border: 1px solid rgba(20, 184, 166, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            width: 100%;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+            margin-top: 8px;
+        }
+
+        .sim-score-header {
+            font-size: 13px;
+            font-weight: 700;
+            color: #2dd4bf;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .sim-score-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .sim-score-item {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255,255,255,0.03);
+            padding: 8px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .sim-score-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .sim-score-val {
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .sim-score-val.color-up {
+            color: var(--success);
+        }
+
+        /* Simulator Actions bar */
+        .sim-chat-actions {
+            padding: 16px 20px;
+            border-top: 1px solid var(--panel-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0,0,0,0.1);
+        }
+
+        .sim-step-text {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .btn-sim-next {
+            background: linear-gradient(135deg, var(--accent-orange), var(--accent-purple));
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            font-size: 13px;
+            font-weight: 700;
+            border-radius: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 4px 12px var(--accent-orange-glow);
+            transition: var(--transition-smooth);
+        }
+
+        .btn-sim-next:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(249, 115, 22, 0.5);
+            filter: brightness(1.1);
+        }
+
+        .btn-sim-next:disabled {
+            background: #334155;
+            color: #64748b;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .btn-sim-reset {
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--panel-border);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+
+        .btn-sim-reset:hover {
+            border-color: var(--text-muted);
+            color: var(--text-main);
+        }
+
+        /* ------------------
+           B. 教師智慧助教平台
+           ------------------ */
+        .dashboard-layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 24px;
+            height: 100%;
+        }
+
+        /* Left Side: Student List */
+        .dash-students-col {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow-y: auto;
+        }
+
+        .dash-students-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-muted);
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding-bottom: 8px;
+            margin-bottom: 4px;
+        }
+
+        .student-list-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            background: rgba(255, 255, 255, 0.01);
+            transition: var(--transition-smooth);
+        }
+
+        .student-list-item:hover {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .student-list-item.active {
+            background: rgba(20, 184, 166, 0.08);
+            border-color: rgba(20, 184, 166, 0.25);
+        }
+
+        .student-item-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .student-list-item.active .student-item-name {
+            color: #2dd4bf;
+        }
+
+        .student-item-level {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .level-a { background: rgba(16, 185, 129, 0.1); color: #34d399; }
+        .level-b { background: rgba(245, 158, 11, 0.1); color: #fbbf24; }
+        .level-c { background: rgba(239, 68, 68, 0.1); color: #f87171; }
+
+        /* Right Side: Dashboard Hub */
+        .dash-details-col {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        /* Stats bar */
+        .dash-stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+
+        .dash-mini-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .dash-mini-title {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .dash-mini-val {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin: 4px 0;
+        }
+
+        .dash-mini-footer {
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--success);
+        }
+
+        /* Charts & Diagnosis Grid */
+        .dash-workplace-grid {
+            display: grid;
+            grid-template-columns: 1.1fr 1.3fr;
+            gap: 20px;
+        }
+
+        .dash-panel-card {
+            background: rgba(255, 255, 255, 0.015);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .dash-card-header {
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding-bottom: 10px;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dash-card-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        /* Radar Chart container */
+        .radar-svg-space {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Diagnosis Panel */
+        .diag-profile-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding-bottom: 16px;
+        }
+
+        .diag-avatar {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--accent-orange), var(--accent-purple));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .diag-meta h3 {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .diag-meta p {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .diag-sections {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            flex: 1;
+        }
+
+        .diag-section-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .diag-section-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent-teal);
+        }
+
+        .diag-section-text {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .diag-section-box {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px dashed rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--text-main);
+            line-height: 1.5;
+        }
+
+        /* SVG Trend chart */
+        .dash-trend-card {
+            grid-column: 1 / span 2;
+            min-height: 160px;
+        }
+
+        .trend-svg-container {
+            width: 100%;
+            height: 100px;
+        }
+
+        /* ==========================================
+           7. 雙大普惠情境展示區 (Inclusive Scenarios)
+           ========================================== */
+        .scenarios-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 32px;
+        }
+
+        .scenario-card {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .scenario-img-box {
+            width: 100%;
+            height: 240px;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--panel-border);
+            position: relative;
+        }
+
+        .scenario-img-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: var(--transition-smooth);
+        }
+
+        .scenario-card:hover .scenario-img-box img {
+            transform: scale(1.05);
+        }
+
+        .scenario-img-tag {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            background: rgba(9, 13, 22, 0.8);
+            border: 1px solid var(--panel-border);
+            color: var(--text-main);
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .scenario-info h3 {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 8px;
+        }
+
+        .scenario-info p {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.7;
+            margin-bottom: 16px;
+        }
+
+        .scenario-highlights {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .scen-high-item {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 12px;
+            border-left: 3px solid var(--accent-orange);
+        }
+
+        .scenario-card:nth-child(2) .scen-high-item {
+            border-left-color: var(--accent-purple);
+        }
+
+        .scen-high-item span {
+            display: block;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 2px;
+        }
+
+        .scen-high-item p {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin: 0;
+            line-height: 1.3;
+        }
+
+        /* ==========================================
+           8. 資源下載與參考文獻區 (Downloads & References)
+           ========================================== */
+        .resources-layout {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr;
+            gap: 48px;
+        }
+
+        /* Left: Downloads */
+        .downloads-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .download-item-card {
+            background: rgba(255, 255, 255, 0.015);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 16px;
+            transition: var(--transition-smooth);
+        }
+
+        .download-item-card:hover {
+            border-color: var(--accent-teal);
+            background: rgba(20, 184, 166, 0.02);
+            transform: translateY(-4px);
+        }
+
+        .download-info-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .download-icon {
+            font-size: 24px;
+            padding: 10px;
+            background: rgba(20, 184, 166, 0.1);
+            border-radius: 10px;
+            color: #2dd4bf;
+        }
+
+        .download-item-card:nth-child(2) .download-icon {
+            background: rgba(249, 115, 22, 0.1);
+            color: #ff9d5c;
+        }
+
+        .download-item-card:nth-child(3) .download-icon {
+            background: rgba(168, 85, 247, 0.1);
+            color: #c084fc;
+        }
+
+        .download-size-tag {
+            font-size: 10px;
+            color: var(--text-muted);
+            font-family: 'Inter', sans-serif;
+            background: rgba(255,255,255,0.04);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .download-text h3 {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 4px;
+        }
+
+        .download-text p {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .btn-download-action {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--panel-border);
+            color: var(--text-main);
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+            text-decoration: none;
+            cursor: pointer;
+            display: block;
+            transition: var(--transition-smooth);
+        }
+
+        .download-item-card:hover .btn-download-action {
+            background: var(--accent-teal);
+            border-color: var(--accent-teal);
+            color: white;
+            box-shadow: 0 4px 12px var(--accent-teal-glow);
+        }
+
+        .download-item-card:nth-child(2):hover .btn-download-action {
+            background: var(--accent-orange);
+            border-color: var(--accent-orange);
+            box-shadow: 0 4px 12px var(--accent-orange-glow);
+        }
+
+        .download-item-card:nth-child(3):hover .btn-download-action {
+            background: var(--accent-purple);
+            border-color: var(--accent-purple);
+            box-shadow: 0 4px 12px var(--accent-purple-glow);
+        }
+
+        /* Right: References list */
+        .references-box {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .references-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding-bottom: 8px;
+        }
+
+        .references-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 280px;
+            overflow-y: auto;
+            padding-right: 8px;
+        }
+
+        .references-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        .references-list::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+        }
+
+        .ref-item {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.5;
+            padding-left: 14px;
+            position: relative;
+        }
+
+        .ref-item::before {
+            content: '▪';
+            position: absolute;
+            left: 0;
+            color: var(--accent-orange);
+        }
+
+        /* ==========================================
+           9. 頁尾 (Footer)
+           ========================================== */
+        footer.app-footer {
+            margin-top: 80px;
+            padding: 40px 5% 32px;
+            border-top: 1px solid var(--panel-border);
+            background: rgba(9, 13, 22, 0.8);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            align-items: center;
+            max-width: 100%;
+        }
+
+        .footer-row {
+            width: 100%;
+            max-width: 1400px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .footer-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .footer-right {
+            display: flex;
+            gap: 24px;
+        }
+
+        .footer-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: var(--transition-smooth);
+        }
+
+        .footer-link:hover {
+            color: var(--text-main);
+        }
+
+        .footer-bottom-text {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.15);
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        /* ==========================================
+           10. 響應式佈局適應 (Responsive Adaptation)
+           ========================================== */
+        @media (max-width: 1100px) {
+            section.hero-section {
+                grid-template-columns: 1fr;
+                text-align: center;
+                padding-top: 120px;
+                gap: 40px;
+            }
+            .badge-main {
+                align-self: center;
+            }
+            .hero-buttons {
+                justify-content: center;
+            }
+            .hero-visual {
+                order: -1;
+            }
+            .dilemmas-grid {
+                grid-template-columns: 1fr;
+            }
+            .tech-layout {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+            .scenarios-grid {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+            .resources-layout {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 16px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            header.nav-header {
+                padding: 0 4%;
+            }
+            nav.nav-menu {
+                display: none; /* Mobile menu collapsed */
+            }
+            .hero-title h1 {
+                font-size: 32px;
+            }
+            .hero-desc {
+                font-size: 15px;
+            }
+            .hero-features-grid {
+                grid-template-columns: 1fr;
+            }
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            .simulator-layout {
+                grid-template-columns: 1fr;
+            }
+            .dashboard-layout {
+                grid-template-columns: 1fr;
+            }
+            .dash-stats-row {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .dash-workplace-grid {
+                grid-template-columns: 1fr;
+            }
+            .downloads-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    
+
+        /* ==========================================
+           13. 離線文件閱讀器樣式 (Offline Reader Modals)
+           ========================================== */
+        .reader-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(4, 6, 12, 0.92);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .reader-modal.active {
+            display: block;
+            opacity: 1;
+        }
+        
+        .reader-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.95);
+            width: 90%;
+            max-width: 960px;
+            height: 85%;
+            background: #0f1322;
+            border: 1px solid var(--panel-border);
+            border-radius: 24px;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 40px rgba(20, 184, 166, 0.05);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .reader-modal.active .reader-container {
+            transform: translate(-50%, -50%) scale(1);
+        }
+        
+        .reader-header {
+            padding: 24px 32px;
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid var(--panel-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .reader-title-box {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .reader-title-icon {
+            font-size: 24px;
+        }
+        
+        .reader-title {
+            font-size: 18px;
+            font-weight: 700;
+            background: linear-gradient(to right, #ffffff, var(--text-muted));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .btn-reader-close {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--panel-border);
+            color: var(--text-main);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: var(--transition-smooth);
+        }
+        
+        .btn-reader-close:hover {
+            background: var(--danger);
+            border-color: var(--danger);
+            transform: rotate(90deg);
+        }
+        
+        .reader-body {
+            flex: 1;
+            padding: 40px 48px;
+            overflow-y: auto;
+            color: #e2e8f0;
+            font-size: 15px;
+            line-height: 1.8;
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            scroll-behavior: smooth;
+        }
+        
+        /* Typography for Reader Content */
+        .reader-content h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 24px;
+            color: #ffffff;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 12px;
+        }
+        
+        .reader-content h2 {
+            font-size: 22px;
+            font-weight: 700;
+            margin-top: 36px;
+            margin-bottom: 16px;
+            color: var(--accent-teal);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .reader-content h3 {
+            font-size: 17px;
+            font-weight: 600;
+            margin-top: 24px;
+            margin-bottom: 12px;
+            color: var(--text-main);
+        }
+        
+        .reader-content p {
+            margin-bottom: 20px;
+        }
+        
+        .reader-content strong {
+            color: #ffffff;
+        }
+        
+        .reader-content ul, .reader-content ol {
+            margin-bottom: 20px;
+            padding-left: 24px;
+        }
+        
+        .reader-content li {
+            margin-bottom: 8px;
+        }
+        
+        .reader-content blockquote {
+            background: rgba(20, 184, 166, 0.04);
+            border-left: 4px solid var(--accent-teal);
+            padding: 16px 24px;
+            margin: 24px 0;
+            border-radius: 4px;
+            color: var(--text-muted);
+            font-style: italic;
+        }
+        
+        .reader-content pre {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--panel-border);
+            padding: 20px;
+            border-radius: 12px;
+            margin: 24px 0;
+            overflow-x: auto;
+        }
+        
+        .reader-content code {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            color: #e2e8f0;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        
+        .reader-content pre code {
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+        }
+        
+        /* Reader Tables */
+        .reader-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 24px 0;
+            font-size: 13px;
+        }
+        
+        .reader-table th, .reader-table td {
+            padding: 12px 16px;
+            border: 1px solid var(--panel-border);
+            text-align: left;
+        }
+        
+        .reader-table th {
+            background: rgba(0, 0, 0, 0.3);
+            color: #ffffff;
+            font-weight: 600;
+        }
+        
+        .reader-table tr:nth-child(even) {
+            background: rgba(255, 255, 255, 0.01);
+        }
+    
+    </style>
+</head>
+<body>
+
+    <!-- 背景漂浮光環與粒子 -->
+    <div class="bg-glow-container">
+        <div class="bg-glow-node bg-glow-orange"></div>
+        <div class="bg-glow-node bg-glow-purple"></div>
+        <div class="bg-glow-node bg-glow-teal"></div>
+    </div>
+    <canvas id="particle-canvas"></canvas>
+
+    <!-- 1. 頂部磨砂玻璃導覽列 -->
+    <header class="nav-header">
+        <a href="#" class="nav-logo">
+            <div class="nav-logo-icon">🗣️</div>
+            說說學伴 TalkyBuddy
+        </a>
+        <nav class="nav-menu">
+            <a href="#" class="nav-link active" data-sec="hero">首頁</a>
+            <a href="#pain-points" class="nav-link" data-sec="pain-points">痛點研究</a>
+            <a href="#tech-specs" class="nav-link" data-sec="tech-specs">技術架構</a>
+            <a href="#interactive-hub" class="nav-link" data-sec="interactive-hub">互動體驗</a>
+            <a href="#scenarios" class="nav-link" data-sec="scenarios">應用情境</a>
+            <a href="#downloads" class="nav-link" data-sec="downloads">資源下載</a>
+        </nav>
+    </header>
+
+    <!-- 2. Hero 視覺焦點首頁 -->
+    <section class="hero-section" id="hero">
+        <div class="hero-content">
+            <div class="badge-main">
+                <span>🏆 2026 雲湧智生黑客松 · 晶創未來提案</span>
+            </div>
+            <div class="hero-title">
+                <h1>以人本思維重構教育落差<br>
+                    <span class="brand-span">說說學伴 TalkyBuddy</span>
+                </h1>
+            </div>
+            <p class="hero-desc">
+                「說說學伴」是一款針對臺灣偏鄉教育現場打造的實體智能無螢幕伴讀裝置。我們結合國產 MediaTek Genio 邊緣 AI 晶片平台，以及 AWS 雲端生成式 AI 技術，在克服偏鄉斷網限制的同時，以「鷹架式雙語引導」讓孩子在無壓力、無螢幕焦慮的陪伴中重拾開口的自信。
+            </p>
+            <div class="hero-features-grid">
+                <div class="hero-feat-item">
+                    <span class="icon">🔇</span>
+                    <h3>完全無螢幕</h3>
+                    <p>消除分心與考試焦慮，專注在純粹的語音互動</p>
+                </div>
+                <div class="hero-feat-item">
+                    <span class="icon">⚡</span>
+                    <h3>雙網自適應</h3>
+                    <p>離線邊緣運算，網路不穩或斷網也能流暢伴讀</p>
+                </div>
+                <div class="hero-feat-item">
+                    <span class="icon">🧸</span>
+                    <h3>科技酷玩美學</h3>
+                    <p>親膚針織材質配戴耳機圍巾，打造有溫度的潮玩陪伴</p>
+                </div>
+            </div>
+            <div class="hero-buttons">
+                <a href="#interactive-hub" class="btn-primary">🎮 立即體驗互動 Demo</a>
+                <a href="./臺灣普惠科技應用痛點研究_說說學伴.pdf" class="btn-secondary" download>📄 下載研究報告 PDF</a>
+            </div>
+        </div>
+        <div class="hero-visual">
+            <div class="hero-img-card">
+                <img src="./images/device_concept_main.png" alt="說說學伴實體概念圖" onerror="this.src='https://images.unsplash.com/photo-1596495578065-6e0763fa1141?q=80&w=800'">
+                <div class="hero-img-overlay">
+                    <h4>說說學伴 實體玩偶概念外觀</h4>
+                    <p>科技玩偶視覺美學，可愛企鵝針織外殼配戴耳機圍巾與腹部動態呼吸燈</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. 痛點剖析區 (The Pain Points) -->
+    <section class="section-container" id="pain-points">
+        <div class="section-header">
+            <span class="section-tag">痛點研究 (Research)</span>
+            <div class="section-title">
+                <h2>偏鄉雙語教育的三重核心困境</h2>
+            </div>
+            <p class="section-desc">我們深入臺灣偏遠地區國小學習扶助（補救教學）現場，剖析現行普惠科技在實施過程中面臨的結構性問題。</p>
+        </div>
+
+        <!-- 統計數據牆 -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">47%+</div>
+                <div class="stat-label">國中英語會考待加強 (C)</div>
+                <div class="stat-desc">偏遠地區會考待加強比例，為都會區的 1.7 到 1.9 倍</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">74.15%</div>
+                <div class="stat-label">花蓮縣偏鄉待加強率</div>
+                <div class="stat-desc">偏遠學校未通過率高達全國平均的 1.3 至 2.4 倍</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">20%</div>
+                <div class="stat-label">代理師資流動率</div>
+                <div class="stat-desc">師資常態性流失，學童每學期都在適應不同的英語老師</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">200億</div>
+                <div class="stat-label">生生用平板「應用真空」</div>
+                <div class="stat-desc">硬體高度配發，但受限於斷網痛點，缺乏本地口說 AI 軟體</div>
+            </div>
+        </div>
+
+        <!-- 三大困境卡片 -->
+        <div class="dilemmas-grid">
+            <!-- 1 -->
+            <div class="glass-card dilemma-card">
+                <span class="dilemma-num">01</span>
+                <span class="dilemma-icon">📈</span>
+                <span class="dilemma-badge">資源與師資失衡</span>
+                <h3>雙語政策下的「雙峰現象」</h3>
+                <p>
+                    偏鄉與弱勢學生缺乏家庭支持系統與課後口說陪伴資源，在面對全英語授課或雙語學科時，常因起跑點落差產生極大的習得性無助。加上偏鄉英文專長師資招聘困難，代理與兼任比例高，導致英語學習成就的雙峰現象連年惡化。
+                </p>
+            </div>
+            <!-- 2 -->
+            <div class="glass-card dilemma-card">
+                <span class="dilemma-num">02</span>
+                <span class="dilemma-icon">😰</span>
+                <span class="dilemma-badge">心理防衛與焦慮</span>
+                <h3>學習扶助生的「開口焦慮」</h3>
+                <p>
+                    在學習扶助課堂中，低成就學童因害怕發音不標準被同儕嘲笑，往往選擇保持沉默。現行的數位平台介面設計（大量填空、選擇）類似傳統紙筆測驗，非但無法引導開口，反而引發學童更強烈的抗拒螢幕與考試焦慮。
+                </p>
+            </div>
+            <!-- 3 -->
+            <div class="glass-card dilemma-card">
+                <span class="dilemma-num">03</span>
+                <span class="dilemma-icon">🌐</span>
+                <span class="dilemma-badge">基礎設施瓶頸</span>
+                <h3>傳統數位工具的「斷網真空」</h3>
+                <p>
+                    現有主流平台如 Cool English 等皆高度依賴穩定的網際網路。一旦偏鄉校區發生斷網或訊號不穩，所有 AI 互動立即停擺。此外，傳統工具繁瑣的「手動派課」與「學習進度數據分析」，也給基層教師帶來沉重的行政負擔。
+                </p>
+            </div>
+        </div>
+
+        <!-- 對比矩陣 -->
+        <div class="comparison-container glass-card">
+            <h3 class="comparison-title">為什麼需要全新的實體伴讀載體？</h3>
+            <div class="comparison-table-wrapper">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>比較維度</th>
+                            <th>傳統平板 App / 線上學習平台</th>
+                            <th class="table-highlight">「說說學伴」實體智能伴讀方案</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>螢幕分散注意力</strong></td>
+                            <td>❌ 嚴重，學童容易被其他 App、遊戲或彈出訊息分心</td>
+                            <td class="table-highlight">✓ 無螢幕設計，將全部感官與專注力集中於聽覺與口說</td>
+                        </tr>
+                        <tr>
+                            <td><strong>開口學習焦慮</strong></td>
+                            <td>❌ 介面類似線上考試，紅字錯誤與倒數計時引發壓力</td>
+                            <td class="table-highlight">✓ 親切語音對話，以陪伴和聊天取代冷冰冰的打字測驗</td>
+                        </tr>
+                        <tr>
+                            <td><strong>斷網可用性</strong></td>
+                            <td>❌ 完全失效，AI 辨識與大腦服務無法在本地端運行</td>
+                            <td class="table-highlight">✓ 雙網混成自適應，斷網時邊緣 NPU 自動接管離線對話</td>
+                        </tr>
+                        <tr>
+                            <td><strong>數位操作門檻</strong></td>
+                            <td>❌ 需適應觸控打字、視窗切換等，對低年級與弱勢生是障礙</td>
+                            <td class="table-highlight">✓ 「說話即用」，離線關鍵字喚醒，徹底消除操作鴻溝</td>
+                        </tr>
+                        <tr>
+                            <td><strong>情感連結與安全感</strong></td>
+                            <td>❌ 平面、冰冷的玻璃螢幕，缺乏物理陪伴溫度</td>
+                            <td class="table-highlight">✓ 柔軟針織毛線與親膚企鵝玩偶，可擁抱、富生命感之腹部呼吸燈效</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. 技術規格與架構區 (Technology & Architecture) -->
+    <section class="section-container" id="tech-specs">
+        <div class="section-header">
+            <span class="section-tag">架構創新 (Architecture)</span>
+            <div class="section-title">
+                <h2>邊緣運算與雲端生成之雙網混成設計</h2>
+            </div>
+            <p class="section-desc">結合國產晶片之邊緣運算算力，與 AWS 雲端大語言模型，打造具備高度社會韌性的伴讀系統。</p>
+        </div>
+
+        <div class="tech-layout">
+            <div class="tech-info">
+                <div class="badge-main" style="border-color: rgba(168, 85, 247, 0.3); color: #c084fc;">
+                    <span>🛡️ 隱私安全設計 (Privacy by Design)</span>
+                </div>
+                <p class="hero-desc">
+                    「說說學伴」搭載**雙網混成自適應狀態機 (Adaptive State Machine)**。系統每 5 秒自動偵測環境 Wi-Fi 延遲，當延遲大於 800ms 或斷網時，自動轉入**本地邊緣模式 (Edge Mode)**，所有 ASR、LLM、TTS 運算皆在本地 NPU 加速完成，學童互動數據快取於 SQLite，確保資料「不落地、不升雲」，提供最高規格的兒童隱私安全保護。
+                </p>
+                <div class="tech-list">
+                    <!-- 1 -->
+                    <div class="tech-item">
+                        <span class="tech-item-icon">🖲️</span>
+                        <div class="tech-item-content">
+                            <h4>國產邊緣晶片加值 (MediaTek Genio)</h4>
+                            <p>採用 MediaTek Genio 520 (內建 APU) 開發平台。配合 **NeuroPilot 8 SDK** 將 ASR/LLM模型進行 INT4/INT8 量化編譯，離線推論速度大於 18 tokens/sec，首音延遲小於 150ms，以極低硬體成本實踐高品質離線伴讀。</p>
+                        </div>
+                    </div>
+                    <!-- 2 -->
+                    <div class="tech-item">
+                        <span class="tech-item-icon">🧠</span>
+                        <div class="tech-item-content">
+                            <h4>AWS Bedrock 雲端大腦與教材 RAG</h4>
+                            <p>連網時，大腦採用 AWS Bedrock (Claude 3.5 Sonnet)。配合**檢索增強生成 (RAG)**，檢索教育部 Cool English、均一教育平台與國教院課綱教材，確保生成對話 100% 契合臺灣十二年國教英語領域大綱。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 狀態機與 SVG 架構圖 -->
+            <div class="state-machine-card glass-card">
+                <div class="state-controls">
+                    <button class="state-btn active" id="btn-state-offline" onclick="setArchState('offline')">離線模式 (Edge Mode)</button>
+                    <button class="state-btn" id="btn-state-online" onclick="setArchState('online')">在線模式 (Cloud Mode)</button>
+                </div>
+
+                <div class="arch-svg-container">
+                    <!-- Custom High-Tech SVG Diagram -->
+                    <svg width="400" height="320" viewBox="0 0 400 320" fill="none" style="overflow: visible;">
+                        <!-- Defs for gradients/glows -->
+                        <defs>
+                            <linearGradient id="edge-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#0f766e" />
+                                <stop offset="100%" stop-color="#14b8a6" />
+                            </linearGradient>
+                            <linearGradient id="cloud-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#6b21a8" />
+                                <stop offset="100%" stop-color="#a855f7" />
+                            </linearGradient>
+                            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="5" result="blur" />
+                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                            </filter>
+                        </defs>
+
+                        <!-- Static elements -->
+                        <!-- Child Box -->
+                        <rect x="30" y="120" width="80" height="70" rx="8" class="arch-box" />
+                        <text x="70" y="152" fill="white" font-size="12" font-weight="bold" text-anchor="middle">學童 (阿明)</text>
+                        <text x="70" y="172" fill="var(--text-muted)" font-size="9" text-anchor="middle">語音 / 中英混合</text>
+
+                        <!-- Edge Hardware Box -->
+                        <rect x="150" y="120" width="100" height="70" rx="8" class="arch-box" id="svg-edge-box" />
+                        <text x="200" y="146" fill="white" font-size="11" font-weight="bold" text-anchor="middle">說說學伴裝置</text>
+                        <text x="200" y="162" fill="#2dd4bf" font-size="9" text-anchor="middle" font-weight="600">MediaTek NPU</text>
+                        <text x="200" y="176" fill="var(--text-muted)" font-size="8" text-anchor="middle">離線 ASR/LLM/TTS</text>
+
+                        <!-- Cloud Brain Box -->
+                        <rect x="290" y="40" width="90" height="70" rx="8" class="arch-box" id="svg-cloud-box" />
+                        <text x="335" y="68" fill="white" font-size="11" font-weight="bold" text-anchor="middle">AWS 雲端大腦</text>
+                        <text x="335" y="84" fill="#c084fc" font-size="9" text-anchor="middle" font-weight="600">Bedrock LLM</text>
+                        <text x="335" y="96" fill="var(--text-muted)" font-size="8" text-anchor="middle">教材 RAG + 診斷</text>
+
+                        <!-- Teacher Dashboard Box -->
+                        <rect x="290" y="200" width="90" height="70" rx="8" class="arch-box" />
+                        <text x="335" y="234" fill="white" font-size="11" font-weight="bold" text-anchor="middle">教師助教平台</text>
+                        <text x="335" y="252" fill="var(--text-muted)" font-size="9" text-anchor="middle">差異化教學指引</text>
+
+                        <!-- Connection Paths -->
+                        <!-- Child <-> Edge -->
+                        <path d="M 110 145 H 150" stroke="#475569" stroke-width="2" />
+                        <path d="M 150 165 H 110" stroke="#475569" stroke-width="2" />
+                        <!-- Edge Loop (Local offline inference) -->
+                        <path d="M 200 120 C 200 95, 230 95, 230 120" stroke="#475569" stroke-width="2" fill="none" />
+                        
+                        <!-- Edge -> Cloud -->
+                        <path d="M 220 120 C 220 75, 290 75, 290 75" stroke="#475569" stroke-width="2" fill="none" id="path-edge-cloud" />
+                        <!-- Cloud -> Edge -->
+                        <path d="M 290 85 C 290 85, 200 85, 200 120" stroke="#475569" stroke-width="2" fill="none" id="path-cloud-edge" />
+                        <!-- Cloud -> Teacher DB -->
+                        <path d="M 335 110 V 200" stroke="#475569" stroke-width="2" stroke-dasharray="3,3" />
+
+                        <!-- Glow paths (animated neon tracks) -->
+                        <!-- Offline Edge Glow Loop -->
+                        <path d="M 200 120 C 200 95, 230 95, 230 120" class="glow-path glow-path-offline active" id="svg-glow-offline-loop" fill="none" stroke-width="3" />
+                        <!-- Child -> Edge Glow -->
+                        <path d="M 110 145 H 150" class="glow-path glow-path-offline active" id="svg-glow-child-edge" fill="none" stroke-width="3" />
+                        <path d="M 150 165 H 110" class="glow-path glow-path-offline active" id="svg-glow-edge-child" fill="none" stroke-width="3" />
+
+                        <!-- Online Cloud Glow paths -->
+                        <path d="M 220 120 C 220 75, 290 75, 290 75" class="glow-path glow-path-online" id="svg-glow-edge-cloud" fill="none" stroke-width="3" />
+                        <path d="M 290 85 C 290 85, 200 85, 200 120" class="glow-path glow-path-online" id="svg-glow-cloud-edge" fill="none" stroke-width="3" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 5. 核心互動體驗中心 (The Interactive Demo Hub) -->
+    <section class="section-container" id="interactive-hub">
+        <div class="section-header">
+            <span class="section-tag">互動中心 (Experience Hub)</span>
+            <div class="section-title">
+                <h2>說說學伴 本地互動體驗大廳</h2>
+            </div>
+            <p class="section-desc">請在此處親自切換頁籤，操作體驗「學生端實體伴讀模擬器」以及「教師端智慧助教平台」。</p>
+        </div>
+
+        <!-- Unified Glassmorphism Card for Tabs -->
+        <div class="glass-card demo-hub-card">
+            <!-- Tabs Navigation -->
+            <div class="demo-tabs-bar">
+                <button class="demo-tab-button active" onclick="switchDemoTab(this, 'sim-panel')">🧸 說說學伴實體玩偶模擬器</button>
+                <button class="demo-tab-button" onclick="switchDemoTab(this, 'dash-panel')">📊 教師端智慧助教平台</button>
+            </div>
+
+            <!-- Tab Content Container -->
+            <div class="demo-tab-content-container">
+                
+                <!-- 頁籤一：實體玩偶模擬器 -->
+                <div class="demo-tab-panel active" id="sim-panel">
+                    <div class="simulator-layout">
+                        <!-- Left Column: 3D model & Hardware monitor -->
+                        <div class="sim-device-col">
+                            <span class="sim-device-title">說說學伴 狀態模擬</span>
+                            
+                            <!-- Penguin Device -->
+                            <div class="device-egg" id="sim-egg-model">
+                                <!-- Headphones -->
+                                <div class="penguin-headband"></div>
+                                <div class="penguin-earcup left"></div>
+                                <div class="penguin-earcup right"></div>
+                                
+                                <!-- Face -->
+                                <div class="penguin-face">
+                                    <div class="penguin-eye left"></div>
+                                    <div class="penguin-eye right"></div>
+                                    <div class="penguin-beak"></div>
+                                </div>
+                                
+                                <!-- Scarf -->
+                                <div class="penguin-scarf">
+                                    <div class="penguin-scarf-tail"></div>
+                                </div>
+                                
+                                <!-- White Belly -->
+                                <div class="penguin-belly">
+                                    <!-- Mapped LED ring for JS compatibility -->
+                                    <div class="device-led-ring">
+                                        <div class="device-led-glow"></div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Keep old components hidden for JS fallback -->
+                                <div class="device-speaker" style="display: none;"></div>
+                                <div class="device-wood-base" style="display: none;"></div>
+                            </div>
+                            <!-- Shadow -->
+                            <div class="device-egg-shadow"></div>
+
+                            <!-- Hardware Telemetry Monitor -->
+                            <div class="sim-monitor-card">
+                                <div class="sim-monitor-header">
+                                    <span>聯發科 Genio 遙測</span>
+                                    <span id="monitor-mode-badge" style="color: var(--accent-teal);">離線(Edge)模式</span>
+                                </div>
+                                <!-- CPU -->
+                                <div class="monitor-row">
+                                    <div class="monitor-label">
+                                        <span>Genio CPU 負載</span>
+                                        <span class="monitor-val" id="monitor-cpu-val">0%</span>
+                                    </div>
+                                    <div class="monitor-bar-bg">
+                                        <div class="monitor-bar-fill" id="monitor-cpu-bar" style="background: linear-gradient(to right, #38bdf8, #818cf8);"></div>
+                                    </div>
+                                </div>
+                                <!-- NPU -->
+                                <div class="monitor-row">
+                                    <div class="monitor-label">
+                                        <span>NeuroPilot NPU</span>
+                                        <span class="monitor-val" id="monitor-npu-val">0%</span>
+                                    </div>
+                                    <div class="monitor-bar-bg">
+                                        <div class="monitor-bar-fill" id="monitor-npu-bar" style="background: linear-gradient(to right, #f472b6, #db2777);"></div>
+                                    </div>
+                                </div>
+                                <!-- battery -->
+                                <div class="monitor-row">
+                                    <div class="monitor-label">
+                                        <span>剩餘電量</span>
+                                        <span class="monitor-val" id="monitor-bat-val">96%</span>
+                                    </div>
+                                    <div class="monitor-bar-bg">
+                                        <div class="monitor-bar-fill" id="monitor-bat-bar" style="background: linear-gradient(to right, #4ade80, #16a34a); width: 96%;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Interactive chat panel -->
+                        <div class="sim-chat-col">
+                            <div class="sim-chat-header">
+                                <div class="sim-chat-title">
+                                    <span class="sim-chat-dot"></span>
+                                    模擬伴讀現場：阿明與說說學伴
+                                </div>
+                                <span style="font-size: 11px; color: var(--text-muted);">鷹架式引導對話</span>
+                            </div>
+
+                            <!-- Chat bubbles history -->
+                            <div class="sim-chat-history" id="sim-chat-container">
+                                <!-- Dynamically populated by JS -->
+                            </div>
+
+                            <!-- Action Bar -->
+                            <div class="sim-chat-actions">
+                                <span class="sim-step-text" id="sim-step-indicator">回合：0 / 5</span>
+                                <div style="display: flex; gap: 12px;">
+                                    <button class="btn-sim-reset" onclick="resetSimulator()">重新啟動</button>
+                                    <button class="btn-sim-next" id="btn-sim-next" onclick="nextSimulatorStep()">下一回合 (Next) ➡️</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 頁籤二：教師智慧助教平台 -->
+                <div class="demo-tab-panel" id="dash-panel">
+                    <div class="dashboard-layout">
+                        <!-- Left: Student List -->
+                        <div class="dash-students-col">
+                            <span class="dash-students-title">秀林國小 四年甲班</span>
+                            <!-- Student list items -->
+                            <div class="student-list-item active" onclick="selectStudentData('阿明', this)">
+                                <span class="student-item-name">陳阿明 🌟</span>
+                                <span class="student-item-level level-c">待加強 C</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('小雅', this)">
+                                <span class="student-item-name">林小雅</span>
+                                <span class="student-item-level level-a">通過 A</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('阿華', this)">
+                                <span class="student-item-name">張阿華</span>
+                                <span class="student-item-level level-a">通過 A</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('小美', this)">
+                                <span class="student-item-name">王小美</span>
+                                <span class="student-item-level level-a">通過 A</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('志明', this)">
+                                <span class="student-item-name">李志明</span>
+                                <span class="student-item-level level-b">通過 B</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('小芳', this)">
+                                <span class="student-item-name">許小芳</span>
+                                <span class="student-item-level level-b">加強 B</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('阿信', this)">
+                                <span class="student-item-name">曾阿信</span>
+                                <span class="student-item-level level-b">加強 B</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('小光', this)">
+                                <span class="student-item-name">周小光</span>
+                                <span class="student-item-level level-c">待加強 C</span>
+                            </div>
+                        </div>
+
+                        <!-- Right: Details panel -->
+                        <div class="dash-details-col">
+                            
+                            <!-- Stats bar -->
+                            <div class="dash-stats-row">
+                                <div class="dash-mini-card">
+                                    <span class="dash-mini-title">學習扶助學生數</span>
+                                    <span class="dash-mini-val">8 人</span>
+                                    <span class="dash-mini-footer" style="color: var(--accent-teal);">口說開口率 100%</span>
+                                </div>
+                                <div class="dash-mini-card">
+                                    <span class="dash-mini-title">本月互動總次數</span>
+                                    <span class="dash-mini-val" id="dash-class-interactions">156 次</span>
+                                    <span class="dash-mini-footer">▲ 23% 較上月成長</span>
+                                </div>
+                                <div class="dash-mini-card">
+                                    <span class="dash-mini-title">平均信心指數</span>
+                                    <span class="dash-mini-val">72 / 100</span>
+                                    <span class="dash-mini-footer">▲ 15分 焦慮顯著下降</span>
+                                </div>
+                                <div class="dash-mini-card">
+                                    <span class="dash-mini-title">學扶預估通過率</span>
+                                    <span class="dash-mini-val">75%</span>
+                                    <span class="dash-mini-footer">▲ 20% 入學前相比</span>
+                                </div>
+                            </div>
+
+                            <!-- Radar and Diagnostic text -->
+                            <div class="dash-workplace-grid">
+                                <!-- Radar Card -->
+                                <div class="dash-panel-card">
+                                    <div class="dash-card-header">
+                                        <span class="dash-card-title">學童英語綜合維度能力圖</span>
+                                        <span style="font-size: 9px; color: var(--text-muted);">SVG 向量動態雷達圖</span>
+                                    </div>
+                                    <div class="radar-svg-space">
+                                        <!-- Interactive SVG Radar -->
+                                        <svg width="180" height="180" viewBox="0 0 200 200" style="overflow: visible;">
+                                            <!-- Pentagon grids -->
+                                            <polygon points="100,20 176,75 147,165 53,165 24,75" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+                                            <polygon points="100,40 157,81 135,150 65,150 43,81" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+                                            <polygon points="100,60 138,87 123,135 77,135 62,87" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+                                            <polygon points="100,80 119,93 111,120 89,120 81,93" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+                                            
+                                            <!-- Axes -->
+                                            <line x1="100" y1="100" x2="100" y2="20" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                                            <line x1="100" y1="100" x2="176" y2="75" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                                            <line x1="100" y1="100" x2="147" y2="165" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                                            <line x1="100" y1="100" x2="53" y2="165" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                                            <line x1="100" y1="100" x2="24" y2="75" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                                            
+                                            <!-- Axis Labels -->
+                                            <text x="100" y="14" text-anchor="middle" font-size="8" font-weight="700" fill="white">發音準確</text>
+                                            <text x="182" y="77" text-anchor="start" font-size="8" font-weight="700" fill="white">流暢度</text>
+                                            <text x="154" y="174" text-anchor="start" font-size="8" font-weight="700" fill="white">字彙量</text>
+                                            <text x="46" y="174" text-anchor="end" font-size="8" font-weight="700" fill="white">句型掌握</text>
+                                            <text x="18" y="77" text-anchor="end" font-size="8" font-weight="700" fill="white">學習動機</text>
+                                            
+                                            <!-- Class Average (Teal dashed) -->
+                                            <polygon points="100,45 152,82 131,146 82,132 54,92" fill="none" stroke="rgba(20, 184, 166, 0.4)" stroke-dasharray="3,3" stroke-width="1.5"/>
+                                            
+                                            <!-- Selected Student Polygon (Dynamic Neon Orange) -->
+                                            <!-- Default: 阿明 (陳阿明) -->
+                                            <polygon points="100,68 129,91 118,126 89,120 81,93" fill="rgba(249, 115, 22, 0.2)" stroke="var(--accent-orange)" stroke-width="2.5" id="radar-polygon" style="transition: var(--transition-smooth); filter: drop-shadow(0 0 4px var(--accent-orange-glow));"/>
+                                        </svg>
+                                    </div>
+                                </div>
+
+                                <!-- Diagnostic Card -->
+                                <div class="dash-panel-card" style="border-left: 4px solid var(--accent-orange);" id="diag-sidebar-card">
+                                    <div class="diag-profile-row">
+                                        <div class="diag-avatar" id="diag-card-avatar">明</div>
+                                        <div class="diag-meta">
+                                            <h3 id="diag-card-name">陳阿明</h3>
+                                            <p id="diag-card-desc">四年級 (9 歲) · 偏鄉學習扶助加強對象</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="diag-sections">
+                                        <div class="diag-section-item">
+                                            <span class="diag-section-label">🔍 AI 學習成效診斷報告</span>
+                                            <p class="diag-section-text" id="diag-card-strengths"><strong>核心優勢：</strong>阿明在「說說學伴」的對話中展現出優秀的單字記憶力。對於常用生活單字（如食物、交通工具）能快速理解並開口回應。</p>
+                                            <p class="diag-section-text" id="diag-card-weaknesses" style="margin-top: 4px;"><strong>待改善點：</strong>母音 /æ/（如 apple）與 /ɛ/ 容易混淆，且句型結構完整度不足，常以「中文主體 + 英文單字」交雜回應，尚難自主組織完整句子。</p>
+                                        </div>
+                                        <div class="diag-section-item">
+                                            <span class="diag-section-label">💡 AI 差異化教學與輔導建議</span>
+                                            <div class="diag-section-box" id="diag-card-suggestions">
+                                                林老師，阿明對食物與水果主題興趣極高。建議引導他套用「I like to eat...」句型。每天課後利用說說學伴練習5分鐘包含/æ/的短句，同儕安排林小雅（發音優異）與他共學。
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- SVG Trend Line Card (Spans full width) -->
+                                <div class="dash-panel-card dash-trend-card">
+                                    <div class="dash-card-header" style="margin-bottom: 8px;">
+                                        <span class="dash-card-title">學力成長趨勢 (第 1 週 至 第 4 週)</span>
+                                        <span style="font-size: 10px; color: var(--text-muted);">🔵 班級平均  🔴 個人表現</span>
+                                    </div>
+                                    <div class="trend-svg-container">
+                                        <svg width="100%" height="100%" viewBox="0 0 600 80" preserveAspectRatio="none" style="overflow: visible;">
+                                            <!-- Grids -->
+                                            <line x1="40" y1="10" x2="560" y2="10" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+                                            <line x1="40" y1="35" x2="560" y2="35" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+                                            <line x1="40" y1="60" x2="560" y2="60" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+                                            
+                                            <!-- X Axis Labels -->
+                                            <text x="70" y="74" font-size="8" fill="var(--text-muted)" text-anchor="middle">第一週</text>
+                                            <text x="210" y="74" font-size="8" fill="var(--text-muted)" text-anchor="middle">第二週</text>
+                                            <text x="350" y="74" font-size="8" fill="var(--text-muted)" text-anchor="middle">第三週</text>
+                                            <text x="490" y="74" font-size="8" fill="var(--text-muted)" text-anchor="middle">第四週 (本週)</text>
+                                            
+                                            <!-- Class Average path (Teal) -->
+                                            <path d="M 70 50 L 210 44 L 350 36 L 490 30" fill="none" stroke="var(--accent-teal)" stroke-width="2" stroke-linecap="round"/>
+                                            <circle cx="70" cy="50" r="2.5" fill="var(--accent-teal)"/>
+                                            <circle cx="210" cy="44" r="2.5" fill="var(--accent-teal)"/>
+                                            <circle cx="350" cy="36" r="2.5" fill="var(--accent-teal)"/>
+                                            <circle cx="490" cy="30" r="2.5" fill="var(--accent-teal)"/>
+                                            
+                                            <!-- Student path (Orange) -->
+                                            <path d="M 70 60 L 210 56 L 350 50 L 490 44" fill="none" stroke="var(--accent-orange)" stroke-width="2.5" stroke-linecap="round" id="trend-student-path" style="transition: var(--transition-smooth);"/>
+                                            <circle cx="70" cy="60" r="3" fill="var(--accent-orange)" id="trend-student-c1" style="transition: var(--transition-smooth);"/>
+                                            <circle cx="210" cy="56" r="3" fill="var(--accent-orange)" id="trend-student-c2" style="transition: var(--transition-smooth);"/>
+                                            <circle cx="350" cy="50" r="3" fill="var(--accent-orange)" id="trend-student-c3" style="transition: var(--transition-smooth);"/>
+                                            <circle cx="490" cy="44" r="3" fill="var(--accent-orange)" id="trend-student-c4" style="transition: var(--transition-smooth);"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- 6. 雙大普惠情境展示區 (The Inclusive Scenarios) -->
+    <section class="section-container" id="scenarios">
+        <div class="section-header">
+            <span class="section-tag">落地方案 (Scenarios)</span>
+            <div class="section-title">
+                <h2>雙大普惠應用場景實證</h2>
+            </div>
+            <p class="section-desc">「說說學伴」不只是客廳的語音伴讀，更是融入學校學扶課堂與城鄉社區共融的普惠科技載體。</p>
+        </div>
+
+        <div class="scenarios-grid">
+            <!-- 1 -->
+            <div class="glass-card scenario-card">
+                <div class="scenario-img-box">
+                    <img src="./images/usage_scenario_classroom.png" alt="偏鄉學扶課堂" onerror="this.src='https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?q=80&w=800'">
+                    <span class="scenario-img-tag">情境一</span>
+                </div>
+                <div class="scenario-info">
+                    <h3>偏鄉學扶課堂的「無壓力伴讀鷹架」</h3>
+                    <p>
+                        在花蓮縣秀林國小等試辦點中，學童在課堂上抱著說說學伴，在完全沒有螢幕干擾和分數壓力的環境下，一對一跟著 AI 說英文。邊緣 AI 排除網路卡頓的挫折感，自動生成的差異化報表也將教師從手動派課與分析進度的行政瑣事中解脫，實踐真正的高效因材施教。
+                    </p>
+                    <div class="scenario-highlights">
+                        <div class="scen-high-item">
+                            <span>零焦慮開口</span>
+                            <p>無錯誤紅字，AI 溫和示範中英雙語引導</p>
+                        </div>
+                        <div class="scen-high-item">
+                            <span>減負 80% 行政</span>
+                            <p>助教自動診斷，產出班級學力分析表</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- 2 -->
+            <div class="glass-card scenario-card">
+                <div class="scenario-img-box">
+                    <img src="./images/cross_generation_scene.png" alt="跨世代教育共創" onerror="this.src='https://images.unsplash.com/photo-1516627145497-ae6968895b74?q=80&w=800'">
+                    <span class="scenario-img-tag">情境二</span>
+                </div>
+                <div class="scenario-info">
+                    <h3>跨世代教育共創「在地記憶雙語繪本」</h3>
+                    <p>
+                        在社區關懷據點，美濃客家阿嬤用母語對著說說學伴講述古老的菸樓歷史。學伴採集語音上傳 AWS，AI 自動翻譯重構成中英雙語大綱。學童小雅隨後在學伴的鷹架指引下，嘗試用英文改寫阿嬤的故事。最終共創一本富有溫度的「AI 雙語有聲繪本」，將科技轉化為社區文化傳承與流動的媒介。
+                    </p>
+                    <div class="scenario-highlights">
+                        <div class="scen-high-item">
+                            <span>有溫度的任務</span>
+                            <p>學英語是為了說阿嬤的故事，建立真實動機</p>
+                        </div>
+                        <div class="scen-high-item">
+                            <span>敘事文化永續</span>
+                            <p>延緩長者老化，在地記憶雙語化保存並傳承</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 7. 資源下載與參考文獻區 (Downloads & References) -->
+    <section class="section-container" id="downloads" style="margin-bottom: 40px;">
+        <div class="section-header">
+            <span class="section-tag">資源共享 (Resources)</span>
+            <div class="section-title">
+                <h2>專案文獻與資源下載中心</h2>
+            </div>
+            <p class="section-desc">評審可在此處一鍵下載說說學伴專案的全部核心研發文件、原始碼及學術文獻。</p>
+        </div>
+
+        <div class="resources-layout">
+            <!-- Left downloads -->
+            <div class="downloads-grid">
+                <!-- 1 -->
+                <div class="download-item-card">
+                    <div class="download-info-header">
+                        <span class="download-icon">📄</span>
+                        <span class="download-size-tag">284 KB</span>
+                    </div>
+                    <div class="download-text">
+                        <h3>痛點研究與系統方案報告書 (PDF)</h3>
+                        <p>35頁完整論文研究報告，剖析偏鄉三重困境、雙網混成推論數學架構、以及普惠社會價值。</p>
+                    </div>
+                                                            <a href="./臺灣普惠科技應用痛點研究_說說學伴.pdf" class="btn-download-action" download>下載 PDF 原檔</a>
+                    <button class="btn-secondary" style="margin-top: 8px; font-size: 13px; padding: 10px; width: 100%; justify-content: center; border-radius: 12px;" onclick="openReader('paper')">📖 在線閱讀痛點研究報告</button>
+                </div>
+                <!-- 3 -->
+                <div class="download-item-card">
+                    <div class="download-info-header">
+                        <span class="download-icon">⚙️</span>
+                        <span class="download-size-tag">14.1 KB</span>
+                    </div>
+                    <div class="download-text">
+                        <h3>專案技術棧與開發規格書 (SPEC)</h3>
+                        <p>研發專用 SPEC 文件，詳解聯發科 NPU 量化編譯指令、Ollama 載入參數及 API payload。</p>
+                    </div>
+                                                            <a href="./專案技術棧與開發規格書.md" class="btn-download-action" download>下載 Markdown 規格書</a>
+                    <button class="btn-secondary" style="margin-top: 8px; font-size: 13px; padding: 10px; width: 100%; justify-content: center; border-radius: 12px;" onclick="openReader('spec')">📖 在線閱讀技術規格書</button>
+                </div>
+            </div>
+
+            <!-- Right references -->
+            <div class="glass-card references-box">
+                <span class="references-title">📚 核心參考文獻</span>
+                <div class="references-list">
+                    <div class="ref-item">教育部國教署「中小學數位學習精進方案」生生用平板成果報告(2022-2025)</div>
+                    <div class="ref-item">臺灣教育部學習扶助（補救教學）篩選測驗與國中教育會考學力落差分析</div>
+                    <div class="ref-item">教育部「Cool English 英語線上學習平台」酷英網 AI 功能與大專專區建置指引</div>
+                    <div class="ref-item">聯發科技 (MediaTek) Genio 520 / MT8365 NPU 運算元與 NeuroPilot 8 SDK 技術手冊</div>
+                    <div class="ref-item">AWS Bedrock 基礎模型(Claude 3.5 Sonnet)推論API與檢索增強生成(RAG)架構指南</div>
+                    <div class="ref-item">語言教育學：鷹架引導理論 (Scaffolding Theory) 在第二語言習得(SLA)中的應用</div>
+                    <div class="ref-item">均一教育基金會：永續城鄉與教育均等之城鄉教育數位落差白皮書</div>
+                    <div class="ref-item">賽微科技：邊緣運算語音聲控辨識(離線 ASR)解決方案</div>
+                    <div class="ref-item">Ollama & Qwen 1.7B/2.5-Instruct 邊緣物聯網小型離線 LLM 量化部署效能測試報告</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 9. 頁尾 (Footer) -->
+    <footer class="app-footer">
+        <div class="footer-row">
+            <div class="footer-left">
+                <span>🤖 說說學伴 TalkyBuddy 專案開發組</span>
+            </div>
+            <div class="footer-right">
+                <a href="#" class="footer-link">回到頂端</a>
+                <a href="#interactive-hub" class="footer-link">互動展示</a>
+            </div>
+        </div>
+        <div class="footer-bottom-text">
+            📋 本展示平台由「說說學伴」智慧教學大腦自動生成 | 運算使能：聯發科 Genio 520 NPU + AWS Bedrock<br>
+            2026 雲湧智生：臺灣生成式 AI 應用黑客松競賽 · 晶創未來組
+        </div>
+    </footer>
+
+
+    <!-- ==========================================
+       12. 互動控制邏輯 (JavaScript Logic)
+       ========================================== -->
+    <script>
+        /* ==========================================
+           A. 全域粒子背景動畫 (Particle Canvas)
+           ========================================== */
+        const canvas = document.getElementById('particle-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let particles = [];
+        const maxParticles = 60;
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                this.size = Math.random() * 2.5 + 0.5;
+                this.speedX = Math.random() * 0.4 - 0.2;
+                this.speedY = Math.random() * 0.4 - 0.2;
+                this.opacity = Math.random() * 0.4 + 0.1;
+            }
+
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+
+                if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
+                    this.reset();
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function initParticles() {
+            particles = [];
+            for (let i = 0; i < maxParticles; i++) {
+                particles.push(new Particle());
+            }
+        }
+
+        function animateParticles() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            requestAnimationFrame(animateParticles);
+        }
+
+        initParticles();
+        animateParticles();
+
+        /* ==========================================
+           B. 導覽列 Scrollspy & 錨點平滑滾動
+           ========================================== */
+        const navLinks = document.querySelectorAll('.nav-link');
+        const sections = document.querySelectorAll('section');
+
+        window.addEventListener('scroll', () => {
+            let current = 'hero';
+            sections.forEach(sec => {
+                const secTop = sec.offsetTop;
+                const secHeight = sec.clientHeight;
+                if (pageYOffset >= (secTop - 120)) {
+                    current = sec.getAttribute('id');
+                }
+            });
+
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('data-sec') === current) {
+                    link.classList.add('active');
+                }
+            });
+        });
+
+        /* ==========================================
+           C. 技術架構 SVG 在線/離線狀態切換
+           ========================================== */
+        function setArchState(state) {
+            const btnOffline = document.getElementById('btn-state-offline');
+            const btnOnline = document.getElementById('btn-state-online');
+            
+            const edgeBox = document.getElementById('svg-edge-box');
+            const cloudBox = document.getElementById('svg-cloud-box');
+            
+            const glowOfflineLoop = document.getElementById('svg-glow-offline-loop');
+            const glowChildEdge = document.getElementById('svg-glow-child-edge');
+            const glowEdgeChild = document.getElementById('svg-glow-edge-child');
+            
+            const glowEdgeCloud = document.getElementById('svg-glow-edge-cloud');
+            const glowCloudEdge = document.getElementById('svg-glow-cloud-edge');
+            
+            const monitorModeBadge = document.getElementById('monitor-mode-badge');
+
+            if (state === 'offline') {
+                btnOffline.classList.add('active');
+                btnOnline.classList.remove('active');
+                
+                edgeBox.classList.add('active-edge');
+                edgeBox.classList.remove('active-cloud');
+                cloudBox.classList.remove('active-cloud');
+                
+                glowOfflineLoop.classList.add('active');
+                glowChildEdge.classList.add('active');
+                glowEdgeChild.classList.add('active');
+                
+                glowEdgeCloud.classList.remove('active');
+                glowCloudEdge.classList.remove('active');
+                
+                monitorModeBadge.innerText = "離線(Edge)模式";
+                monitorModeBadge.style.color = "var(--accent-teal)";
+            } else {
+                btnOnline.classList.add('active');
+                btnOffline.classList.remove('active');
+                
+                edgeBox.classList.remove('active-edge');
+                edgeBox.classList.add('active-cloud');
+                cloudBox.classList.add('active-cloud');
+                
+                glowOfflineLoop.classList.remove('active');
+                
+                glowEdgeCloud.classList.add('active');
+                glowCloudEdge.classList.add('active');
+                
+                monitorModeBadge.innerText = "在線(Cloud)模式";
+                monitorModeBadge.style.color = "var(--accent-purple)";
+            }
+        }
+
+        // Initialize state
+        setArchState('offline');
+
+        /* ==========================================
+           D. 互動體驗頁籤切換 (Tabs Control)
+           ========================================== */
+        function switchDemoTab(btn, panelId) {
+            const tabs = document.querySelectorAll('.demo-tab-button');
+            const panels = document.querySelectorAll('.demo-tab-panel');
+            
+            tabs.forEach(t => t.classList.remove('active'));
+            panels.forEach(p => p.classList.remove('active'));
+            
+            btn.classList.add('active');
+            document.getElementById(panelId).classList.add('active');
+        }
+
+        /* ==========================================
+           E. 學生端實體玩偶模擬器對話邏輯
+           ========================================== */
+        const chatSteps = [
+            {
+                sender: 'buddy',
+                name: '說說學伴',
+                text: '（暖黃色呼吸燈微閃）你好呀，阿明！今天在學校有沒有聽流行歌呢？我想跟你分享一個關於森林怪獸的小故事喔！',
+                cpu: 10, npu: 5, led: 'thinking', duration: 1500
+            },
+            {
+                sender: 'student',
+                name: '阿明',
+                text: '說說學伴，我想吃 apple。',
+                cpu: 50, npu: 60, led: 'listening', duration: 1000
+            },
+            {
+                sender: 'buddy',
+                name: '說說學伴',
+                text: '哇，阿明肚子餓想吃蘋果了！跟著我大聲唸一遍好嗎：I want to eat an apple.',
+                cpu: 85, npu: 90, led: 'speaking', duration: 2000
+            },
+            {
+                sender: 'student',
+                name: '阿明',
+                text: 'I want to eat... an apple.',
+                cpu: 60, npu: 75, led: 'listening', duration: 1200
+            },
+            {
+                sender: 'buddy',
+                name: '說說學伴',
+                text: '太棒了！你說得非常完整！apple 的 /æ/ 音唸得好大聲，真有自信！我們再來挑戰一個草莓好不好？跟著我唸：strawberry...',
+                cpu: 88, npu: 85, led: 'speaking', duration: 2200
+            }
+        ];
+
+        let currentSimStep = 0;
+        const chatContainer = document.getElementById('sim-chat-container');
+        const stepIndicator = document.getElementById('sim-step-indicator');
+        const btnSimNext = document.getElementById('btn-sim-next');
+
+        const eggModel = document.getElementById('sim-egg-model');
+        const cpuValText = document.getElementById('monitor-cpu-val');
+        const npuValText = document.getElementById('monitor-npu-val');
+        const cpuBar = document.getElementById('monitor-cpu-bar');
+        const npuBar = document.getElementById('monitor-npu-bar');
+
+        function appendChatBubble(step) {
+            const row = document.createElement('div');
+            row.className = `chat-bubble-row ${step.sender}`;
+            
+            const content = document.createElement('div');
+            content.className = 'chat-bubble-content';
+            
+            const senderSpan = document.createElement('div');
+            senderSpan.className = 'chat-bubble-sender';
+            senderSpan.innerText = step.name;
+            
+            const textSpan = document.createElement('span');
+            textSpan.innerText = step.text;
+            
+            content.appendChild(senderSpan);
+            content.appendChild(textSpan);
+
+            // Add SVG audio waveform for buddy voice response
+            if (step.sender === 'buddy') {
+                const waveContainer = document.createElement('div');
+                waveContainer.className = 'chat-waveform-container';
+                
+                const playBtn = document.createElement('button');
+                playBtn.className = 'waveform-btn';
+                playBtn.innerHTML = '🔊 語音播放';
+                
+                const waveVisual = document.createElement('div');
+                waveVisual.className = 'waveform-visual active';
+                waveVisual.innerHTML = `
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                `;
+                
+                waveContainer.appendChild(playBtn);
+                waveContainer.appendChild(waveVisual);
+                content.appendChild(waveContainer);
+
+                // Stop wave after duration
+                setTimeout(() => {
+                    waveVisual.classList.remove('active');
+                }, step.duration);
+            }
+            
+            row.appendChild(content);
+            chatContainer.appendChild(row);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function updateTelemetry(cpu, npu, led) {
+            cpuValText.innerText = `${cpu}%`;
+            npuValText.innerText = `${npu}%`;
+            cpuBar.style.width = `${cpu}%`;
+            npuBar.style.width = `${npu}%`;
+            
+            eggModel.classList.remove('speaking', 'listening', 'thinking');
+            if (led) {
+                eggModel.classList.add(led);
+            }
+        }
+
+        function nextSimulatorStep() {
+            if (currentSimStep < chatSteps.length) {
+                const step = chatSteps[currentSimStep];
+                appendChatBubble(step);
+                updateTelemetry(step.cpu, step.npu, step.led);
+                
+                currentSimStep++;
+                stepIndicator.innerText = `回合：${currentSimStep} / 5`;
+                
+                if (currentSimStep === chatSteps.length) {
+                    // Show final report popup inside chat
+                    setTimeout(() => {
+                        const scoreCard = document.createElement('div');
+                        scoreCard.className = 'sim-score-card';
+                        scoreCard.innerHTML = `
+                            <div class="sim-score-header">🎯 本回合學習成效診斷 (邊緣 NPU 即時算力生成)</div>
+                            <div class="sim-score-grid">
+                                <div class="sim-score-item">
+                                    <div class="sim-score-label">開口信心</div>
+                                    <div class="sim-score-val color-up">▲ 18%</div>
+                                </div>
+                                <div class="sim-score-item">
+                                    <div class="sim-score-label">發音準確</div>
+                                    <div class="sim-score-val" style="color: var(--accent-orange);">75 分</div>
+                                </div>
+                                <div class="sim-score-item">
+                                    <div class="sim-score-label">同儕推薦</div>
+                                    <div class="sim-score-val" style="color: var(--accent-teal);">小雅共學</div>
+                                </div>
+                            </div>
+                        `;
+                        chatContainer.appendChild(scoreCard);
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                        
+                        // Update class total interactions
+                        document.getElementById('dash-class-interactions').innerText = "157 次";
+                        document.getElementById('dash-class-interactions').style.color = "var(--accent-orange)";
+                    }, 800);
+
+                    btnSimNext.disabled = true;
+                    btnSimNext.innerText = "互動結束";
+                }
+            }
+        }
+
+        function resetSimulator() {
+            chatContainer.innerHTML = '';
+            currentSimStep = 0;
+            stepIndicator.innerText = `回合：0 / 5`;
+            btnSimNext.disabled = false;
+            btnSimNext.innerText = "下一回合 (Next) ➡️";
+            updateTelemetry(0, 0, null);
+            // Trigger greeting step automatically
+            nextSimulatorStep();
+        }
+
+        // Start simulator automatically
+        resetSimulator();
+
+        /* ==========================================
+           F. 教師智慧助教平台學生數據連動
+           ========================================== */
+        const studentDatabase = {
+            '阿明': {
+                avatar: '明',
+                name: '陳阿明',
+                desc: '四年級 (9 歲) · 偏鄉學習扶助加強對象',
+                level: '待加強 C',
+                levelClass: 'level-c',
+                strengths: '阿明在「說說學伴」的對話中展現出優秀的單字記憶力。對於常用生活單字（如食物、交通工具）能快速理解並開口回應。',
+                weaknesses: '母音 /æ/（如 apple）與 /ɛ/ 容易混淆，且句型結構完整度不足，常以「中文主體 + 英文單字」交雜回應，尚難自主組織完整句子。',
+                suggestions: '林老師，阿明對食物與水果主題興趣極高。建議引導他套用「I like to eat...」句型。每天課後利用說說學伴練習5分鐘包含/æ/的短句，同儕安排林小雅（發音優異）與他共學。',
+                radar: '100,68 129,91 118,126 89,120 81,93',
+                trend: {
+                    path: 'M 70 60 L 210 56 L 350 50 L 490 44',
+                    c1: [70, 60], c2: [210, 56], c3: [350, 50], c4: [490, 44]
+                }
+            },
+            '小雅': {
+                avatar: '雅',
+                name: '林小雅',
+                desc: '四年級 (9 歲) · 英語口說優良學童',
+                level: '通過 A',
+                levelClass: 'level-a',
+                strengths: '小雅語感極佳，發音精準且音調自然。在說說學伴的聊天互動中能自如地使用簡單完整句型與 AI 對話，毫無開口焦慮。',
+                weaknesses: '較少使用複合型連接句（如 because, but 等連詞），詞彙庫多集中在日常主題，可開始擴展學科英語字彙。',
+                suggestions: '林老師，小雅已具備高度獨立對話能力。建議在說說學伴後台為她開啟「英語故事描述模式」，引導她用 3 句話描述主題，並可安排她作為「同儕導師」，帶領阿明共學。',
+                radar: '100,24 172,77 142,160 120,138 72,77',
+                trend: {
+                    path: 'M 70 36 L 210 28 L 350 20 L 490 14',
+                    c1: [70, 36], c2: [210, 28], c3: [350, 20], c4: [490, 14]
+                }
+            },
+            '阿華': {
+                avatar: '華',
+                name: '張阿華',
+                desc: '四年級 (10 歲) · 英語穩定發展對象',
+                level: '通過 A',
+                levelClass: 'level-a',
+                strengths: '阿華口說流暢度佳，主動發問意願高。對於說說學伴所提出之流行遊戲（如 Minecraft）主題對話表現出極高的詞彙理解。',
+                weaknesses: '名詞單複數與動詞第三人稱單數形態在口說中偶有遺漏。發音輕重音掌握尚待加強。',
+                suggestions: '建議利用說說學伴之「趣味跟讀任務」加強詞尾發音，並多練習「I have... / He has...」句型。',
+                radar: '100,35 158,83 138,154 114,130 76,80',
+                trend: {
+                    path: 'M 70 46 L 210 40 L 350 32 L 490 26',
+                    c1: [70, 46], c2: [210, 40], c3: [350, 32], c4: [490, 26]
+                }
+            },
+            '小美': {
+                avatar: '美',
+                name: '王小美',
+                desc: '四年級 (9 歲) · 語意理解優良對象',
+                level: '通過 A',
+                levelClass: 'level-a',
+                strengths: '聽力理解力極佳，對說說學伴的提問能快速給予合乎邏輯的答覆。單字拼讀底子扎實。',
+                weaknesses: '發音時音量偏小，語調較平淡平板。對於長句的發音流暢度與斷句點掌握較弱。',
+                suggestions: '請林老師在課堂中給予小美正面肯定以提升信心，引導她多練習語音語調起伏，並搭配說說學伴的動態 LED 呼吸光環進行跟讀挑戰。',
+                radar: '100,38 155,85 137,152 112,129 79,83',
+                trend: {
+                    path: 'M 70 48 L 210 42 L 350 35 L 490 28',
+                    c1: [70, 48], c2: [210, 42], c3: [350, 35], c4: [490, 28]
+                }
+            },
+            '志明': {
+                avatar: '明',
+                name: '李志明',
+                desc: '四年級 (9 歲) · 口說進步顯著學童',
+                level: '通過 B',
+                levelClass: 'level-b',
+                strengths: '使用說說學伴三週後，志明的口說焦慮明顯下降，已經能大聲說出短句。發音清晰度中等偏上。',
+                weaknesses: '字彙量稍微不足，經常需要 AI 鷹架混合中英引導。聽力偶有漏聽關鍵字的情況。',
+                suggestions: '利用說說學伴後台鎖定「生活場景單字卡」單元，配合課堂複習。鼓勵志明每天嘗試解鎖一個語音徽章。',
+                radar: '100,42 152,87 132,148 108,126 81,85',
+                trend: {
+                    path: 'M 70 55 L 210 48 L 350 40 L 490 34',
+                    c1: [70, 55], c2: [210, 48], c3: [350, 40], c4: [490, 34]
+                }
+            },
+            '小芳': {
+                avatar: '芳',
+                name: '許小芳',
+                desc: '四年級 (10 歲) · 學扶重點追蹤學童',
+                level: '加強 B',
+                levelClass: 'level-b',
+                strengths: '小芳發音準確度良好，尤其是母音發音清晰。在熟悉的故事主題中能被引導說出簡單單字。',
+                weaknesses: '口說信心十分脆弱。只要單字較長即退縮不願嘗試，課堂上完全不敢對人開口。',
+                suggestions: '目前說說學伴的實體物理陪伴對小芳極具安全感。請讓小芳在無人打擾的安靜角落獨立與學伴對話，以小步快跑（2分鐘任務）累積成就感。',
+                radar: '100,48 145,90 128,144 104,123 85,88',
+                trend: {
+                    path: 'M 70 58 L 210 52 L 350 48 L 490 40',
+                    c1: [70, 58], c2: [210, 52], c3: [350, 48], c4: [490, 40]
+                }
+            },
+            '阿信': {
+                avatar: '信',
+                name: '曾阿信',
+                desc: '四年級 (9 歲) · 學習動機待引導學童',
+                level: '加強 B',
+                levelClass: 'level-b',
+                strengths: '單字理解迅速，對科技裝置的操作興趣濃厚。若對話主題切入他熱愛的動漫角色，反應會非常靈敏。',
+                weaknesses: '注意力極易渙散。使用平板時常切換畫面分心，且發音急促，常導致辨識晶片判斷漏字。',
+                suggestions: '說說學伴的無螢幕設計可強制阿信專注。建議老師設定單次對話限時為15分鐘防沉迷，以確保學習密度。主題多切入動漫與遊戲。',
+                radar: '100,54 139,92 124,138 98,121 88,91',
+                trend: {
+                    path: 'M 70 58 L 210 54 L 350 50 L 490 45',
+                    c1: [70, 58], c2: [210, 54], c3: [350, 50], c4: [490, 45]
+                }
+            },
+            '小光': {
+                avatar: '光',
+                name: '周小光',
+                desc: '四年級 (9 歲) · 學習扶助加強對象',
+                level: '待加強 C',
+                levelClass: 'level-c',
+                strengths: '小光對發聲指令反應正常，認真態度佳。願意跟著裝置大聲發出音節。',
+                weaknesses: '字彙量極度匱乏，語句理解速度慢，開口時有明顯的母語語音干擾（客語腔調混淆）。',
+                suggestions: '需要大量的課堂單字打底。請林老師為小光部署說說學伴「最基礎字母拼讀」單元，並設定語速為慢速（0.8x），給予小光充分的反應時間。',
+                radar: '100,70 125,93 114,124 93,118 87,95',
+                trend: {
+                    path: 'M 70 65 L 210 60 L 350 56 L 490 52',
+                    c1: [70, 65], c2: [210, 60], c3: [350, 56], c4: [490, 52]
+                }
+            }
+        };
+
+        function selectStudentData(key, element) {
+            // Manage active class in list
+            const items = document.querySelectorAll('.student-list-item');
+            element.parentElement.querySelectorAll('.student-list-item').forEach(i => i.classList.remove('active'));
+            element.classList.add('active');
+
+            const data = studentDatabase[key];
+            if (data) {
+                // Update text elements with transitions
+                document.getElementById('diag-card-avatar').innerText = data.avatar;
+                document.getElementById('diag-card-name').innerText = data.name;
+                document.getElementById('diag-card-desc').innerText = data.desc;
+                
+                document.getElementById('diag-card-strengths').innerHTML = `<strong>核心優勢：</strong>${data.strengths}`;
+                document.getElementById('diag-card-weaknesses').innerHTML = `<strong>待改善點：</strong>${data.weaknesses}`;
+                document.getElementById('diag-card-suggestions').innerText = data.suggestions;
+
+                // Update decorative card border based on level
+                const card = document.getElementById('diag-sidebar-card');
+                card.style.borderLeftColor = key === '阿明' || key === '小光' ? 'var(--danger)' : (data.level.includes('A') ? 'var(--success)' : 'var(--warning)');
+
+                // Update SVG Radar polygon points (triggers smooth morphing!)
+                document.getElementById('radar-polygon').setAttribute('points', data.radar);
+                
+                // Update SVG Trend student path and points
+                document.getElementById('trend-student-path').setAttribute('d', data.trend.path);
+                document.getElementById('trend-student-c1').setAttribute('cx', data.trend.c1[0]);
+                document.getElementById('trend-student-c1').setAttribute('cy', data.trend.c1[1]);
+                document.getElementById('trend-student-c2').setAttribute('cx', data.trend.c2[0]);
+                document.getElementById('trend-student-c2').setAttribute('cy', data.trend.c2[1]);
+                document.getElementById('trend-student-c3').setAttribute('cx', data.trend.c3[0]);
+                document.getElementById('trend-student-c3').setAttribute('cy', data.trend.c3[1]);
+                document.getElementById('trend-student-c4').setAttribute('cx', data.trend.c4[0]);
+                document.getElementById('trend-student-c4').setAttribute('cy', data.trend.c4[1]);
+            }
+        }
+    
+
+        /* ==========================================
+           L. 離線閱讀器控制邏輯 (Offline Reader Logic)
+           ========================================== */
+        function openReader(docType) {
+            const modal = document.getElementById(`modal-reader-${docType}`);
+            if (modal) {
+                modal.style.display = 'block';
+                // Trigger reflow for transition
+                modal.offsetHeight;
+                modal.classList.add('active');
+                document.body.style.overflow = 'hidden'; // Lock scroll
+            }
+        }
+        
+        function closeReader(docType) {
+            const modal = document.getElementById(`modal-reader-${docType}`);
+            if (modal) {
+                modal.classList.remove('active');
+                setTimeout(() => {
+                    modal.style.display = 'none';
+                }, 400);
+                document.body.style.overflow = ''; // Restore scroll
+            }
+        }
+        
+        // ESC key to close active readers
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                const activeModals = document.querySelectorAll('.reader-modal.active');
+                activeModals.forEach(modal => {
+                    const id = modal.id.replace('modal-reader-', '');
+                    closeReader(id);
+                });
+            }
+        });
+    
+    </script>
+    
+
+    <!-- 離線文件閱讀器彈窗 (Offline Reader Modals) -->
+    <!-- 1. 痛點研究報告 -->
+    <div class="reader-modal" id="modal-reader-paper">
+        <div class="reader-container">
+            <div class="reader-header">
+                <div class="reader-title-box">
+                    <span class="reader-title-icon">📄</span>
+                    <span class="reader-title">說說學伴 | 臺灣普惠科技應用痛點研究與系統方案報告書</span>
+                </div>
+                <button class="btn-reader-close" onclick="closeReader('paper')">×</button>
+            </div>
+            <div class="reader-body">
+                <article class="reader-content">
+                    <h1>以人本思維重構臺灣城鄉教育落差之普惠科技應用研究</h1>
+
+<h2>——「說說學伴」 實體智能無螢幕伴讀系統方案</h2>
+
+<p><strong>師大酷英團隊</strong></p>
+
+<p><strong>成員：郭泰源</strong><br><strong>　　　王智城</strong><br><strong>　　　李宗哲</strong><br><strong>　　　范鈞淯</strong></p>
+
+<p>---</p>
+
+<h2>摘要</h2>
+
+<p>臺灣社會正面臨前所未有的結構性轉變，其中城鄉教育資源分配不均所導致的「數位落差」與「雙語政策焦慮」，已成為下一個十年最迫切的社會變遷議題之一。本研究以「永續城鄉與教育平等」為唯一聚焦痛點，深入剖析偏鄉國小 3 至 6 年級學習扶助學童在雙語教育推動過程中所面臨的「習得性無助」與「數位鴻溝」困境，並以人本思維為核心，結合國產晶片邊緣運算技術與 AWS 雲端生成式 AI，提出一套名為「說說學伴」 的實體智能無螢幕伴讀系統方案。</p>
+
+<p>本方案以「無螢幕實體伴讀裝置」為核心創新，搭配「雙網混成推論架構」與「鷹架式語伴教學法」，在保障隱私、克服偏鄉斷網限制的前提下，為弱勢學童提供有溫度的 AI 英語學習陪伴，同時減輕基層教師的行政負擔，真正實踐以科技促進教育平權的普惠價值。</p>
+
+<p>---</p>
+
+<h2>第一章　研究背景與問題意識</h2>
+
+<h3>1.1 臺灣社會變遷與教育平等的迫切性</h3>
+
+<p>臺灣社會正經歷多重結構性變遷——超高齡化社會的提前到來、勞動力結構失衡、環境災害風險增加，以及城鄉資源分配不均。在眾多社會議題中，「教育平等」是最具根源性的課題：教育是社會流動的基石，若城鄉間的教育品質持續失衡，將進一步加劇社會階層固化，削弱國家整體競爭力與社會韌性。</p>
+
+<p>「2026 雲湧智生：臺灣生成式 AI 應用黑客松競賽」由臺灣半導體產學研發聯盟（TIARA）等單位聯合發起，其「晶創未來」命題精神在於引導跨領域團隊，運用人文社會思維洞察真實需求，結合生成式 AI 技術與電子數位科技，提出具備社會影響力且能實際落地的普惠科技解決方案。本研究即以此精神為指引，聚焦「永續城鄉與教育平等」單一痛點，深度回應臺灣教育現場最真實的困境。</p>
+
+<h3>1.2 普惠科技的人本精神</h3>
+
+<p>普惠科技（Inclusive Technology）的核心價值在於「人本思維」——科技的設計不應僅追求技術指標的突破，而應優先考量弱勢群體、偏鄉住民及學習低成就學生的使用近便性，消除數位排斥，使技術進步轉化為推動社會公平與教育永續發展的助力。</p>
+
+<p>在本研究中，「人本思維」具體體現為三個設計原則：</p>
+
+<ol>
+  <li><strong>降低使用門檻</strong>：讓不熟悉數位裝置的偏鄉學童「說話即用」，無需操作螢幕選單。</li>
+  <li><strong>消除學習焦慮</strong>：以溫暖的實體陪伴取代冰冷的測驗介面，重建學童的學習自信心。</li>
+  <li><strong>減輕教師負擔</strong>：透過 AI 自動生成教學分析報表，讓教師專注於教學本身。</li>
+</ol>
+---
+
+<h2>第二章　痛點深度剖析：偏鄉雙語教育的三重困境</h2>
+
+<h3>2.1 困境一：雙語政策下的「雙峰現象」</h3>
+
+<p>臺灣自推動雙語教育與「2030 雙語政策」以來，各級學校紛紛加速推動學科全英語授課（EMI）及雙語化教學。然而，基層教學現場卻因此產生極大張力。</p>
+
+<p>由於城鄉之間數位設備與英語陪伴資源的嚴重失衡，偏鄉及經濟弱勢學生因缺乏家庭支持系統，在面臨全英語或雙語學科教學時極易產生挫折感。相較於都會區學生擁有豐富的課後英語補習資源與家庭陪伴，偏鄉學童往往在課堂結束後便失去所有英語接觸的機會，導致學習成就的雙峰化現象日益惡化，甚至引發基層教師與家長團體的強烈反彈。</p>
+
+<p><strong>關鍵數據佐證：</strong></p>
+
+<ul>
+  <li><strong>學力落差巨大</strong>：在英語學習扶助篩選測驗中，偏遠地區國中小學童的未通過率為全國平均的 <strong>1.3 至 2.4 倍</strong>。在國中教育會考中，偏鄉英語達「待加強 (C)」的比例長期高達 <strong>47% 以上</strong>（都會區僅為 23.66% - 32.25%，差距達 <strong>1.78 至 1.90 倍</strong>）。以花蓮縣為例，偏鄉英語待加強比例高達 <strong>74.15%</strong>，是同縣非偏鄉的 <strong>1.75 倍</strong>。</li>
+  <li><strong>師資流動率與短缺</strong>：偏鄉學校常年面臨招聘困難，代理教師比例高達 <strong>20%</strong>，常態性因流動率過高導致學童「每學期都在換英語老師」，且因招考多次無人應聘，普遍存在英語非專長授課（兼任）的斷層問題。</li>
+  <li><strong>硬體齊備但應用真空</strong>：政府在 2022-2025 年推動「生生用平板」方案，累計投入 200 億元、配發 <strong>61 萬台平板</strong>，偏鄉學校已達 <strong>1:1（一人一機）</strong> 的高普及率。然而，受限於斷網痛點，缺乏能在本地運作、支援流暢口說互動的 AI 應用，使大量平板流於播放影片或靜態紙筆化測驗，形成嚴重的「軟體與應用真空」。</li>
+</ul>
+<h3>2.2 困境二：學習低成就學生的「習得性無助」</h3>
+
+<p>在教育部積極推動的「學習扶助（補救教學）」機制中，低成就學生常因自我效能感低落，對傳統紙筆測驗或生硬的線上評量介面產生焦慮，進入抗拒學習的惡性循環。</p>
+
+<p>對於國小 3 至 6 年級（8-12 歲）的偏鄉學扶學童而言，這種「習得性無助」尤為嚴重：</p>
+
+<ul>
+  <li><strong>不敢開口</strong>：害怕發音不標準被同學嘲笑，在課堂上選擇沉默。</li>
+  <li><strong>抗拒螢幕</strong>：傳統數位學習平台的介面設計類似考試，引發焦慮而非興趣。</li>
+  <li><strong>缺乏陪伴</strong>：放學後無人陪伴練習英語口說，學習動機在孤獨中消磨殆盡。</li>
+</ul>
+<h3>2.3 困境三：數位教學工具的瓶頸與教師行政負擔</h3>
+
+<p>教育部委託國立臺灣師範大學建置「Cool English 英語線上學習平台」（酷英網），已累積超過 270 萬註冊用戶，並於 114 年 6 月推出大專專區。平台已具備 AI 功能，如 CoolEBot 聊天機器人與語音辨識系統，是目前臺灣最具規模的英語數位學習資源。</p>
+
+<p>然而，現有工具仍存在以下瓶頸：</p>
+
+| 瓶頸面向 | 具體問題 | 對偏鄉學童的影響 |
+|:---|:---|:---|
+| <strong>網路依賴</strong> | 所有 AI 功能需穩定網路連線 | 偏鄉斷網時工具完全失效 |
+| <strong>螢幕介面</strong> | 純數位互動缺乏物理實體陪伴 | 學童注意力易渙散，缺乏安全感 |
+| <strong>教師負擔</strong> | 派課、追蹤學習進度、分析報表皆需手動操作 | 基層教師行政時間擠壓教學時間 |
+| <strong>互動模式</strong> | 以文字輸入為主，口說練習功能有限 | 無法有效解決「不敢開口」的核心問題 |
+
+<h3>2.4 痛點總結：為什麼需要一個全新的解法？</h3>
+
+<p>綜合以上三重困境，臺灣偏鄉雙語教育的核心矛盾可歸結為：</p>
+
+<blockquote><strong>政策要求學生「開口說英語」，但現有的數位工具無法讓偏鄉學童「安心地開口」。</strong></blockquote>
+
+<p>這個矛盾無法僅靠改良現有平台來解決，而需要一個從「硬體形式」到「互動模式」到「教學法」全面重新思考的創新方案——這正是「說說學伴」誕生的原點。</p>
+
+<p>---</p>
+
+<h2>第三章　解決方案：「說說學伴」系統設計</h2>
+
+<h3>3.1 方案定位與核心理念</h3>
+
+<p>「說說學伴」不是一個 App，不是一個網頁平台，而是一個<strong>有溫度的物理終端</strong>——一個偏鄉學童可以抱在懷中、用說話就能互動的 AI 英語學習夥伴。</p>
+
+<p>其核心理念可用三個「不」來概括：</p>
+
+<ul>
+  <li><strong>不需要螢幕</strong>：消除螢幕帶來的注意力分散與考試焦慮。</li>
+  <li><strong>不需要網路也能用</strong>：邊緣 AI 確保偏鄉斷網時基礎功能不中斷。</li>
+  <li><strong>不需要會操作手機</strong>：說話即用，徹底消除數位鴻溝。</li>
+</ul>
+<h4>為什麼不是 App？——與傳統方案的結構性差異</h4>
+
+| 比較維度 | 傳統 App / 網頁平台 | 說說學伴 |
+|:---|:---|:---|
+| 螢幕分散 | ✘ 學童易被其他 App 分心 | ✓ 無螢幕，專注語音互動 |
+| 學習焦慮 | ✘ 介面像考試，引發壓力 | ✓ 互動像聊天，輕鬆自然 |
+| 斷網可用 | ✘ 完全失效 | ✓ 邊緣 AI 即時接手 |
+| 數位鴻溝 | ✘ 需會操作觸控介面 | ✓ 說話即用，零門檻 |
+| 情感連結 | ✘ 冰冷的螢幕 | ✓ 可擁抱的實體夥伴 |
+
+<h3>3.2 系統架構：邊緣與雲端的雙網混成設計</h3>
+
+<p>「說說學伴」採用「雙網混成推論」(Hybrid Edge-Cloud Inference) 架構，根據網路環境自動切換運算模式，確保在任何情境下都能為學童提供不中斷的學習陪伴。</p>
+
+<p><strong>【系統架構圖】</strong></p>
+
+<pre><code class='language-'>┌─────────────────────────────────────────────────────────┐
+│            「說說學伴」邊緣硬體端 (MediaTek Genio)        │
+│                                                         │
+│  ┌──────────────────┐           ┌─────────────────────┐ │
+│  │  國產語音辨識晶片  │  離線 ASR  │ ‧ 語音採集          │ │
+│  │  (MediaTek Genio) │ ────────→ │   (電容式麥克風)     │ │
+│  │  ‧ 離線 KWS 喚醒  │ ←──────── │ ‧ 音訊輸出          │ │
+│  │  ‧ 本地發音評測    │  本地推論  │   (喇叭 / 耳機孔)   │ │
+│  │  ‧ 隱私保護       │           │ ‧ 觸覺 / 按鈕控制    │ │
+│  └──────────────────┘           └─────────────────────┘ │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+              雙網混成推論（Wi-Fi 偵測與自適應切換）
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                  AWS 雲端生成式 AI 環境                    │
+│                                                         │
+│  ┌───────────────────────┐  RAG  ┌───────────────────┐  │
+│  │  Amazon Bedrock        │ ────→ │ 多源教育資料庫     │  │
+│  │  基礎模型              │ ←──── │ ‧ Cool English    │  │
+│  │  ‧ 多模態對話          │       │ ‧ 均一教育平台    │  │
+│  │  ‧ 雙語鷹架式語伴      │       │ ‧ 國教院教學媒體  │  │
+│  └───────────────────────┘       └───────────────────┘  │
+│              │                                          │
+│              ▼                                          │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │  反思教學 AI 助教                                │    │
+│  │  ‧ 學生口說語音分析（流暢度、語法、語用診斷）      │    │
+│  │  ‧ 自動生成教師端差異化教學報表                    │    │
+│  │  ‧ 減少派課與數據分析行政負擔                      │    │
+│  └─────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+
+<h4>3.2.1 本地邊緣端：精準控制與隱私安全</h4>
+
+<ul>
+  <li>搭載 <strong>MediaTek Genio</strong> 處理器，利用 邊緣 AI P 擴充指令集執行高效能 ASR（自動語音辨識）與 KWS（關鍵字喚醒）。</li>
+  <li>學生可透過離線語音指令直接喚醒系統（如「說說學伴，我想讀故事」或「說說學伴，陪我練習」），無須連接網路即可進行即時的基礎發音評測與跟讀反饋。</li>
+  <li>所有語音資料於晶片內即時處理完畢，確保「不落地、不升雲」的最高規格隱私保障。</li>
+</ul>
+<h4>3.2.2 雲端生成層：AWS Bedrock 彈性架構</h4>
+
+<ul>
+  <li>當系統偵測到環境 Wi-Fi 時，自動啟動「雙網混成模式」，將學生的進階對話語音特徵傳輸至 AWS 雲端。</li>
+  <li><strong>檢索增強生成 (RAG) 技術</strong>：系統後台串接多個臺灣本土開放教育資源，確保 AI 生成內容完全契合臺灣課綱體制：</li>
+</ul>  - <strong>Cool English 酷英網</strong>：教育部官方英語學習平台，涵蓋國中小、高中職及大專之聽力、字彙、口說技巧與歷屆試題。
+  - <strong>均一教育平台</strong>：臺灣最大公益教育平台，提供跨學科學習資源。
+  - <strong>國教院教學媒體</strong>：國家教育研究院之官方教學素材與課綱對照資源。
+<ul>
+  <li><strong>反思教學 AI 助教</strong>：利用大語言模型對學生的口說內容進行句型與用字偵錯，自動為教師生成班級學習進度與個別學生的學習弱點報表，協助教師進行「差異化教學」，免去繁瑣的手動派課與數據解讀工作。</li>
+</ul>
+<h3>3.3 鷹架式語伴教學法</h3>
+
+<p>「說說學伴」的互動設計採用語言教育學中的「鷹架引導 (Scaffolding)」理論，其最大特色是<strong>允許中英混合輸入</strong>，以溫和的語氣逐步引導學童從母語過渡至英語表達。</p>
+
+<p><strong>【對話範例：偏鄉學扶學童「阿明」的互動歷程】</strong></p>
+
+<blockquote><strong>阿明</strong>（用中文）：「我想吃 apple。」</blockquote>
+<blockquote>&gt; <strong>說說學伴</strong>（溫和語音回應）：「哇，阿明想吃蘋果！跟著我說一遍：I want to eat an apple.」</blockquote>
+<blockquote>&gt; <strong>阿明</strong>（嘗試）：「I want to eat... an apple.」</blockquote>
+<blockquote>&gt; <strong>說說學伴</strong>：「太棒了！你說得很好！apple 的 /æ/ 音再大聲一點會更好聽喔。我們再來一次好嗎？」</blockquote>
+
+<p>這種互動模式的關鍵設計原則：</p>
+
+<ol>
+  <li><strong>不糾正，而是引導</strong>：AI 不直接指出錯誤，而是用正面語氣示範正確用法。</li>
+  <li><strong>允許混合語言</strong>：不要求學童一開始就用全英語，降低開口的心理障礙。</li>
+  <li><strong>即時正面回饋</strong>：每次嘗試都給予鼓勵，重建學習自信心。</li>
+  <li><strong>多元語音選擇</strong>：系統結合語音合成技術（TTS）提供不同腔調、人聲與語速選擇，適應不同學習階段。</li>
+</ol>
+<h3>3.4 針對 8-12 歲學童之主動引導與防分心沉迷設計</h3>
+
+<p>針對中高年級國小學童（8-12 歲）的心理與學習特性，「說說學伴」在互動機制上引入了主動化、遊戲化與防沉迷的設計：</p>
+
+<ol>
+  <li><strong>主動式聊天與興趣導向引導 (Proactive Engagement)</strong>：</li>
+</ol>   - 擺脫傳統 AI 語音助理「一問一答」的被動模式，系統能主動依據時間或學習紀錄啟動話題（例如：「嘿！阿明，今天在學校好玩嗎？我想跟你分享一個關於怪獸的小故事！」）。
+   - 內建 8-12 歲學童感興趣的主題語庫，涵蓋<strong>流行音樂、熱門遊戲（如 Minecraft, Roblox）、經典動漫與電影角色</strong>，將英語學習融入流行文化中（例如：「你知道皮卡丘的日文發音，在英文裡是怎麼拼的嗎？」）。
+<ol>
+  <li><strong>遊戲化挑戰機制 (Fast, Fun, and Fair)</strong>：</li>
+</ol>   - <strong>Fast (小步快跑)</strong>：設計每回 2-3 分鐘的短時效任務（如「幫魔王翻譯通關密語」），讓學童獲得即時回饋與成就感。
+   - <strong>Fun (趣味互動)</strong>：每次口說跟讀挑戰成功，裝置將播放專屬成功音效，並可累積虛擬徽章或解鎖新的故事篇章。
+   - <strong>Fair (公平回饋)</strong>：基於本地 NPU/CPU 評測，給予透明公正的發音星等評級，引導學童反覆挑戰。
+<ol>
+  <li><strong>擬人化防沉迷休息機制 (Time-Out Mechanism)</strong>：</li>
+</ol>   - 為了避免學童過度沉迷於與 AI 的閒聊，裝置設定單次使用時限（如 25-30 分鐘，對齊番茄工作法）。
+   - 當時間到達時，AI 會以極具親和力的擬人化方式宣告需要休息（例如：「阿明，我今天說了太多話，電力快用完、有點睏了。我先去睡覺囉，我們明天再一邊聽流行歌一邊練習吧！」），隨即進入休眠狀態，藉此建立良好的科技使用習慣。
+
+<h3>3.5 科技酷玩：符合 8-12 歲學童偏好之外觀美學</h3>
+
+<p>為了讓這個無螢幕裝置對 8-12 歲學童產生持久的吸引力，外觀設計摒棄了「低齡化」的玩具感，走向「精緻酷玩」路線：</p>
+
+<ol>
+  <li><strong>「科技酷玩 (Tech-Toy / Maker)」視覺風格</strong>：</li>
+</ol>   - 擺脫傳統 2D 玩具的幼稚感，外型結合簡約幾何線條，採用霧面質感與低飽和度的科技配色（如石墨灰、極光白，搭配螢光綠或亮橘色防撞邊條），呈現類似高端電子產品或智慧潮玩的酷炫感。
+   - 提供<strong>個性化磁吸配件</strong>，學童可自行選配「耳朵」或「天線」裝飾，並提供客製化防水貼紙，滿足其展現個性的心理需求。
+<ol>
+  <li><strong>溫暖手感的雙材質拼接</strong>：</li>
+</ol>   - 外觀採用柔軟親膚的優質針織毛線外殼，塑造成戴著耳機與圍巾的可愛企鵝玩偶形狀，讓學童捧在手中或抱在懷裡時感到無比的放鬆、安全與溫暖。
+<ol>
+  <li><strong>情緒動態 LED 呼吸光環 (Emotional Light Ring)</strong>：</li>
+</ol>   - 設備頂端配置一個多色彩 LED 動態光環。呼吸燈光能展現「情緒生命感」：
+     - 淺綠色呼吸效果：代表 AI 正在專心傾聽。
+     - 暖黃色緩慢閃爍：代表 AI 正在思考或組織句子。
+     - 炫彩漸變：代表挑戰成功，給予學童強烈的視覺獎勵。
+   - 以富有生機的光效代替冰冷刺眼的液晶螢幕，引導學童將注意力完全集中於聽覺與口說互動。
+
+<p>---</p>
+
+<h2>第四章　兩大普惠應用情境設計</h2>
+
+<h3>4.1 情境一：偏鄉小學學習扶助課堂的「無壓力伴讀鷹架」</h3>
+
+<p><strong>場景描述：</strong></p>
+
+<p>在偏鄉補救教學課堂中，國小四年級的阿明常因自卑而不敢在全英語課堂上開口。其他同學已經能簡單對話，但阿明連最基本的自我介紹都說不出來。傳統的線上學習平台讓他覺得「又要考試了」，每次看到螢幕上的題目就緊張到手心冒汗。</p>
+
+<p><strong>引入「說說學伴」後的改變：</strong></p>
+
+<p>阿明將可愛企鵝針織毛絨造型的「說說學伴」抱在懷中，透過實體喇叭進行溫馨的「雙語混成對話」。沒有螢幕、沒有分數、沒有紅色的錯誤標記——只有一個像朋友一樣耐心的聲音，陪他一句一句地練習。</p>
+
+<p>在離線模式下，邊緣晶片進行即時的基礎發音評估，阿明不用擔心網路延遲帶來的卡頓與挫折。當教室有 Wi-Fi 時，系統自動切換至雲端模式，提供更豐富的對話情境與進階語法引導。</p>
+
+<p><strong>教師端價值：</strong></p>
+
+<p>導師林老師不再需要花費大量時間手動分析每位學扶學生的學習進度。「說說學伴」的 AI 助教自動生成一份清晰的班級報表，標示出阿明在「母音發音」與「簡單句型」上需要額外加強，讓林老師可以精準地進行差異化教學。</p>
+
+<h3>4.2 情境二：偏鄉社區跨世代教育共創——「在地記憶雙語繪本」</h3>
+
+<p><strong>場景描述：</strong></p>
+
+<p>在偏鄉社區關懷據點，國小五年級的小雅與社區的美濃客家阿嬤一起參加「跨世代教育共創」活動。</p>
+
+<p><strong>互動流程：</strong></p>
+
+<ol>
+  <li><strong>阿嬤口述</strong>：阿嬤對著「說說學伴」以客語和國語講述美濃菸樓的歷史故事與年輕時的生活記憶。學伴本地端晶片進行語音採集與噪音過濾。</li>
+  <li><strong>AI 翻譯重構</strong>：語音上傳至 AWS 雲端後，AI 將阿嬤的口述語音翻譯並重構為生動的雙語（中英）故事大綱。</li>
+  <li><strong>學童英語改寫</strong>：小雅在學伴的鷹架引導下，嘗試用簡單的英語句子改寫阿嬤的故事，「說說學伴」即時提供語句修正與詞彙建議。</li>
+  <li><strong>繪本共創</strong>：最終產出一本專屬的「AI 雙語有聲繪本」，記錄阿嬤的在地記憶，也記錄小雅的英語學習歷程。</li>
+</ol>
+<strong>雙重教育價值：</strong>
+
+<ul>
+  <li><strong>對學童</strong>：在真實的情境中使用英語，學習動機從「為了考試」轉變為「為了記錄阿嬤的故事」，英語不再是抽象的科目，而是有溫度的溝通工具。</li>
+  <li><strong>對長者</strong>：透過「敘事療癒」延緩認知退化，在地文化故事得以被記錄與傳承。</li>
+  <li><strong>對社區</strong>：跨世代的連結在科技的媒介下被強化，展現「永續城鄉」的深層意涵。</li>
+</ul>
+此情境展現了「說說學伴」不僅是個人學習工具，更是促進社區教育共融與文化傳承的普惠科技載體。
+
+<p>---</p>
+
+<h2>第五章　國產晶片與邊緣 AI 運算的使能價值</h2>
+
+<h3>5.1 為什麼需要邊緣 AI？</h3>
+
+<p>在偏鄉、弱勢家庭及極端災難情境下，高頻寬、高成本的雲端 AI 往往因「網路中斷」或「資費高昂」而無法普及。「邊緣 AI（Edge AI）」是消除此類數位排除的關鍵——讓 AI 的核心能力直接運行在使用者手邊的裝置上，不依賴遠端伺服器。</p>
+
+<p>對於「說說學伴」的目標場景而言，邊緣 AI 的價值體現在三個層面：</p>
+
+<ol>
+  <li><strong>隱私保護 (Privacy by Design)</strong>：對於未成年兒童的雙語伴讀，語音資料若上傳雲端，極易引發個資洩漏疑慮。邊緣端本地運算確保所有敏感語音資料於晶片內即時處理完畢，提供最高規格的隱私保障。</li>
+  <li><strong>擺脫網路限制 (Zero Network Dependency)</strong>：在臺灣偏遠山區或網路品質不穩定的教室中，邊緣端 AI 語音裝置依舊能提供即時的語意辨識與發音評測，消除因數位基礎設施不均造成的服務中斷。</li>
+  <li><strong>極致低耗能與低建置成本</strong>：採用國產晶片開發平台之物聯網設備，能以電池供電維持長時間運行，且硬體造價低，利於政府與社福機構在偏鄉大規模配發，真正實踐教育平權。</li>
+</ol>
+<h3>5.2 國產晶片開發平台之技術規格</h3>
+
+<p>本方案採用的國產晶片技術路徑符合大會「基於國產晶片開發平台」之認定標準：</p>
+
+| 認定類別 | 核心定義 | 本方案之對應 |
+|:---|:---|:---|
+| <strong>自主研發晶片</strong> | 核心 IP 由我國依法登記之企業自主研發，擁有晶片完整智慧財產權。 | <strong>聯發科技 (MediaTek)</strong>：Genio 520 應用處理器，內建 8 核心 CPU 與 10 TOPS AI 處理單元（NPU），聯發科為我國依法登記企業，擁有 Genio 晶片完整 IP。 |
+| <strong>AI 開發生態系</strong> | 提供完整的 AI 軟體開發工具鏈與模型部署框架。 | <strong>NeuroPilot 8 AI SDK</strong>：支援 TensorFlow Lite、ONNX Runtime 等主流框架，可直接在 NPU 上加速 ASR / LLM / TTS 模型推論。 |
+| <strong>開發板取得管道</strong> | 透過官方認可管道取得開發硬體。 | <strong>ideas Hatch 智造工具包</strong>：HUB G520 開發板可透過 ideas Hatch 平台申請取得，降低偏鄉教育場域的硬體導入門檻。 |
+
+<h3>5.3 邊緣 AI 推論效能與離線能力升級</h3>
+
+<p>以聯發科 Genio 520 平台為核心，搭配 NeuroPilot 8 AI SDK 進行模型量化與 NPU 加速部署，實現完整的離線 AI 對話管線：</p>
+
+<ul>
+  <li><strong>NPU 算力</strong>：10 TOPS（INT8），足以同時運行 ASR、LLM、TTS 三大模型。</li>
+  <li><strong>離線 ASR（Breeze-ASR / Sherpa-ONNX SenseVoice）</strong>：針對臺灣華語與英語進行即時語音辨識，延遲低於 200ms，支援 KWS 喚醒與連續語音輸入。</li>
+  <li><strong>離線 LLM（Qwen3 1.7B via Ollama）</strong>：透過 INT4 量化部署於 NPU，推論速度約 20 tok/s，可即時生成鷹架式英語引導對話。</li>
+  <li><strong>離線 TTS（Piper TTS / BreezyVoice）</strong>：低延遲語音合成，支援中英雙語自然朗讀，首音延遲低於 150ms。</li>
+</ul>
+此技術規格使「說說學伴」具備強大的離線對話能力，即便在完全斷網的偏鄉環境中，學童也能獲得流暢的 AI 伴讀互動體驗。
+
+<p>---</p>
+
+<h2>第六章　社會影響力與未來展望</h2>
+
+<h3>6.1 預期社會影響力</h3>
+
+<p>「說說學伴」若能成功落地，預期將產生以下社會影響：</p>
+
+<ol>
+  <li><strong>降低偏鄉學童英語焦慮</strong>：透過無壓力的伴讀互動，讓學習扶助不再是「被懲罰」的感覺，而是「有朋友陪伴」的溫暖體驗。</li>
+  <li><strong>提升學習扶助通過率</strong>：結合課綱對齊的 RAG 內容與個人化學習路徑，有效提升偏鄉學童的英語基礎能力。</li>
+  <li><strong>減輕教師行政負擔</strong>：AI 助教自動生成教學報表，將教師從繁瑣的數據分析中解放，回歸教學本質。</li>
+  <li><strong>彌平城鄉教育數位落差</strong>：以低成本、零門檻的實體裝置，讓偏鄉學童享有與都會區學生同等品質的 AI 學習資源。</li>
+  <li><strong>傳承在地文化</strong>：跨世代共創情境讓在地記憶被保存、被翻譯、被傳承，展現教育的文化永續價值。</li>
+</ol>
+<h3>6.2 落地路徑規劃</h3>
+
+<ul>
+  <li><strong>第一階段</strong>：結合教育部「中小學數位學習精進方案」，以試辦計畫形式在 5-10 所偏鄉國小進行實驗導入。</li>
+  <li><strong>第二階段</strong>：與地方教育局、公益團體（如均一教育平台基金會、誠致教育基金會）合作，以低硬體成本大規模配發至偏鄉學扶班級與社區關懷據點。</li>
+  <li><strong>第三階段</strong>：開放「說說學伴」的邊緣-雲端混成架構為平台化服務，讓其他教育內容開發者可以在此基礎上開發更多學科的學習模組。</li>
+</ul>
+<h3>6.3 未來擴展藍圖</h3>
+
+<p>「說說學伴」的邊緣-雲端混成架構具備高度可擴展性。在教育場景驗證成功後，同樣的技術核心可延伸至臺灣社會其他變遷議題：</p>
+
+<ul>
+  <li><strong>身心健康與弱勢關懷</strong>：為獨居高齡長者提供免聯網的聲控陪伴與認知訓練裝置。</li>
+  <li><strong>人力結構與人才發展</strong>：為技職體系學生提供英語口說模擬面試練習。</li>
+  <li><strong>環境安全與社會韌性</strong>：於災害斷網情境下提供離線語音求救與安全指引系統。</li>
+</ul>
+---
+
+<h2>結論</h2>
+
+<p>面對臺灣下一個十年的社會結構變遷，科技的發展不應只是追求冷冰冰的算力與商業獲利，而應回歸人本初心，去溫暖、去關懷那些在數位浪潮中被遺忘的群體。</p>
+
+<p>「說說學伴」的誕生源自一個最樸素的信念：<strong>每個孩子都值得有人陪他開口。</strong> 無論是在偏鄉山區的教室裡、社區關懷據點的客廳中，還是在任何一個沒有網路的角落，這個有溫度的小夥伴都能陪伴學童勇敢地說出第一句英語。</p>
+
+<p>本研究展示了如何將我國最具優勢的半導體科技（國產邊緣 AI 晶片平台）與最前沿的生成式 AI（AWS Bedrock 雲端基礎模型）進行深度軟硬整合，在保障個人隱私、克服城鄉斷網限制的前提下，為偏鄉教育提供具備高度可行性與原創性的解答。</p>
+
+<p>讓電子數位科技真正成為推動臺灣教育平權與社會永續發展的關鍵助力——這就是「晶創未來」的真正意義。</p>
+
+<p>---</p>
+
+<h2>參考文獻</h2>
+
+<ol>
+  <li>創意交流組 命題文件 - 雲湧智生：臺灣生成式 AI 應用黑客松競賽.pdf</li>
+  <li>2026 雲湧智生：臺灣生成式 AI 應用黑客松 - 比賽 - 獎金獵人. https://bhuntr.com/tw/competitions/mk3yl7w2q9r402gsb2</li>
+  <li>雙語教育的優點與挑戰！國小老師分享最新雙語教育政策調整趨勢 - 親子天下 Shopping. https://shopping.parenting.com.tw/Article/Detail/99144</li>
+  <li>2026 年「台美教育倡議」事實清單 - 美國在台協會. https://www.ait.org.tw/zhtw/u-s-taiwan-education-initiative-factsheet-2026-zhtw/</li>
+  <li>「雙語政策」有違國家語言發展法精神 - 公共政策網路參與平臺. https://join.gov.tw/idea/detail/128b837c-7a69-4690-8b05-8032ae905fe3</li>
+  <li>Cool English 平臺 - 運用於英文學習扶助課程. https://www.ttbf.org.tw/</li>
+  <li>關於酷英 | COOLENGLISH. https://www.coolenglish.edu.tw/event/aboutus/index.php</li>
+  <li>英語系建置酷英平台結合 AI 技術與聊天機器人練習英語口說 - 國立臺灣師範大學. https://pr.ntnu.edu.tw/ntnunews/index.php?mode=data&amp;id=22082</li>
+  <li>酷英 (Cool English) 介紹和使用說明 - 中山醫學大學. https://emi.csmu.edu.tw/p/405-1057-73656,c4186.php?Lang=zh-tw</li>
+  <li>嵌入式 AI 語音聲控邊緣運算晶片裝置 - 台灣創新技術博覽會. https://tie.twtm.com.tw/zh-tw/exhibition-detail/227</li>
+  <li>聯發科技 (MediaTek) Genio 晶片平台與 NeuroPilot 軟體開發套件技術規格. https://www.mediatek.tw/products/iot/genio-520</li>
+  <li>聯發科技 - 維基百科. https://zh.wikipedia.org/zh-tw/聯發科技</li>
+  <li>聯發科技和賽微科技攜手合作提供邊緣運算語音辨識解決方案. http://www.twiota.org/邊緣 AI/eventDetails.aspx?id=4b72a5b1-36f1-4f53-8095-6c82d3145860</li>
+  <li>瑞昱（Realtek）的 Ameba 開發板 - 超圖解系列圖書. https://swf.com.tw/?p=1719</li>
+  <li>教育部投入 1.51 億推動 271 所高中職雙語校園 - 自由時報. https://news.ltn.com.tw/news/life/breakingnews/5363681</li>
+  <li>推動中小學數位學習精進方案 - 臺北市教育局. https://www-ws.gov.taipei/</li>
+</ol>
+                </article>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 2. 技術棧與開發規格書 -->
+    <div class="reader-modal" id="modal-reader-spec">
+        <div class="reader-container">
+            <div class="reader-header">
+                <div class="reader-title-box">
+                    <span class="reader-title-icon">⚙️</span>
+                    <span class="reader-title">說說學伴 | 專案技術棧與開發規格書 (SPEC)</span>
+                </div>
+                <button class="btn-reader-close" onclick="closeReader('spec')">×</button>
+            </div>
+            <div class="reader-body">
+                <article class="reader-content">
+                    <h1>「說說學伴」  專案技術棧與開發規格書 (SPEC)</h1>
+
+<p>本文件為「說說學伴」 專案的官方技術棧與開發規格書，供開發團隊在實現「無螢幕實體智能語伴玩偶系統」時作為核心技術指引。</p>
+
+<p>---</p>
+
+<h2>1. 系統整體架構 (System Architecture)</h2>
+
+<p>「說說學伴」採用<strong>雙網混成推論 (Hybrid Edge-Cloud Inference) 架獲</strong>。系統會根據邊緣硬體裝置的網路連接狀態（Wi-Fi 連接強度與延遲），動態切換本地 Edge 推論管線與 AWS 雲端推論大腦。</p>
+
+<h3>1.1 系統架構與資料流向 (Data Flow Diagram)</h3>
+
+<p>以下 Mermaid 架構圖說明了語音輸入從邊緣裝置採集，到離線/在線處理，最終呈現給學生（語音）與教師（報表）的完整閉環：</p>
+
+<pre><code class='language-mermaid'>graph TD
+    %% 定義節點
+    User([學童: 阿明]) --&gt;|1. 語音輸入 / 中英夾雜| Mic[電容式麥克風 / 降噪模組]
+    Mic --&gt;|2. 音訊串流| VAD{VAD 語音活動偵測}
+    
+    %% 網路判斷與分支
+    VAD --&gt;|3. 偵測到語音| NetDetect{網路狀態偵測}
+    
+    %% 邊緣離線分支
+    NetDetect --&gt;|離線模式 / 無 Wi-Fi| EdgePipeline[Genio 520 邊緣運算管線]
+    subgraph EdgePipelineBox [Edge 離線管線]
+        EdgePipeline --&gt; BreezeASR[離線 ASR: Breeze-ASR / SenseVoice]
+        BreezeASR --&gt;|轉譯文本| EdgeLLM[離線 LLM: Qwen3 1.7B via NPU]
+        EdgeLLM --&gt;|鷹架式引導文本| EdgeTTS[離線 TTS: Piper TTS]
+    end
+    
+    %% 雲端在線分支
+    NetDetect --&gt;|在線模式 / Wi-Fi 正常| CloudPipeline[AWS 雲端運算管線]
+    subgraph CloudPipelineBox [Cloud 雲端管線]
+        CloudPipeline --&gt; API_Gateway[Amazon API Gateway]
+        API_Gateway --&gt; Lambda[AWS Lambda 推論調度]
+        Lambda --&gt; Bedrock[Amazon Bedrock: Claude 3.5 Sonnet]
+        
+        %% RAG 檢索
+        Bedrock &lt;--&gt;|語意檢索| RAG[Amazon OpenSearch / pgvector]
+        RAG &lt;--&gt;|教育資源庫| EduData[(Cool English / 均一 / 國教院)]
+        
+        %% 教師端與診斷
+        Bedrock --&gt;|4a. 生成學習診斷| DB[(Amazon RDS PostgreSQL)]
+        Lambda --&gt;|在線 TTS 串流| CloudTTS[雲端 TTS 服務]
+    end
+
+<table class='reader-table'>
+  <thead>
+    <tr>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>5. 語音音訊</td>
+    </tr>
+    <tr>
+      <td>6. 陪伴帶讀語音</td>
+    </tr>
+    <tr>
+    </tr>
+    <tr>
+    </tr>
+    <tr>
+      <td>5a. 資料同步</td>
+    </tr>
+    <tr>
+      <td>6a. 差異化教學引導</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>%% 樣式設定<br>    style EdgePipelineBox fill:#1e293b,stroke:#0f172a,stroke-width:2px,color:#fff<br>    style CloudPipelineBox fill:#1e1b4b,stroke:#311042,stroke-width:2px,color:#fff<br>    style EduData fill:#1c1917,stroke:#44403c,color:#fff<br>    style DB fill:#1c1917,stroke:#44403c,color:#fff<br></code></pre></p>
+
+<h3>1.2 雙網切換與自適應狀態機 (Adaptive State Machine)</h3>
+
+<p>硬體端背景行程（Daemon）以每 5 秒一次的頻率 Ping AWS API Gateway 節點，評估網路延遲與封包遺失率，進行狀態轉換：</p>
+
+<pre><code class='language-'>       ┌────────────────────────────────────────────────────────┐
+       │                                                        │
+       ▼                                                        │
+┌──────────────┐     延遲 &gt; 800ms / 斷網 3 次     ┌──────────────┐
+│  Cloud Mode  │ ──────────────────────────────&gt; │  Edge Mode   │
+│  (在線模式)  │ &lt;────────────────────────────── │  (離線模式)  │
+└──────────────┘       延遲 &lt; 300ms / 連線恢復      └──────────────┘
+       │                                                        ▲
+       │                  背景非同步同步快取                    │
+       └────────────────────────────────────────────────────────┘
+</code></pre>
+
+<ul>
+  <li><strong>Cloud Mode (在線模式)</strong>：音訊特徵上傳雲端，由 AWS Bedrock 提供高精度 RAG 檢索與深度情境對話。</li>
+  <li><strong>Edge Mode (離線模式)</strong>：完全關閉雲端上傳，所有 ASR、LLM、TTS 運算皆在 <strong>MediaTek Genio 520 NPU</strong> 上執行，互動遙測數據（Telemetry）快取至本地 SQLite，待恢復連線時非同步背景上傳。</li>
+</ul>
+---
+
+<h2>2. 邊緣端軟硬體技術棧 (Edge Specification)</h2>
+
+<p>本專案基於大會加分項目，採用國產晶片 <strong>MediaTek Genio 520</strong> (HUB G520) 智慧物聯網開發平台，發揮其邊緣 NPU 算力。</p>
+
+<h3>2.1 硬體接口與系統配置</h3>
+
+<ul>
+  <li><strong>處理晶片</strong>：MediaTek MT8365 (Genio 520), 4x Arm Cortex-A53 @ 2.0GHz, 內建 1.2 TOPS APU。</li>
+</ul>  &gt; [!NOTE]
+  &gt; *註：若使用高級 HUB G520 (MT8370 / Genio 700 延伸版) 則可達 8 核心 (2x A76 + 6x A55) 與 10 TOPS NPU 算力。本規格書以 Genio 平台之通用 NeuroPilot 軟體開發棧進行規範。*
+<ul>
+  <li><strong>音訊硬體</strong>：雙電容式麥克風陣列（硬體 Beamforming 降噪）、3.5W 內建 D 類放大器喇叭、3.5mm 耳機插孔。</li>
+  <li><strong>作業系統</strong>：客製化 Linux (基於 Yocto Project Kirkstone 3.6)，內建 MediaTek proprietary 音訊 DSP 驅動。</li>
+</ul>
+<h3>2.2 邊緣 AI 模型編譯管線 (NeuroPilot NPU 量化編譯)</h3>
+
+<p>所有運行於邊緣 NPU 的 AI 模型，皆須通過 MediaTek <strong>NeuroPilot 8 SDK</strong> 進行轉換與優化：</p>
+
+<ol>
+  <li><strong>ONNX 格式轉換</strong>：將 PyTorch 權重導出為標準 <code>onnx</code> 格式。</li>
+  <li><strong>模型量化 (Quantization)</strong>：使用 NeuroPilot Toolchain 將 FP32 權重壓制為 <strong>INT8/INT4</strong>，以配合 NPU 運算元。</li>
+  <li><strong>NPU 編譯</strong>：透過 <code>apucc</code> 編譯器將量化後 ONNX 模型編譯為 APU 可執行的 <code>.bin</code> 封裝。</li>
+</ol>
+<pre><code class='language-bash'><h1>NeuroPilot 量化與編譯範例指令</h1>
+neuropilot_convert \
+  --model_path ./qwen3_1.7b.onnx \
+  --input_shapes "input_ids:1x512" \
+  --quantization_mode INT4 \
+  --output_path ./qwen3_1.7b_int4.bin
+</code></pre>
+
+<h3>2.3 離線 AI Pipeline 組件說明</h3>
+
+| 模組 | 採用技術/模型 | 規格與性能指標 | 離線使能價值 |
+| :--- | :--- | :--- | :--- |
+| <strong>語音活動偵測</strong> | WebRTC VAD | 偵測延遲 &lt; 10ms，音量門檻自適應 | 過濾背景噪音，避免無效喚醒 NPU |
+| <strong>離線 ASR</strong> | Breeze-ASR / Sherpa-ONNX SenseVoice-Small | 中英雙語，語音識別延遲 &lt; 250ms，模型大小約 140MB | 斷網時仍可精準辨識學童的中英文口說 |
+| <strong>離線 LLM</strong> | Qwen3 1.7B / Qwen2.5-Instruct 1.5B (INT4) | NPU 推論速度 &gt; 18 tokens/sec，上下文長度 1024 | 執行「雙語鷹架引導」，給予即時文法示範 |
+| <strong>離線 TTS</strong> | Piper TTS (C++ 引擎) | 語音首字延遲 &lt; 150ms，支援臺灣華語男/女聲與英語雙語 | 排除網路延遲的生硬感，提供即時、流暢的語音回應 |
+
+<p>---</p>
+
+<h2>3. 雲端大腦與 RAG 教材串接 (Cloud &amp; Brain Specification)</h2>
+
+<p>當系統處於在線模式時，雲端大腦將啟動，提供深度對話、RAG 教材內容檢索、以及「反思教學 AI 助教」的教學分析。</p>
+
+<h3>3.1 AWS Bedrock 與基礎模型配置</h3>
+
+<ul>
+  <li><strong>對話與評估核心</strong>：<code>anthropic.claude-3-5-sonnet-v1:0</code> (Claude 3.5 Sonnet)</li>
+</ul>  - 核心能力：負責學生口說語意分析、文法診斷，並依據課綱生成個人化輔導報表。
+<ul>
+  <li><strong>高吞吐對話核心</strong>：<code>meta.llama3-1-70b-instruct-v1:0</code> (Llama 3.1 70B)</li>
+</ul>  - 核心能力：負責大流量的日常對話陪伴與 RAG 內容預處理。
+
+<h3>3.2 檢索增強生成 (RAG) 管線設計</h3>
+
+<p>我們建置了<strong>三源教材向量檢索庫</strong>，串接臺灣本土的數位教育平台：<br><ol><br>  <li><strong>教育部 Cool English</strong>：提取聽力、口說、字彙等結構化教材。</li><br>  <li><strong>均一教育平台</strong>：提取國小 3-6 年級英語科知識圖譜（Knowledge Graph）。</li><br>  <li><strong>國家教育研究院 (NAER)</strong>：對齊臺灣十二年國教英語領域課程綱要（雙語字彙表與句型規範）。</li><br></ol><br><h4>RAG 檢索流程圖</h4><br><pre><code class='language-'>[學童語音 ASR] ────&gt; [語意特徵提取] ────&gt; [Amazon OpenSearch 向量檢索]<br>                                                   │<br>  ┌────────────────────────────────────────────────┘<br>  ▼<br>[召回教材: 國小四年級 Unit 3 (食物)] ───&gt; [合併 Prompt] ───&gt; [Claude 3.5 Sonnet] ───&gt; [鷹架語音輸出]<br></code></pre></p>
+
+<h3>3.3 反思教學 AI 助教：診斷 Prompt 工程規格</h3>
+
+<p>AI 助教核心 Prompt 必須限制模型僅輸出結構化 JSON，以便後端直接儲存至資料庫：</p>
+
+<pre><code class='language-markdown'><h1>系統角色：臺灣國小雙語學習扶助 AI 專家</h1>
+
+<h2>輸入資料：</h2>
+<ul>
+  <li>學生當前 ASR 文字: "{{student_text}}"</li>
+  <li>學生歷史對話脈絡: "{{chat_history}}"</li>
+  <li>當前對齊課綱單元: "{{curriculum_unit}}"</li>
+</ul>
+<h2>任務：</h2>
+請分析學生的口說內容，評估其「發音準確度 (Pronunciation)」、「口說流暢度 (Fluency)」、「字彙量 (Vocabulary)」與「句型掌握度 (Grammar)」，並依據臺灣教育部學習扶助標準給予教學指引。
+
+<h2>限制：</h2>
+必須僅輸出符合以下 Schema 的 JSON 物件，不得包含額外說明：
+{
+  "scores": {
+    "pronunciation": 0-100,
+    "fluency": 0-100,
+    "vocabulary": 0-100,
+    "grammar": 0-100
+  },
+  "strengths": "中文優勢描述...",
+  "weaknesses": "中文弱項與待改善發音點描述...",
+  "instructions": {
+    "classroom": "給學校老師的差異化教學建議...",
+    "device": "給學伴裝置的下一次互動主題建議（如跟讀特定母音或套用特定句型）"
+  }
+}
+</code></pre>
+
+<p>---</p>
+
+<h2>4. API 協議與資料庫 Schema 設計 (Interfaces &amp; Data Specs)</h2>
+
+<h3>4.1 Edge-to-Cloud 遙測數據 payload (Telemetry JSON)</h3>
+
+<p>當裝置連線時，會將互動紀錄以 HTTPS POST 傳送至雲端。以下為傳輸 Payload 的標準規格：</p>
+
+<pre><code class='language-json'>{
+  "device_id": "GENIO-520-X992",
+  "student_id": "STUDENT-AMING-004",
+  "timestamp": "2026-06-19T18:24:13Z",
+  "network_mode": "edge",
+  "audio_duration_sec": 4.5,
+  "payload": {
+    "raw_input_text": "I want to eat apple.",
+    "asr_confidence": 0.92,
+    "ai_response_text": "哇，阿明想吃蘋果！跟著我說一遍：I want to eat an apple.",
+    "local_evaluation": {
+      "fluency_score": 55,
+      "detected_phonemes_errors": ["/æ/"]
+    }
+  }
+}
+</code></pre>
+
+<h3>4.2 資料庫實體關係 Schema (PostgreSQL)</h3>
+
+<p>為了支援教師端智慧儀表板（如 <code>teacher_dashboard.html</code>）的動態渲染，後端資料庫設計如下：</p>
+
+<pre><code class='language-sql'>-- 學生基本資料表
+CREATE TABLE students (
+    student_id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(50) NOT NULL,
+    age INT NOT NULL,
+    grade VARCHAR(20) NOT NULL,
+    school_name VARCHAR(100) NOT NULL,
+    remedial_level CHAR(1) DEFAULT 'C', -- A: 通過, B: 待加強, C: 極需扶助
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+<p>-- 語音互動歷史表<br>CREATE TABLE speech_interactions (<br>    interaction_id SERIAL PRIMARY KEY,<br>    student_id VARCHAR(50) REFERENCES students(student_id),<br>    device_id VARCHAR(50) NOT NULL,<br>    network_mode VARCHAR(10) CHECK (network_mode IN ('edge', 'cloud')),<br>    student_text TEXT NOT NULL,<br>    ai_response TEXT NOT NULL,<br>    pronunciation_score INT CHECK (pronunciation_score BETWEEN 0 AND 100),<br>    fluency_score INT CHECK (fluency_score BETWEEN 0 AND 100),<br>    vocabulary_score INT CHECK (vocabulary_score BETWEEN 0 AND 100),<br>    grammar_score INT CHECK (grammar_score BETWEEN 0 AND 100),<br>    phoneme_errors VARCHAR(50)[], -- 例如 ['/æ/', '/ɛ/']<br>    interacted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP<br>);</p>
+
+<p>-- AI 教學診斷與差異化指引表 (由 AWS Bedrock 異步解析寫入)<br>CREATE TABLE ai_diagnoses (<br>    diagnosis_id SERIAL PRIMARY KEY,<br>    student_id VARCHAR(50) REFERENCES students(student_id),<br>    diagnosis_date DATE DEFAULT CURRENT_DATE,<br>    strengths TEXT NOT NULL,<br>    weaknesses TEXT NOT NULL,<br>    emotional_status TEXT, -- 學生的情緒與信心度分析<br>    sug_classroom TEXT, -- 教師課堂引導指引<br>    sug_device TEXT, -- 裝置端優化主題建議<br>    sug_peer TEXT, -- 同儕共學建議<br>    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP<br>);<br></code></pre></p>
+
+<p>---</p>
+
+<h2>5. 開發里程碑與時程規劃 (Milestones &amp; Roadmap)</h2>
+
+<p>專案開發共分為四個階段，以確保在黑客松決賽展示前產出可操作、低延遲的實體原型。</p>
+
+<pre><code class='language-mermaid'>gantt
+    title 說說學伴專案開發時程表 (8 週)
+    dateFormat  YYYY-MM-DD
+    section 第一階段: PoC 概念驗證
+    雲端 Bedrock 與 RAG 串接          :active, p1, 2026-06-25, 14d
+    模擬器與 Prompt 調優             :active, p2, 2026-06-25, 10d
+    section 第二階段: 硬體適配
+    Genio 520 Linux 系統移植         :b1, 2026-07-09, 10d
+    NPU 模型量化與 NeuroPilot 編譯    :b2, 2026-07-14, 12d
+    section 第三階段: 系統整合
+    雙模狀態機與 API 聯調            :c1, 2026-07-26, 10d
+    教師端儀表板數據同步與開發         :c2, 2026-07-30, 8d
+    section 第四階段: 場域調優
+    偏鄉國小現場試點測試             :d1, 2026-08-07, 7d
+    語音降噪與首音延遲調優           :d2, 2026-08-10, 10d
+</code></pre>
+
+<h3>階段檢驗點與驗證指標 (KPIs)</h3>
+
+<ol>
+  <li><strong>第一階段 (PoC) 檢驗點</strong>：</li>
+</ol>   - 雲端 RAG 在 Cool English 測試集上的召回率（Recall@3）需大於 <strong>85%</strong>。
+   - 網頁模擬器能夠完整重現 7 步對話且無 API 報錯。
+<ol>
+  <li><strong>第二階段 (Hardware MVP) 檢驗點</strong>：</li>
+</ol>   - 離線 ASR、LLM、TTS 在 Genio 520 NPU 上的推論總記憶體佔用需小於 <strong>1.2GB</strong>。
+   - 離線 LLM NPU 推論速度需穩定在 <strong>15 tokens/sec</strong> 以上。
+<ol>
+  <li><strong>第三階段 (System Alpha) 檢驗點</strong>：</li>
+</ol>   - 斷網 3秒內系統需能無縫降級至本地 Edge Pipeline，學童互動無中斷感。
+   - Telemetry 數據能在網路復原後 30 秒內自動上傳，無資料丟失。
+<ol>
+  <li><strong>第四階段 (Release) 檢驗點</strong>：</li>
+</ol>   - 邊緣端「首音延遲 (First-Token Latency)」小於 <strong>200ms</strong>。
+   - 社區環境（噪音 &gt; 60dB）下，ASR 識別字準確率 (Word Accuracy) 仍需大於 <strong>80%</strong>。
+                </article>
+            </div>
+        </div>
+    </div>
+    
+</body>
+</html>

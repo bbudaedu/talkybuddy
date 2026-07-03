@@ -1,0 +1,314 @@
+Delivered-To: bbudaedu@gmail.com
+Received: by 2002:adf:f808:0:b0:474:35a6:cca4 with SMTP id s8csp391252wrp;
+        Tue, 30 Jun 2026 05:16:41 -0700 (PDT)
+X-Received: by 2002:a17:90b:49:b0:37d:f0dd:e715 with SMTP id 98e67ed59e1d1-380526ec129mr2854908a91.10.1782821801017;
+        Tue, 30 Jun 2026 05:16:41 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1782821801; cv=none;
+        d=google.com; s=arc-20260327;
+        b=ge+7g5ZkEwfURHEIIw9eJnWuARJ+L2umWH/3ALNSZVyQsiM9uqrNZL+uCn452CWOa5
+         b2PNsWTfPAOjvNG69wBZCCfKYBlqnO95DN0q2SBzz5up3TVrQePN/sNGB17YDDW2RMFL
+         nKzO7N1VRY+E/n+HQSV5cgPLO0YJ4S5+9tWKvTW0Nb1wm+vv7No1vomPYlJEvPGjclbo
+         sH6lQVFne66kKzD+wkYDnXzWykAvmnj10d+hV+QxFwOGGw6jcwooaoUPip3SOY4IK/k0
+         +JzT6hDC6IZPg1Ovxduqc1IqdKaknbBjcW/BbNkKrYeuqxycmN/kbwVd44sch/Nfj2Dz
+         sINA==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20260327;
+        h=mime-version:message-id:date:subject:to:from:dkim-signature;
+        bh=xHd8JrzDVWS7W4cEZrlx5l7Ar2bM/nsa/5vuLvgUrpM=;
+        fh=HcKC3O3n/jDFzhtheUw04YjfGTzsdUNI8F4+1SsHMH0=;
+        b=JpGd+Nnmd2C0LcILV+5NIgLZNntlYyo8G64dSXu9hsrmkGz/PmK3hgr4jAuV0ymxdY
+         OLVUdzv92m3CyMrBaaT4aSGhbyJEjnWKjY1WbVhH4z1S7lUcd7F0sYJ39UpnGOeCvmrz
+         kxC2Dn0gUwF4gnUR0/JvKK6oOoMBKXKVUBkdLWcPNDFnLraLryRAV+A1MRyD7/Kbwszh
+         hyw4nUr3Rbuunp1dmiWHFlf7H3NGpoJa/T+MmuxnIf4phmBWYs7oepsWLuhPUW81f5Hx
+         +hQTkX/NYeeLvOKqTMklctODzhq5NoifqU0tFB/C14AgwToRqspDE9lmtpcv/1/xKu0O
+         l/dg==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@digitimes.com header.s=digitimes1 header.b=M0WJTxBR;
+       spf=pass (google.com: domain of seminar@digitimes.com designates 210.59.251.11 as permitted sender) smtp.mailfrom=seminar@digitimes.com;
+       dmarc=pass (p=QUARANTINE sp=QUARANTINE dis=NONE) header.from=digitimes.com
+Return-Path: <seminar@digitimes.com>
+Received: from ms.digitimes.com.tw (ms.digitimes.com.tw. [210.59.251.11])
+        by mx.google.com with ESMTPS id 98e67ed59e1d1-380535ef8cbsi3652242a91.10.2026.06.30.05.16.40
+        for <bbudaedu@gmail.com>
+        (version=TLS1_2 cipher=ECDHE-ECDSA-CHACHA20-POLY1305 bits=256/256);
+        Tue, 30 Jun 2026 05:16:40 -0700 (PDT)
+Received-SPF: pass (google.com: domain of seminar@digitimes.com designates 210.59.251.11 as permitted sender) client-ip=210.59.251.11;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@digitimes.com header.s=digitimes1 header.b=M0WJTxBR;
+       spf=pass (google.com: domain of seminar@digitimes.com designates 210.59.251.11 as permitted sender) smtp.mailfrom=seminar@digitimes.com;
+       dmarc=pass (p=QUARANTINE sp=QUARANTINE dis=NONE) header.from=digitimes.com
+DKIM-Signature: v=1; a=rsa-sha256; c=simple/simple;
+  d=digitimes.com; i=@digitimes.com; q=dns/txt;
+  s=digitimes1; t=1782821800; x=1814357800;
+  h=from:to:subject:date:message-id:mime-version;
+  bh=OieehGsdIkKvFXOo9rbkXkOCDtM2/CMMwylsVhkldbM=;
+  b=M0WJTxBRm1oDT1kZ5Qh6wWrgTgKNeWKnJLUIkueWyTd9CyHfvO8aRJL5
+   k6kk9UxPI5ZaRqKgIJ7TH2tGw5QUQAwZ2AaT49zv7RT/MNN7ON1oXsTD/
+   ZnAu9JtlwKdrg1vVg/BKoYuBBkkr5CdIM3o2lfqij8BwixXXuWZESJT9L
+   o=;
+X-CSE-ConnectionGUID: xKAKkM0kSlekzqPpflWsEA==
+X-CSE-MsgGUID: 4o0MVfOtQE+zzC8Ab6MUcw==
+Received: from unknown (HELO DT-APPS2019.digitimes.com.tw) ([192.168.66.235])
+  by ms1.digitimes.com.tw with ESMTP; 30 Jun 2026 20:16:37 +0800
+From: <seminar@digitimes.com>
+To: bbudaedu@gmail.com
+Subject: =?utf-8?B?44CQ5Ym15oSP5Lqk5rWB57WEX2==?=
+ =?utf-8?B?6YyE5Y+W6YCa55+l5L+h44CRMjAyNiDpm7LmuafmmbrnlJ/vvJroh7rngaM=?=
+ =?utf-8?B?55Sf5oiQ5byPIEFJIOaHieeUqOm7keWuouadvuertuizvZ==?=
+Date: Tue, 30 Jun 2026 20:16:35 +0800
+Message-ID: <20260630-20151068-453c-0@DT-APPS2019.digitimes.com.tw>
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+	boundary="--=E4C514D232DB4191983C_782A_468F_BFAE"
+
+----=E4C514D232DB4191983C_782A_468F_BFAE
+Content-Type: text/html;charset="UTF-8"
+Content-Transfer-Encoding: Quoted-Printable
+
+<meta name=3D"viewport" content=3D"width=3Ddevice-width, initial-scale=3D=
+1.0"><style type=3D"text/css">@media only screen and (max-device-width:=
+ 640px) {table{width:100%;}table.mj-full-width-mobile {width: 100% !imp=
+ortant;}td.mj-full-width-mobile {width: auto !important;}}@media only s=
+creen and (max-width: 640px) {table{width:100%;}table.mj-full-width-mob=
+ile {width: 100% !important;}td.mj-full-width-mobile {width: auto !impo=
+rtant;}}@media only screen and (min-width: 641px) {table{width:800px;} =
+table img{width:800px;}}</style><div align=3D"center">=0A<table style=3D=
+"background-color: rgb(219, 225, 231);" width=3D"100%">=0A	<tbody>=0A		=
+<tr>=0A			<td align=3D"center">=0A			<table class=3D"mj-full-width-mobi=
+le" border=3D"0" cellpadding=3D"4" cellspacing=3D"0" style=3D"margin-to=
+p: 10px; margin-bottom: 10px; background-color: rgb(255, 255, 255);" wi=
+dth=3D"800">=0A				<tbody>=0A					<tr>=0A						<td class=3D"mj-full-wid=
+th-mobile">=0A						<p style=3D"text-align: center;"><span style=3D"fon=
+t-size:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=
+=BB=91=E9=AB=94,arial;"><img src=3D'https://www.digitimes.com.tw/semina=
+r/generativeai_hackathon_2026/img/webtitle.jpg' border=3D'0' width=3D'8=
+00' style=3D'width:100%;'></span></span></p>=0A=0A						<p style=3D"mar=
+gin-bottom:0cm;"><span style=3D"font-size:14px;"><span style=3D"font-fa=
+mily:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">Hi&nbsp;=E9=83=
+=AD=E6=B3=B0=E6=BA=90&nbsp;=E6=82=A8=E5=A5=BD=EF=BC=9A</span></span></p=
+>=0A=0A						<p style=3D"margin-bottom:0cm;margin-bottom:.0001pt;"><spa=
+n style=3D"font-size:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=
+=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">=E6=AD=A1=E8=BF=8E=E5=8A=A0=E5=85=A5=
+=E3=80=902026 =E9=9B=B2=E6=B9=A7=E6=99=BA=E7=94=9F=EF=BC=9A=E8=87=BA=E7=
+=81=A3=E7=94=9F=E6=88=90=E5=BC=8F AI =E6=87=89=E7=94=A8=E9=BB=91=E5=AE=A2=
+=E6=9D=BE=E7=AB=B6=E8=B3=BD=E3=80=91=EF=BC=8C=E4=BB=A5=E4=B8=8B=E6=98=AF=
+=E6=82=A8=E7=9A=84=E9=8C=84=E5=8F=96=E8=B3=87=E8=A8=8A=EF=BC=9A</span><=
+/span></p>=0A=0A						<ul>=0A							<li style=3D"margin-top:0cm;margin-=
+right:0cm;margin-bottom:0cm;margin-bottom:.0001pt;"><span style=3D"font=
+-size:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=
+=91=E9=AB=94,arial;">=E5=A0=B1=E5=90=8D=E7=B5=84=E5=88=A5=EF=BC=9A=E5=89=
+=B5=E6=84=8F=E4=BA=A4=E6=B5=81=E7=B5=84</span></span></li>=0A							<li=
+ style=3D"margin-top:0cm;margin-right:0cm;margin-bottom:0cm;margin-bott=
+om:.0001pt;"><span style=3D"font-size:14px;"><span style=3D"font-family=
+:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">=E7=AB=B6=E8=B3=BD=
+=E4=B8=BB=E9=A1=8C=EF=BC=9A<strong>=E3=80=90=E6=99=B6=E5=89=B5=E6=9C=AA=
+=E4=BE=86=EF=BC=9A=E8=87=BA=E7=81=A3=E5=8D=8A=E5=B0=8E=E9=AB=94=E7=94=A2=
+=E5=AD=B8=E7=A0=94=E7=99=BC=E8=81=AF=E7=9B=9F=E3=80=91_ =E4=BB=A5=E4=BA=
+=BA=E6=9C=AC=E6=80=9D=E7=B6=AD=E7=99=BC=E5=B1=95=E9=81=A9=E6=87=89=E8=87=
+=BA=E7=81=A3=E7=A4=BE=E6=9C=83=E8=AE=8A=E9=81=B7=E4=B9=8B=E6=99=AE=E6=83=
+=A0=E7=A7=91=E6=8A=80=E6=87=89=E7=94=A8</strong></span></span></li>=0A	=
+						<li style=3D"margin-top:0cm;margin-right:0cm;margin-bottom:0cm;ma=
+rgin-bottom:.0001pt;"><a href=3D"https://www.digitimes.com.tw/seminar/g=
+enerativeai_hackathon_2026/filedownload.asp?id=3D14"><span style=3D"fon=
+t-size:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=
+=BB=91=E9=AB=94,arial;">=E9=99=84=E4=BB=B6=E4=B8=8B=E8=BC=89</span></sp=
+an></a></li>=0A						</ul>=0A=0A						<p style=3D"margin-bottom:0cm;mar=
+gin-bottom:.0001pt;"><span style=3D"font-size:14px;"><span style=3D"fon=
+t-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">=E3=84=A7=
+=E3=80=81=E9=87=8D=E8=A6=81=E6=99=82=E7=A8=8B=EF=BC=9A</span></span></p=
+>=0A=0A						<table border=3D"1" cellpadding=3D"0" cellspacing=3D"0" st=
+yle=3D"width:803px;background:white;border-collapse:collapse;border:non=
+e;" width=3D"803">=0A							<tbody>=0A								<tr style=3D"height:30px;=
+">=0A									<td style=3D"width:330px;border:solid #BFBFBF 1.0pt;backg=
+round:#E59EDC;padding:0cm 5.4pt 0cm 5.4pt;height:30px;">=0A									<p =
+align=3D"center" style=3D"text-align:center;"><span style=3D"font-size:=
+14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=
+=AB=94,arial;"><strong><span style=3D"color:#333333;">=E6=97=A5=E6=9C=9F=
+</span></strong></span></span></p>=0A									</td>=0A									<td styl=
+e=3D"width:473px;border:solid #BFBFBF 1.0pt;border-left:none;background=
+:#E59EDC;padding:0cm 5.4pt 0cm 5.4pt;height:30px;">=0A									<p align=
+=3D"center" style=3D"text-align:center;"><span style=3D"font-size:14px;=
+"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=
+=94,arial;"><strong><span style=3D"color:#333333;">=E9=87=8D=E8=A6=81=E4=
+=BA=8B=E9=A0=85</span></strong></span></span></p>=0A									</td>=0A		=
+						</tr>=0A								<tr style=3D"height:30px;">=0A									<td style=3D=
+"width:330px;border:solid #BFBFBF 1.0pt;border-top:none;padding:0cm 5.4=
+pt 0cm 5.4pt;height:30px;">=0A									<p align=3D"center" style=3D"tex=
+t-align:center;"><span style=3D"font-size:14px;"><span style=3D"font-fa=
+mily:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">2026/7/5=EF=BC=
+=88=E6=97=A5=EF=BC=89</span></span></p>=0A									</td>=0A									<td=
+ style=3D"width:473px;border-top:none;border-left:none;border-bottom:so=
+lid #BFBFBF 1.0pt;border-right:solid #BFBFBF 1.0pt;padding:0cm 5.4pt 0c=
+m 5.4pt;height:30px;">=0A									<p align=3D"center" style=3D"text-ali=
+gn:center;"><span style=3D"font-size:14px;"><span style=3D"font-family:=
+=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">=E5=B7=A5=E4=BD=9C=
+=E5=9D=8A=E5=A0=B1=E5=90=8D=E6=88=AA=E6=AD=A2</span></span></p>=0A					=
+				</td>=0A								</tr>=0A								<tr style=3D"height:30px;">=0A					=
+				<td style=3D"width:330px;border:solid #BFBFBF 1.0pt;border-top:none=
+;padding:0cm 5.4pt 0cm 5.4pt;height:30px;">=0A									<p align=3D"cent=
+er" style=3D"text-align:center;"><span style=3D"font-size:14px;"><span =
+style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,aria=
+l;">2026/7/11=EF=BC=88=E5=85=AD=EF=BC=8913:00-17:30</span></span></p>=0A=
+									</td>=0A									<td style=3D"width:473px;border-top:none;bord=
+er-left:none;border-bottom:solid #BFBFBF 1.0pt;border-right:solid #BFBF=
+BF 1.0pt;padding:0cm 5.4pt 0cm 5.4pt;height:30px;">=0A									<p align=
+=3D"center" style=3D"text-align:center;"><span style=3D"font-size:14px;=
+"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=
+=94,arial;">=E3=80=90=E5=88=9D=E9=9A=8E=E3=80=91=E7=94=9F=E6=88=90=E5=BC=
+=8F AI =E7=A4=BA=E7=AF=84=E5=B7=A5=E4=BD=9C=E5=9D=8A</span></span></p>=0A=
+									</td>=0A								</tr>=0A								<tr style=3D"height:30px;">=0A=
+									<td style=3D"width:330px;border:solid #BFBFBF 1.0pt;border-top=
+:none;padding:0cm 5.4pt 0cm 5.4pt;height:30px;">=0A									<p align=3D=
+"center" style=3D"text-align:center;"><span style=3D"font-size:14px;"><=
+span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94=
+,arial;">2026/7/18=EF=BC=88=E5=85=AD=EF=BC=8913:00-17:30</span></span><=
+/p>=0A									</td>=0A									<td style=3D"width:473px;border-top:non=
+e;border-left:none;border-bottom:solid #BFBFBF 1.0pt;border-right:solid=
+ #BFBFBF 1.0pt;padding:0cm 5.4pt 0cm 5.4pt;height:30px;">=0A									<p=
+ align=3D"center" style=3D"text-align:center;"><span style=3D"font-size=
+:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=
+=E9=AB=94,arial;">=E3=80=90=E9=80=B2=E9=9A=8E=E3=80=91=E7=94=9F=E6=88=90=
+=E5=BC=8F AI =E7=A4=BA=E7=AF=84=E5=B7=A5=E4=BD=9C=E5=9D=8A (I)</span></=
+span></p>=0A									</td>=0A								</tr>=0A								<tr style=3D"heigh=
+t:30px;">=0A									<td style=3D"width:330px;border:solid #BFBFBF 1.0p=
+t;border-top:none;padding:0cm 5.4pt 0cm 5.4pt;height:30px;">=0A								=
+	<p align=3D"center" style=3D"text-align:center;"><span style=3D"font-s=
+ize:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=
+=91=E9=AB=94,arial;">2026/7/19=EF=BC=88=E6=97=A5=EF=BC=8913:00-17:30</s=
+pan></span></p>=0A									</td>=0A									<td style=3D"width:473px;bo=
+rder-top:none;border-left:none;border-bottom:solid #BFBFBF 1.0pt;border=
+-right:solid #BFBFBF 1.0pt;padding:0cm 5.4pt 0cm 5.4pt;height:30px;">=0A=
+									<p align=3D"center" style=3D"text-align:center;"><span style=3D=
+"font-size:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=
+=E9=BB=91=E9=AB=94,arial;">=E3=80=90=E9=80=B2=E9=9A=8E=E3=80=91=E7=94=9F=
+=E6=88=90=E5=BC=8F AI =E7=A4=BA=E7=AF=84=E5=B7=A5=E4=BD=9C=E5=9D=8A (II=
+)</span></span></p>=0A									</td>=0A								</tr>=0A								<tr styl=
+e=3D"height:30px;">=0A									<td style=3D"width:330px;border:solid #B=
+FBFBF 1.0pt;border-top:none;padding:0cm 5.4pt 0cm 5.4pt;height:30px;">=0A=
+									<p align=3D"center" style=3D"text-align:center;"><span style=3D=
+"font-size:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=
+=E9=BB=91=E9=AB=94,arial;">2026/7/22=EF=BC=88=E4=B8=89=EF=BC=89</span><=
+/span></p>=0A									</td>=0A									<td style=3D"width:473px;border-=
+top:none;border-left:none;border-bottom:solid #BFBFBF 1.0pt;border-righ=
+t:solid #BFBFBF 1.0pt;padding:0cm 5.4pt 0cm 5.4pt;height:30px;">=0A				=
+					<p align=3D"center" style=3D"text-align:center;"><span style=3D"fo=
+nt-size:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=
+=BB=91=E9=AB=94,arial;">=E6=B1=BA=E8=B3=BD=E5=90=8D=E5=96=AE=E5=85=AC=E5=
+=B8=83</span></span></p>=0A									</td>=0A								</tr>=0A								<tr=
+ style=3D"height:30px;">=0A									<td style=3D"width:330px;border:sol=
+id #BFBFBF 1.0pt;border-top:none;padding:0cm 5.4pt 0cm 5.4pt;height:30p=
+x;">=0A									<p align=3D"center" style=3D"text-align:center;"><span =
+style=3D"font-size:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=
+=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">2026/8/1-2=EF=BC=88=E5=85=AD-=E6=97=
+=A5=EF=BC=89</span></span></p>=0A									</td>=0A									<td style=3D=
+"width:473px;border-top:none;border-left:none;border-bottom:solid #BFBF=
+BF 1.0pt;border-right:solid #BFBFBF 1.0pt;padding:0cm 5.4pt 0cm 5.4pt;h=
+eight:30px;">=0A									<p align=3D"center" style=3D"text-align:center=
+;"><span style=3D"font-size:14px;"><span style=3D"font-family:=E5=BE=AE=
+=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">=E6=B1=BA=E8=B3=BD=E9=BB=91=
+=E5=AE=A2=E6=9D=BE</span></span></p>=0A									</td>=0A								</tr>=0A=
+							</tbody>=0A						</table>=0A=0A						<p style=3D"margin-bottom:0=
+cm;margin-bottom:.0001pt;"><span style=3D"font-size:14px;"><span style=3D=
+"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">=E4=BA=
+=8C=E3=80=81<strong>=E5=B7=A5=E4=BD=9C=E5=9D=8A=E8=B3=87=E8=A8=8A</stro=
+ng>=EF=BC=9A</span></span></p>=0A=0A						<p style=3D"margin-bottom:0cm=
+;margin-bottom:.0001pt;"><span style=3D"font-size:14px;"><span style=3D=
+"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;"><str=
+ong>=E7=94=9F=E6=88=90=E5=BC=8F AI =E7=A4=BA=E7=AF=84=E5=B7=A5=E4=BD=9C=
+=E5=9D=8A=EF=BC=9A</strong></span></span></p>=0A=0A						<ul>=0A							=
+<li><span style=3D"font-size:14px;"><span style=3D"font-family:=E5=BE=AE=
+=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;"><strong>=E5=AF=A6=E9=AB=94=
+=E5=8F=83=E8=88=87</strong>=EF=BC=9AAWS =E5=8F=B0=E5=8C=97=E8=BE=A6=E5=85=
+=AC=E5=AE=A4 -=E5=BE=AE=E9=A2=A8=E5=8D=97=E5=B1=B1=E8=BE=A6=E5=85=AC=E5=
+=A4=A7=E6=A8=93 (=E5=8F=B0=E5=8C=97=E5=B8=82=E4=BF=A1=E7=BE=A9=E5=8D=80=
+=E6=9D=BE=E4=BB=81=E8=B7=AF 100 =E8=99=9F 12 =E6=A8=93)</span></span></=
+li>=0A							<li><span style=3D"font-size:14px;"><span style=3D"font-fa=
+mily:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;"><strong>=E7=B7=
+=9A=E4=B8=8A=E5=8F=83=E8=88=87</strong>=EF=BC=9A=E7=9B=B8=E9=97=9C=E9=80=
+=A3=E7=B5=90=E5=BE=85=E5=87=BA=E5=B8=AD=E6=96=B9=E5=BC=8F=E7=A2=BA=E8=AA=
+=8D=E5=BE=8C=E5=BE=85=E8=A3=9C </span></span></li>=0A							<li><span s=
+tyle=3D"font-size:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=
+=AD=A3=E9=BB=91=E9=AB=94,arial;"><strong>=E5=A0=B1=E5=90=8D=E6=96=B9=E5=
+=BC=8F</strong>=EF=BC=9A=E8=AB=8B=E6=96=BC <strong>7/5 (=E6=97=A5) =E5=89=
+=8D</strong>=E5=AE=8C=E6=88=90=E5=B7=A5=E4=BD=9C=E5=9D=8A=E5=A0=B4=E6=AC=
+=A1=E5=A0=B1=E5=90=8D=EF=BC=9A<a href=3D"https://survey.typeform.com/to=
+/jqBJTYlX" target=3D"_blank" title=3D"https://survey.typeform.com/to/jq=
+bjtylx">https://survey.typeform.com/to/jqBJTYlX</a></span></span></li>=0A=
+							<li><span style=3D"font-size:14px;"><span style=3D"font-family:=E5=
+=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;"><strong>=E9=99=84=E8=
+=A8=BB</strong>=EF=BC=9A<strong>=E8=8B=A5=E6=AC=B2=E5=AF=A6=E9=AB=94=E5=
+=8F=83=E8=88=87=EF=BC=8C=E8=AB=8B=E7=9B=A1=E6=97=A9=E5=A0=B1=E5=90=8D</=
+strong>=E3=80=82=E5=9B=A0=E5=AF=A6=E9=AB=94=E5=A0=B4=E5=9C=B0=E5=90=8D=E9=
+=A1=8D=E6=9C=89=E9=99=90=EF=BC=8C=E9=A1=8D=E6=BB=BF=E5=BE=8C=E5=B0=87=E5=
+=83=85=E8=83=BD=E4=BB=A5=E7=B7=9A=E4=B8=8A=E6=96=B9=E5=BC=8F=E5=8F=83=E8=
+=88=87=E3=80=82=E4=B8=BB=E8=BE=A6=E5=96=AE=E4=BD=8D=E5=B0=87=E6=96=BC=E5=
+=A0=B1=E5=90=8D=E6=88=AA=E6=AD=A2=E5=BE=8C=E5=8F=A6=E8=A1=8C=E9=80=9A=E7=
+=9F=A5=E6=82=A8=E7=9A=84=E5=8F=83=E8=88=87=E6=96=B9=E5=BC=8F=EF=BC=88=E5=
+=AF=A6=E9=AB=94=E6=88=96=E7=B7=9A=E4=B8=8A=EF=BC=89<br>=0A							&nbsp;=
+</span></span></li>=0A						</ul>=0A=0A						<p style=3D"margin-bottom:=
+0cm;margin-bottom:.0001pt;"><span style=3D"font-size:14px;"><span style=
+=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">=E4=
+=B8=89=E3=80=81=E5=89=B5=E6=84=8F=E4=BA=A4=E6=B5=81=E7=B5=84 <strong>=E6=
+=B1=BA=E8=B3=BD=E9=A0=88=E7=9F=A5=E5=8F=8A=E6=B3=A8=E6=84=8F=E4=BA=8B=E9=
+=A0=85</strong>=EF=BC=9A</span></span></p>=0A=0A						<ol>=0A							<li=
+><span style=3D"font-size:14px;"><span style=3D"font-family:=E5=BE=AE=E8=
+=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">=E9=9A=8A=E5=85=A7=E9=A0=88<s=
+trong>=E8=87=B3=E5=B0=91 2 =E4=BD=8D=E9=9A=8A=E5=93=A1=E5=85=A8=E7=A8=8B=
+</strong>=E5=8F=83=E5=8A=A0 3 =E5=A0=B4=E5=AF=A6=E9=AB=94=E6=88=96=E7=B7=
+=9A=E4=B8=8A=E7=94=9F=E6=88=90=E5=BC=8F AI =E7=A4=BA=E7=AF=84=E5=B7=A5=E4=
+=BD=9C=E5=9D=8A</span></span></li>=0A							<li><span style=3D"font-siz=
+e:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=
+=E9=AB=94,arial;">=E7=AC=A6=E5=90=88=E4=B8=8A=E8=BF=B0=E6=A2=9D=E4=BB=B6=
+=E8=80=85=EF=BC=8C=E5=B0=87=E6=96=BC 7/22 (=E4=B8=89) =E6=94=B6=E5=88=B0=
+=E6=B1=BA=E8=B3=BD=E5=85=A5=E9=81=B8=E9=80=9A=E7=9F=A5</span></span></l=
+i>=0A							<li><span style=3D"font-size:14px;"><span style=3D"font-fam=
+ily:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">=E9=80=B2=E5=85=
+=A5=E6=B1=BA=E8=B3=BD=E4=B9=8B=E9=9A=8A=E4=BC=8D=EF=BC=8C=E5=85=A8=E5=93=
+=A1=E9=A0=88=E6=96=BC 8/1-2 =E5=85=A8=E7=A8=8B=E5=8F=83=E8=88=87=E9=BB=91=
+=E5=AE=A2=E6=9D=BE=E7=AB=B6=E8=B3=BD=EF=BC=88=E5=8C=85=E5=90=AB=E9=96=8B=
+=E5=B9=95=E5=84=80=E5=BC=8F=E3=80=81=E7=AB=B6=E8=B3=BD=E5=AF=A6=E4=BD=9C=
+=E3=80=81=E8=A9=95=E5=AF=A9=E7=B0=A1=E5=A0=B1=E3=80=81=E9=A0=92=E7=8D=8E=
+=E5=85=B8=E7=A6=AE=EF=BC=89=EF=BC=8C=E6=96=B9=E5=8F=AF=E5=8F=96=E5=BE=97=
+=E5=AE=8C=E8=B3=BD=E8=AD=89=E6=98=8E</span></span></li>=0A							<li><s=
+pan style=3D"font-size:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=
+=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">=E9=A0=88=E6=96=BC 8/1-2 =E7=AB=B6=
+=E8=B3=BD=E6=9C=9F=E9=96=93 30 =E5=B0=8F=E6=99=82=E5=85=A7=E7=B9=B3=E4=BA=
+=A4=E6=8F=90=E6=A1=88=EF=BC=8C=E5=B0=87=E7=9B=B8=E9=97=9C=E6=AA=94=E6=A1=
+=88=E4=B8=8A=E5=82=B3=E8=87=B3=E6=8C=87=E5=AE=9A=E6=88=90=E6=9E=9C=E5=AD=
+=98=E6=94=BE=E5=B9=B3=E5=8F=B0=E7=95=99=E5=AD=98=E3=80=82=E6=8F=90=E6=A1=
+=88=E5=85=A7=E5=AE=B9=E5=8C=85=E5=90=AB=E5=91=BD=E9=A1=8C=E9=80=A3=E7=B5=
+=90=E3=80=81=E6=83=85=E5=A2=83=E8=A8=AD=E8=A8=88=E3=80=81=E7=94=9F=E6=88=
+=90=E5=BC=8F AI =E6=8F=90=E6=A1=88=E3=80=81Live Demo</span></span></li>=
+=0A							<li><span style=3D"font-size:14px;"><span style=3D"font-famil=
+y:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">=E5=83=85=E9=99=
+=90=E4=BD=BF=E7=94=A8 AWS =E6=9C=8D=E5=8B=99=E6=8F=90=E4=BE=9B=E4=B9=8B=
+=E5=9F=BA=E7=A4=8E=E6=A8=A1=E5=9E=8B=E3=80=82</span></span></li>=0A				=
+		</ol>=0A=0A						<p><span style=3D"font-size:14px;"><span style=3D"fo=
+nt-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=E9=AB=94,arial;">=E8=A9=B3=
+=E7=B4=B0=E5=85=A7=E5=AE=B9=E8=AB=8B=E5=8F=83=E9=96=B1<a href=3D"https:=
+//www.digitimes.com.tw/seminar/generativeai_hackathon_2026/"><span styl=
+e=3D"color:#467886;">=E7=AB=B6=E8=B3=BD=E7=B6=B2=E7=AB=99=E6=B4=BB=E5=8B=
+=95=E9=99=84=E5=89=87</span></a></span></span><br>=0A						&nbsp;</p>=0A=
+=0A						<p style=3D"margin-bottom:0cm;margin-bottom:.0001pt;"><span st=
+yle=3D"font-size:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=
+=AD=A3=E9=BB=91=E9=AB=94,arial;">=E5=A6=82=E6=9C=89=E4=BB=BB=E4=BD=95=E7=
+=96=91=E5=95=8F=E8=AB=8B=E8=81=AF=E7=B9=AB=E3=80=90=E9=BB=91=E5=AE=A2=E6=
+=9D=BE=E7=AB=B6=E8=B3=BD=E3=80=91=E6=B4=BB=E5=8B=95=E5=B0=8F=E7=B5=84 <=
+a href=3D"mailto:hackathon@digitimes.com"><span style=3D"color:#467886;=
+">hackathon@digitimes.com</span></a></span></span></p>=0A=0A						<p st=
+yle=3D"margin-bottom:0cm;margin-bottom:.0001pt;"><span style=3D"font-si=
+ze:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=
+=E9=AB=94,arial;">=E6=88=91=E5=80=91=E5=B0=87=E7=AB=AD=E8=AA=A0=E7=82=BA=
+=E6=82=A8=E6=9C=8D=E5=8B=99=EF=BC=81</span></span></p>=0A=0A						<p st=
+yle=3D"margin-bottom:0cm;margin-bottom:.0001pt;"><span style=3D"font-si=
+ze:14px;"><span style=3D"font-family:=E5=BE=AE=E8=BB=9F=E6=AD=A3=E9=BB=91=
+=E9=AB=94,arial;">2026 =E9=9B=B2=E6=B9=A7=E6=99=BA=E7=94=9F=EF=BC=9A=E8=
+=87=BA=E7=81=A3=E7=94=9F=E6=88=90=E5=BC=8F AI =E6=87=89=E7=94=A8=E9=BB=91=
+=E5=AE=A2=E6=9D=BE=E7=AB=B6=E8=B3=BD=E6=B4=BB=E5=8B=95=E5=B0=8F=E7=B5=84=
+ =E6=95=AC=E4=B8=8A</span></span></p>=0A						</td>=0A					</tr>=0A				=
+</tbody>=0A			</table>=0A			</td>=0A		</tr>=0A	</tbody>=0A</table>=0A=0A=
+<table style=3D"background-color: rgb(219, 225, 231);" width=3D"100%">=0A=
+	<tbody>=0A		<tr>=0A			<td align=3D"center">=0A			<p>&nbsp;</p>=0A			</=
+td>=0A		</tr>=0A	</tbody>=0A</table>=0A</div>=0A
+
+----=E4C514D232DB4191983C_782A_468F_BFAE--

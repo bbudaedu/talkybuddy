@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>說說學伴 TalkyBuddy — 教師儀表板</title>
+<style>
+  :root{
+    --bg:#0d0d0d;
+    --surface:#1a1a19;
+    --surface2:#222220;
+    --ink:#ffffff;
+    --ink2:#c3c2b7;
+    --muted:#898781;
+    --grid:#2c2c2a;
+    --axis:#383835;
+    --hairline:rgba(255,255,255,0.10);
+    --c-pron:#3987e5;
+    --c-flu:#199e70;
+    --c-voc:#c98500;
+    --c-gram:#9085e9;
+    --c-old:#898781;
+    --good:#199e70;
+    --warn:#c98500;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:system-ui,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+    background-color:var(--bg);
+    background-image:
+      radial-gradient(1100px 560px at 85% -10%, rgba(96,84,226,0.14), transparent 60%),
+      radial-gradient(900px 520px at -10% 25%, rgba(57,135,229,0.09), transparent 60%);
+    background-attachment:fixed;
+    color:var(--ink);
+    line-height:1.55;
+    padding:16px;
+  }
+  .wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:16px;}
+  .nums{font-variant-numeric:tabular-nums;}
+
+  /* ---------- header ---------- */
+  header.topbar{
+    display:flex;flex-wrap:wrap;align-items:center;gap:12px;
+    padding:14px 18px;border:1px solid var(--hairline);border-radius:14px;
+    background:var(--surface);
+  }
+  .back-link{
+    color:var(--ink2);text-decoration:none;font-size:14px;
+    padding:6px 12px;border:1px solid var(--hairline);border-radius:999px;
+    white-space:nowrap;
+  }
+  .back-link:hover{color:var(--ink);border-color:rgba(255,255,255,0.25);}
+  .brand{flex:1;min-width:200px;}
+  .brand h1{font-size:18px;font-weight:700;letter-spacing:0.02em;}
+  .brand .tagline{font-size:12.5px;color:var(--muted);}
+  .topbar-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .btn{
+    font:inherit;font-size:13.5px;cursor:pointer;color:var(--ink);
+    background:var(--surface2);border:1px solid var(--hairline);
+    border-radius:10px;padding:7px 14px;
+  }
+  .btn:hover{border-color:rgba(255,255,255,0.28);}
+  .btn.ghost{color:var(--ink2);background:transparent;}
+  .poll-note{font-size:12px;color:var(--muted);white-space:nowrap;}
+
+  /* ---------- cards ---------- */
+  .card{
+    background:var(--surface);border:1px solid var(--hairline);
+    border-radius:14px;padding:18px;
+  }
+  .card h2{font-size:15px;font-weight:700;margin-bottom:4px;}
+  .card .sub{font-size:12.5px;color:var(--muted);margin-bottom:12px;}
+
+  /* ---------- student header ---------- */
+  .student-head{display:flex;flex-wrap:wrap;gap:16px;align-items:center;}
+  .avatar{
+    width:56px;height:56px;border-radius:50%;flex:0 0 auto;
+    background:linear-gradient(135deg, rgba(57,135,229,0.35), rgba(144,133,233,0.35));
+    border:1px solid var(--hairline);
+    display:flex;align-items:center;justify-content:center;font-size:28px;
+  }
+  .student-id-block{min-width:180px;}
+  .student-name{font-size:20px;font-weight:700;}
+  .id-line{font-size:12.5px;color:var(--muted);}
+  .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
+  .tag{
+    font-size:11.5px;color:var(--ink2);padding:2px 10px;border-radius:999px;
+    border:1px solid var(--hairline);background:rgba(255,255,255,0.04);
+  }
+  .stats{display:flex;gap:12px;flex-wrap:wrap;margin-left:auto;}
+  .stat{
+    min-width:118px;padding:10px 14px;border-radius:12px;
+    border:1px solid var(--hairline);background:rgba(255,255,255,0.03);
+  }
+  .stat .label{font-size:11.5px;color:var(--muted);}
+  .stat .value{font-size:20px;font-weight:700;}
+  .stat .value small{font-size:12px;color:var(--ink2);font-weight:400;}
+
+  /* ---------- charts grid ---------- */
+  .charts-row{display:grid;grid-template-columns:minmax(300px,5fr) 7fr;gap:16px;}
+  .chart-box{position:relative;}
+  svg{display:block;width:100%;height:auto;}
+  svg text{font-family:inherit;}
+
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;}
+  .legend .item{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink2);}
+  .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;}
+
+  .tooltip{
+    position:absolute;pointer-events:none;display:none;z-index:5;
+    background:var(--surface2);border:1px solid var(--hairline);border-radius:9px;
+    padding:8px 11px;font-size:12px;min-width:132px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.5);
+  }
+  .tooltip .tt-date{color:var(--muted);margin-bottom:4px;font-variant-numeric:tabular-nums;}
+  .tooltip .tt-row{display:flex;align-items:center;gap:6px;color:var(--ink2);font-variant-numeric:tabular-nums;}
+  .tooltip .tt-row b{margin-left:auto;color:var(--ink);font-weight:600;}
+
+  /* ---------- diagnosis card ---------- */
+  .diag-src{
+    display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink2);
+    border:1px solid var(--hairline);border-radius:999px;padding:3px 11px;
+    background:rgba(144,133,233,0.10);margin-bottom:12px;
+  }
+  .diag-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .diag-block .blk-title{font-size:12.5px;color:var(--muted);margin-bottom:6px;}
+  .taglist{display:flex;gap:6px;flex-wrap:wrap;}
+  .tag-good,.tag-warn{
+    font-size:12.5px;padding:3px 11px;border-radius:999px;color:var(--ink);
+  }
+  .tag-good{background:rgba(25,158,112,0.16);border:1px solid rgba(25,158,112,0.45);}
+  .tag-warn{background:rgba(201,133,0,0.16);border:1px solid rgba(201,133,0,0.5);}
+  .emo-box{
+    grid-column:1 / -1;font-size:13.5px;color:var(--ink2);
+    border:1px dashed var(--hairline);border-radius:10px;padding:10px 14px;
+    background:rgba(255,255,255,0.02);
+  }
+  .instr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px;}
+  .instr{
+    border:1px solid var(--hairline);border-radius:12px;padding:12px 14px;
+    background:rgba(255,255,255,0.03);
+  }
+  .instr .i-title{font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:5px;display:flex;align-items:center;gap:6px;}
+  .instr p{font-size:13px;color:var(--ink2);}
+
+  /* ---------- interaction table ---------- */
+  table.rec{width:100%;border-collapse:collapse;font-size:13px;}
+  table.rec th{
+    text-align:left;font-size:11.5px;color:var(--muted);font-weight:500;
+    padding:8px 10px;border-bottom:1px solid var(--hairline);white-space:nowrap;
+  }
+  table.rec td{
+    padding:9px 10px;border-bottom:1px solid rgba(255,255,255,0.06);
+    vertical-align:top;color:var(--ink2);
+  }
+  table.rec tr:last-child td{border-bottom:none;}
+  td.t-time{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums;}
+  td.t-said{color:var(--ink);max-width:220px;}
+  td.t-resp{max-width:260px;}
+  .meter-set{display:flex;flex-direction:column;gap:4px;min-width:112px;}
+  .meter-line{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .meter-line .m-label{width:14px;flex:0 0 auto;}
+  .meter{flex:1;height:6px;min-width:48px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;}
+  .meter>span{display:block;height:100%;border-radius:3px;}
+  .meter-line .m-val{width:22px;text-align:right;color:var(--ink2);}
+  .badge{
+    display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--ink2);
+    padding:2px 10px;border-radius:999px;white-space:nowrap;
+  }
+  .badge .dot{width:7px;height:7px;}
+  .badge.edge{background:rgba(201,133,0,0.14);border:1px solid rgba(201,133,0,0.45);}
+  .badge.cloud{background:rgba(57,135,229,0.14);border:1px solid rgba(57,135,229,0.45);}
+  .sync-ok{color:var(--good);font-size:12.5px;white-space:nowrap;}
+  .sync-pending{color:var(--warn);font-size:12.5px;white-space:nowrap;}
+
+  /* ---------- mobile record cards ---------- */
+  .rec-cards{display:none;flex-direction:column;gap:10px;}
+  .rec-card{
+    border:1px solid var(--hairline);border-radius:12px;padding:12px 14px;
+    background:rgba(255,255,255,0.03);
+  }
+  .rec-card .rc-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
+  .rec-card .rc-time{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;margin-right:auto;}
+  .rec-card .rc-said{font-size:14px;color:var(--ink);margin-bottom:2px;}
+  .rec-card .rc-resp{font-size:12.5px;color:var(--ink2);margin-bottom:8px;}
+
+  .updated-line{font-size:12px;color:var(--muted);}
+  .flash{color:var(--good);transition:opacity .4s;}
+
+  @media (max-width:880px){
+    .charts-row{grid-template-columns:1fr;}
+    .instr-grid{grid-template-columns:1fr;}
+    .stats{margin-left:0;width:100%;}
+    .stat{flex:1;min-width:100px;}
+  }
+  @media (max-width:720px){
+    body{padding:10px;}
+    table.rec{display:none;}
+    .rec-cards{display:flex;}
+    .diag-grid{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="topbar">
+    <a class="back-link" href="./index.html">🐧 回學生端</a>
+    <div class="brand">
+      <h1>說說學伴 TalkyBuddy — 教師儀表板</h1>
+      <div class="tagline">邊緣互動 × 雲端診斷閉環</div>
+    </div>
+    <div class="topbar-actions">
+      <span class="poll-note nums" id="updatedLine">最後更新 --:--:--（每 5 秒自動更新）</span>
+      <button class="btn" id="btnRefresh" type="button">重新整理資料</button>
+      <button class="btn ghost" id="btnReset" type="button">重置示範資料</button>
+    </div>
+  </header>
+
+  <!-- 學生卡頭部 -->
+  <section class="card">
+    <div class="student-head">
+      <div class="avatar">🧒</div>
+      <div class="student-id-block">
+        <div class="student-name">阿明</div>
+        <div class="id-line nums">STUDENT-AMING-004 ｜ 裝置 GENIO-520-X992</div>
+        <div class="tags">
+          <span class="tag">三年甲班</span>
+          <span class="tag">雙語口說</span>
+          <span class="tag">邊緣裝置：Genio 520</span>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="label">總互動次數</div><div class="value nums" id="statTotal">–</div></div>
+        <div class="stat"><div class="label">待同步筆數</div><div class="value nums" id="statPending">–</div></div>
+        <div class="stat"><div class="label">最近互動</div><div class="value nums" id="statLast" style="font-size:15px;">–</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 圖表列 -->
+  <div class="charts-row">
+    <section class="card">
+      <h2>四維評分雷達圖</h2>
+      <div class="sub">最新診斷 vs 14 天前（發音 / 流暢度 / 詞彙 / 句型）</div>
+      <div class="chart-box" id="radarBox"></div>
+      <div class="legend" id="radarLegend"></div>
+    </section>
+
+    <section class="card">
+      <h2>14 天學習趨勢</h2>
+      <div class="sub">四維分數逐日變化（滑鼠或手指移動可查看每日數值）</div>
+      <div class="chart-box" id="trendBox">
+        <div class="tooltip" id="trendTip"></div>
+      </div>
+      <div class="legend" id="trendLegend"></div>
+    </section>
+  </div>
+
+  <!-- AI 診斷卡 -->
+  <section class="card">
+    <h2>AI 學習診斷（最新）</h2>
+    <div class="sub nums" id="diagDate">–</div>
+    <div class="diag-src">🤖 由 Hermes Agent（持久記憶）＋ AWS Bedrock（Claude）產出</div>
+    <div class="diag-grid">
+      <div class="diag-block">
+        <div class="blk-title">優勢 Strengths</div>
+        <div class="taglist" id="diagStrengths"></div>
+      </div>
+      <div class="diag-block">
+        <div class="blk-title">弱項 Weaknesses</div>
+        <div class="taglist" id="diagWeaknesses"></div>
+      </div>
+      <div class="emo-box" id="diagEmo"></div>
+    </div>
+    <div class="instr-grid">
+      <div class="instr"><div class="i-title">🏫 課堂指引</div><p id="instrClassroom">–</p></div>
+      <div class="instr"><div class="i-title">🐧 裝置端主題</div><p id="instrDevice">–</p></div>
+      <div class="instr"><div class="i-title">🤝 同儕共學</div><p id="instrPeer">–</p></div>
+    </div>
+  </section>
+
+  <!-- 互動紀錄 -->
+  <section class="card">
+    <h2>互動紀錄</h2>
+    <div class="sub">最近 20 筆（edge＝裝置離線即時迴路；cloud＝雲端增強）</div>
+    <table class="rec">
+      <thead>
+        <tr>
+          <th>時間</th><th>學生說的話</th><th>AI 回應</th><th>分數</th><th>模式</th><th>同步</th>
+        </tr>
+      </thead>
+      <tbody id="recBody"></tbody>
+    </table>
+    <div class="rec-cards" id="recCards"></div>
+  </section>
+
+  <div class="updated-line">資料來源：localStorage（ssxb_interactions / ssxb_diagnoses）— 學生端寫入、教師端唯讀。</div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================
+   說說學伴 TalkyBuddy — 教師儀表板
+   共用資料契約 keys：ssxb_interactions / ssxb_diagnoses / ssxb_seeded
+   ========================================================= */
+
+var LS_INTERACTIONS = "ssxb_interactions";
+var LS_DIAGNOSES = "ssxb_diagnoses";
+var LS_SEEDED = "ssxb_seeded";
+
+var COLORS = {
+  pronunciation: "#3987e5",
+  fluency: "#199e70",
+  vocabulary: "#c98500",
+  grammar: "#9085e9",
+  old: "#898781",
+  surface: "#1a1a19",
+  grid: "#2c2c2a",
+  axis: "#383835",
+  ink: "#ffffff",
+  ink2: "#c3c2b7",
+  muted: "#898781"
+};
+var DIMS = [
+  { key: "pronunciation", label: "發音", short: "發" },
+  { key: "fluency",       label: "流暢度", short: "流" },
+  { key: "vocabulary",    label: "詞彙", short: "詞" },
+  { key: "grammar",       label: "句型", short: "句" }
+];
+var INTER_DIMS = [
+  { key: "fluency",    label: "流", color: COLORS.fluency },
+  { key: "vocabulary", label: "詞", color: COLORS.vocabulary },
+  { key: "grammar",    label: "句", color: COLORS.grammar }
+];
+
+/* ---------- 日期工具 ---------- */
+function pad2(n){ return String(n).padStart(2, "0"); }
+function isoDate(d){
+  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+}
+function daysAgo(n, base){
+  var d = base ? new Date(base.getTime()) : new Date();
+  d.setDate(d.getDate() - n);
+  return d;
+}
+function mmdd(dateStr){
+  var p = dateStr.split("-");
+  return p[1] + "/" + p[2];
+}
+
+/* =========================================================
+   種子資料（純函式，node 可驗證）
+   ========================================================= */
+function buildSeedDiagnoses(base){
+  // 14 天四維分數：有起伏、整體上升（阿明的學習曲線）
+  var P = [48,50,49,52,53,51,55,56,58,57,59,61,60,62];
+  var F = [42,44,45,43,47,48,50,49,52,54,53,56,55,58];
+  var V = [55,54,57,58,60,59,61,63,62,64,66,65,67,65];
+  var G = [40,42,41,44,45,47,46,49,50,48,52,53,55,54];
+  var DAILY = [
+    { st:["願意跟著唸出單字","對水果主題有興趣"],
+      wk:["幾乎只說中文、偶爾夾英文單字","冠詞 a/an 完全遺漏","聲音小、句尾含糊"],
+      emo:"初次互動偏害羞，需多次鼓勵才開口",
+      c:"以單字複誦與是非題建立安全感，先不當眾糾錯。",
+      d:"水果單字暖身（apple、banana），一次一個字、放慢語速。",
+      p:"與同樣內向的同學兩人一組玩水果字卡，降低開口壓力。" },
+    { st:["能主動說出 apple、banana","跟讀模仿發音有進步"],
+      wk:["名詞前一律漏掉 a/an","以中文為主、英文只出現在句尾"],
+      emo:"比昨天放鬆一些，答對時會笑",
+      c:"示範「a + 名詞」節奏拍手唸法，全班一起做動作記憶。",
+      d:"單字加冠詞跟讀：a dog、an apple，重複三輪。",
+      p:"請發音較穩的同學帶他玩「你比我猜」單字遊戲。" },
+    { st:["記得前一天的單字，複習正確率高","願意重複唸到正確為止"],
+      wk:["a/an 分不清（an apple 說成 a apple）","超過三個字的句子會停頓"],
+      emo:"開始享受答對的成就感",
+      c:"用母音開頭單字小卡專練 an，搭配誇張口型示範。",
+      d:"an + 母音開頭單字主題：an apple、an egg、an orange。",
+      p:"兩人互考 a/an 小卡，答對互相蓋章集點。" },
+    { st:["會主動問「這個英文怎麼說」","單字量明顯累積"],
+      wk:["句型仍以中文語序直翻","今天分心次數較多、句子常中斷"],
+      emo:"精神較差、耐心下降，長句容易放棄",
+      c:"縮短單次練習時間，改為多次短回合並即時鼓勵。",
+      d:"回到熟悉的水果句型維持信心，暫緩新內容。",
+      p:"安排要好的同學同組，用遊戲維持注意力。" },
+    { st:["I like ___ 句型可自行造句","跟讀速度變快"],
+      wk:["複數 -s 常遺漏（I like cat）","中英夾雜比例仍高"],
+      emo:"重拾動力，會主動抱著玩偶開始練習",
+      c:"用實物數數帶出複數概念：one cat, two cats。",
+      d:"I like + 複數名詞主題：cats、dogs、apples。",
+      p:"小組輪流說「I like ___」接龍，接不上可向同伴求救。" },
+    { st:["能聽懂簡單英文指令","模仿語調自然"],
+      wk:["緊張時整句退回中文","冠詞在新句型中又遺漏"],
+      emo:"對新句型緊張，需玩偶提示兩次才敢說",
+      c:"新句型先全班齊唸再個人發表，降低單獨曝光壓力。",
+      d:"I have a ___ 句型，從他熟悉的物品（dog、book）開始。",
+      p:"與好朋友互相展示文具並說 I have a ___。" },
+    { st:["I have a dog 能完整說出","開始出現自我糾正冠詞的行為"],
+      wk:["he/she 混用","被問問句時完全無法回應"],
+      emo:"說出完整句後非常開心，主動要求再玩一次",
+      c:"回應問句先教固定句式 Yes, I do. / No, I don't.。",
+      d:"簡單問答主題：Do you like ___? 練習 Yes/No 回應。",
+      p:"兩人一組互問 Do you like ___?，答對擊掌。" },
+    { st:["Yes/No 問答反應變快","詞彙跨到動物、食物兩主題"],
+      wk:["動詞第三人稱 -s 遺漏","長句仍逐字停頓"],
+      emo:"自信明顯提升，音量變大",
+      c:"用節奏拍讀把長句切成兩段練，再合併成整句。",
+      d:"四字以上句子分段跟讀：I want / to drink water。",
+      p:"讓他當「小老師」教同學昨天學過的單字。" },
+    { st:["能說出五個字的完整句","會主動用英文打招呼"],
+      wk:["時間詞位置照中文語序擺放","an 在不熟的單字前仍遺漏"],
+      emo:"當小老師後成就感高，開口意願強",
+      c:"時間詞句型用圖卡排序遊戲建立英文語序感。",
+      d:"in the morning / at night 時間詞句型跟讀。",
+      p:"小組句子排卡比賽，排對最快的組加分。" },
+    { st:["詞彙記憶穩定，複習幾乎全對","願意挑戰沒學過的句子"],
+      wk:["遇挫折後退縮，今天兩度拒答","長句說到一半改用中文接完"],
+      emo:"挑戰失敗後情緒低落，需要安撫",
+      c:"降低難度回到可成功的句型，先重建信心再進階。",
+      d:"信心回補：三字短句快問快答，設計高成功率題目。",
+      p:"安排鼓勵型同伴，完成後互相說 Good job!。" },
+    { st:["情緒恢復快，主動回到練習","顏色、大小等形容詞使用正確"],
+      wk:["形容詞順序偶錯（apple red）","冠詞與形容詞連用時遺漏（說成 red apple）"],
+      emo:"重新建立節奏，遇錯不再馬上放棄",
+      c:"用「a/an＋形容詞＋名詞」三格卡片具象化語序。",
+      d:"顏色形容詞句型：This is a red apple。",
+      p:"兩人用色卡互考 This is a ___ ___ 句型。" },
+    { st:["This is a red apple 完整正確","能連續互動十輪不中斷"],
+      wk:["疑問句語調仍偏平","部分字尾音吞掉（-s、-t）"],
+      emo:"狀態穩定有自信，會笑著模仿玩偶語調",
+      c:"誇張語調朗讀練習，錄音回放讓他聽出差異。",
+      d:"語調模仿遊戲：同一句用問句、直述兩種語調說。",
+      p:"小組「語調猜猜看」：聽語調猜是問句還是直述句。" },
+    { st:["主動造出沒教過的組合句","整句英文的比例上升"],
+      wk:["第三人稱 likes 仍不穩定","超過六個字的句子會退縮"],
+      emo:"自信心持續累積，敢在小組面前發表",
+      c:"長句採「由句尾往前疊加」的 build-up 練習法。",
+      d:"六字以上長句分段挑戰，成功即播放企鵝慶祝音效。",
+      p:"小組接力說長句，每人負責一段再合體。" },
+    { st:["願意開口，互動輪數創新高","詞彙記憶佳，跨主題複習全對"],
+      wk:["冠詞 a/an 在新單字前仍遺漏","中英夾雜比例仍偏高"],
+      emo:"自信心提升中，遇長句會退縮",
+      c:"本週安排「a/an 冠詞小遊戲」讓阿明在低壓力情境練習；發表先給短句成功經驗再逐步加長。",
+      d:"裝置端本週主題設定為「食物與冠詞」：I want to eat an apple 系列句型，逐步拉長句子。",
+      p:"安排詞彙量相近、個性互補的同學與阿明共學，輪流當小老師互相帶讀。" }
+  ];
+  return DAILY.map(function(t, i){
+    return {
+      date: isoDate(daysAgo(13 - i, base)),
+      scores: { pronunciation: P[i], fluency: F[i], vocabulary: V[i], grammar: G[i] },
+      strengths: t.st,
+      weaknesses: t.wk,
+      emotional_status: t.emo,
+      instructions: { classroom: t.c, device: t.d, peer: t.p }
+    };
+  });
+}
+
+function buildSeedInteractions(base){
+  // [幾天前, 時間, 模式, 學生說的話, AI 回應, ASR信心, 流暢, 詞彙, 句型, 首音ms, 單輪ms, 已同步]
+  var T = [
+    [4,"09:12:31","edge","老師好，我叫阿明","Hello! 跟我說：My name is A-Ming.",0.88,45,52,44,260,1380,true],
+    [4,"09:14:02","edge","My name is 阿明","太棒了！My name is A-Ming. 再大聲說一次！",0.91,48,54,46,255,1310,true],
+    [4,"09:16:44","cloud","I like 香蕉","I like bananas! 跟我唸：I like bananas.",0.90,50,58,47,620,2150,true],
+    [3,"10:05:18","edge","I have dog","記得加 a 喔：I have a dog. 換你說說看！",0.86,49,55,45,275,1420,true],
+    [3,"10:07:52","edge","I have a dog","Perfect! I have a dog. 你學得好快！",0.93,54,58,52,240,1290,true],
+    [3,"10:10:09","cloud","狗狗 is running","The dog is running! 跟我說一遍。",0.82,47,53,46,680,2310,true],
+    [3,"10:13:26","edge","The dog is running","太厲害了！The dog is running. Give me five!",0.94,56,59,53,250,1330,true],
+    [2,"09:31:40","edge","I want 喝水","I want to drink water. 跟我唸一次！",0.84,50,56,47,290,1460,true],
+    [2,"09:34:11","edge","I want to drink water","Wonderful! 完整的句子，你做到了！",0.95,58,61,55,235,1270,true],
+    [2,"09:37:03","cloud","This is 紅色 apple","This is a red apple. 記得加 a 喔！",0.87,52,60,49,640,2200,true],
+    [2,"09:39:47","edge","This is a red apple","Great job! This is a red apple.",0.92,57,62,54,245,1300,true],
+    [1,"13:02:15","edge","今天我 happy","I am happy today! 跟我說一遍。",0.83,51,57,48,300,1510,true],
+    [1,"13:04:58","edge","I am happy today","Excellent! 聽到你開心，我也好開心！",0.94,59,62,56,240,1280,true],
+    [1,"13:07:36","cloud","I eat 早餐 in the morning","I eat breakfast in the morning. 再試一次！",0.85,53,61,50,700,2380,true],
+    [1,"13:10:12","edge","I eat breakfast in the morning","好流暢的長句！你進步好多！",0.93,60,63,57,250,1340,true],
+    [0,"10:18:05","edge","I want to eat 蘋果","跟我說一遍：I want to eat an apple.",0.92,55,60,50,280,1450,true],
+    [0,"10:20:41","edge","I want to eat an apple","An apple! 你記得用 an 了，太棒了！",0.95,61,64,58,235,1260,true],
+    [0,"10:23:19","cloud","My 妹妹 like 貓咪","My sister likes cats. 我們一起唸一次！",0.81,52,58,47,660,2260,false],
+    [0,"10:26:02","edge","My sister likes cats","Very good! My sister likes cats.",0.90,58,62,55,255,1320,false],
+    [0,"10:28:37","edge","謝謝你，bye bye!","See you tomorrow! 明天再一起練習喔！",0.89,57,60,53,245,1290,false]
+  ];
+  return T.map(function(t, i){
+    return {
+      seq: i + 1,
+      device_id: "GENIO-520-X992",
+      student_id: "STUDENT-AMING-004",
+      ts: isoDate(daysAgo(t[0], base)) + "T" + t[1] + "+08:00",
+      network_mode: t[2],
+      student_text: t[3],
+      asr_confidence: t[5],
+      ai_response_text: t[4],
+      scores: { fluency: t[6], vocabulary: t[7], grammar: t[8] },
+      latency_ms: { first_sound: t[9], round_total: t[10] },
+      synced: t[11]
+    };
+  });
+}
+
+/* =========================================================
+   以下為瀏覽器端邏輯（node 驗證時跳過）
+   ========================================================= */
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+(function(){
+
+  /* ---------- 讀寫 localStorage ---------- */
+  function readJSON(key){
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return [];
+      var v = JSON.parse(raw);
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  }
+
+  function seedIfNeeded(){
+    if (localStorage.getItem(LS_SEEDED) === "1") return;
+    localStorage.setItem(LS_DIAGNOSES, JSON.stringify(buildSeedDiagnoses()));
+    localStorage.setItem(LS_INTERACTIONS, JSON.stringify(buildSeedInteractions()));
+    localStorage.setItem(LS_SEEDED, "1");
+  }
+
+  function loadData(){
+    // 互動：以 (device_id, seq) 去重（冪等鍵），依 seq 排序
+    var inter = readJSON(LS_INTERACTIONS);
+    var map = {};
+    inter.forEach(function(r){
+      if (!r || typeof r.seq === "undefined") return;
+      map[(r.device_id || "?") + "|" + r.seq] = r;
+    });
+    var interactions = Object.keys(map).map(function(k){ return map[k]; });
+    interactions.sort(function(a, b){
+      if (a.seq !== b.seq) return a.seq - b.seq;
+      return String(a.ts).localeCompare(String(b.ts));
+    });
+    // 診斷：依日期排序、同日取後者
+    var diag = readJSON(LS_DIAGNOSES);
+    var dmap = {};
+    diag.forEach(function(d){ if (d && d.date) dmap[d.date] = d; });
+    var diagnoses = Object.keys(dmap).sort().map(function(k){ return dmap[k]; });
+    return { interactions: interactions, diagnoses: diagnoses };
+  }
+
+  /* ---------- 小工具 ---------- */
+  function esc(s){
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+  function el(id){ return document.getElementById(id); }
+  function fmtTs(ts){
+    // "2026-07-03T10:24:13+08:00" → "07/03 10:24"
+    var m = String(ts).match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (!m) return String(ts);
+    return m[2] + "/" + m[3] + " " + m[4] + ":" + m[5];
+  }
+
+  /* ---------- 學生卡頭部 ---------- */
+  function renderHead(data){
+    var inter = data.interactions;
+    el("statTotal").textContent = inter.length;
+    var pending = inter.filter(function(r){ return !r.synced; }).length;
+    el("statPending").textContent = pending;
+    var last = inter.length ? inter[inter.length - 1].ts : null;
+    el("statLast").textContent = last ? fmtTs(last) : "—";
+  }
+
+  /* ---------- 雷達圖（inline SVG 手刻） ---------- */
+  function radarPoints(cx, cy, R, scores){
+    // 軸序：發音(上) 流暢(右) 詞彙(下) 句型(左)
+    var angles = [-90, 0, 90, 180];
+    return DIMS.map(function(d, i){
+      var v = (scores && typeof scores[d.key] === "number") ? scores[d.key] : 0;
+      var rad = angles[i] * Math.PI / 180;
+      var r = R * Math.max(0, Math.min(100, v)) / 100;
+      return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad), v: v };
+    });
+  }
+  function ptsAttr(pts){
+    return pts.map(function(p){ return p.x.toFixed(1) + "," + p.y.toFixed(1); }).join(" ");
+  }
+  function renderRadar(data){
+    var box = el("radarBox"), legend = el("radarLegend");
+    var ds = data.diagnoses;
+    if (!ds.length){
+      box.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:30px 0;">尚無診斷資料</div>';
+      legend.innerHTML = "";
+      return;
+    }
+    var win = ds.slice(-14);
+    var latest = win[win.length - 1];
+    var oldest = win[0];
+    var W = 364, H = 330, cx = 182, cy = 163, R = 108;
+    var angles = [-90, 0, 90, 180];
+    var s = [];
+    s.push('<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="四維評分雷達圖：最新診斷與 14 天前比較">');
+    // 同心格線（25/50/75/100）
+    [25, 50, 75, 100].forEach(function(lv){
+      var ring = angles.map(function(a){
+        var rad = a * Math.PI / 180, r = R * lv / 100;
+        return (cx + r * Math.cos(rad)).toFixed(1) + "," + (cy + r * Math.sin(rad)).toFixed(1);
+      }).join(" ");
+      s.push('<polygon points="' + ring + '" fill="none" stroke="' + COLORS.grid + '" stroke-width="1"/>');
+    });
+    // 軸線
+    angles.forEach(function(a){
+      var rad = a * Math.PI / 180;
+      s.push('<line x1="' + cx + '" y1="' + cy + '" x2="' + (cx + R * Math.cos(rad)).toFixed(1) +
+             '" y2="' + (cy + R * Math.sin(rad)).toFixed(1) + '" stroke="' + COLORS.axis + '" stroke-width="1"/>');
+    });
+    // 刻度標籤（沿上軸）
+    [50, 100].forEach(function(lv){
+      s.push('<text x="' + (cx + 4) + '" y="' + (cy - R * lv / 100 - 3).toFixed(1) +
+             '" font-size="9" fill="' + COLORS.muted + '" style="font-variant-numeric:tabular-nums;">' + lv + '</text>');
+    });
+    // 兩層資料：先畫 14 天前（灰），再畫最新（藍）
+    var layers = [
+      { scores: oldest.scores, color: COLORS.old },
+      { scores: latest.scores, color: COLORS.pronunciation }
+    ];
+    layers.forEach(function(L){
+      var pts = radarPoints(cx, cy, R, L.scores);
+      s.push('<polygon points="' + ptsAttr(pts) + '" fill="' + L.color + '" fill-opacity="0.10" stroke="' + L.color + '" stroke-width="2" stroke-linejoin="round"/>');
+      pts.forEach(function(p){
+        s.push('<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="4" fill="' + L.color + '" stroke="' + COLORS.surface + '" stroke-width="2"/>');
+      });
+    });
+    // 頂點標籤（維度名＋最新值）
+    var lab = [
+      { x: cx, y: cy - R - 12, anchor: "middle" },
+      { x: cx + R + 10, y: cy + 4, anchor: "start" },
+      { x: cx, y: cy + R + 22, anchor: "middle" },
+      { x: cx - R - 10, y: cy + 4, anchor: "end" }
+    ];
+    DIMS.forEach(function(d, i){
+      var v = (latest.scores && typeof latest.scores[d.key] === "number") ? latest.scores[d.key] : "–";
+      s.push('<text x="' + lab[i].x + '" y="' + lab[i].y + '" text-anchor="' + lab[i].anchor +
+             '" font-size="12" fill="' + COLORS.ink2 + '">' + d.label +
+             ' <tspan fill="' + COLORS.ink + '" font-weight="700" style="font-variant-numeric:tabular-nums;">' + esc(v) + '</tspan></text>');
+    });
+    s.push('</svg>');
+    box.innerHTML = s.join("");
+    legend.innerHTML =
+      '<span class="item"><span class="dot" style="background:' + COLORS.pronunciation + '"></span>最新（' + esc(mmdd(latest.date)) + '）</span>' +
+      '<span class="item"><span class="dot" style="background:' + COLORS.old + '"></span>14 天前（' + esc(mmdd(oldest.date)) + '）</span>';
+  }
+
+  /* ---------- 14 天趨勢折線圖（inline SVG 手刻） ---------- */
+  var trendState = { pts: null, dates: null, geom: null };
+
+  function renderTrend(data){
+    var box = el("trendBox"), legend = el("trendLegend"), tip = el("trendTip");
+    if (!tip){ // 空資料渲染曾清掉 tooltip 時重建，避免 appendChild(null) throw
+      tip = document.createElement("div");
+      tip.className = "tooltip";
+      tip.id = "trendTip";
+    }
+    var ds = data.diagnoses.slice(-14);
+    if (!ds.length){
+      box.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:30px 0;">尚無診斷資料</div>';
+      legend.innerHTML = "";
+      return;
+    }
+    var W = 760, H = 330;
+    var padL = 40, padR = 84, padT = 18, padB = 36;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var n = ds.length;
+    function X(i){ return padL + (n === 1 ? plotW / 2 : plotW * i / (n - 1)); }
+    function Y(v){ return padT + plotH * (1 - v / 100); }
+
+    var s = [];
+    s.push('<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="14 天四維分數趨勢折線圖" id="trendSvg" style="touch-action:pan-y;">');
+    // y 格線與刻度 0/25/50/75/100
+    [0, 25, 50, 75, 100].forEach(function(lv){
+      var y = Y(lv).toFixed(1);
+      s.push('<line x1="' + padL + '" y1="' + y + '" x2="' + (padL + plotW) + '" y2="' + y +
+             '" stroke="' + (lv === 0 ? COLORS.axis : COLORS.grid) + '" stroke-width="1"/>');
+      s.push('<text x="' + (padL - 8) + '" y="' + (Y(lv) + 3.5).toFixed(1) + '" text-anchor="end" font-size="11" fill="' +
+             COLORS.muted + '" style="font-variant-numeric:tabular-nums;">' + lv + '</text>');
+    });
+    // x 刻度（每 4 天標一次＋今天）
+    ds.forEach(function(d, i){
+      if ((n - 1 - i) % 4 !== 0) return;
+      s.push('<text x="' + X(i).toFixed(1) + '" y="' + (H - 12) + '" text-anchor="middle" font-size="11" fill="' +
+             COLORS.muted + '" style="font-variant-numeric:tabular-nums;">' + esc(mmdd(d.date)) + '</text>');
+    });
+    // 四條折線
+    var seriesPts = {};
+    DIMS.forEach(function(dim){
+      var pts = ds.map(function(d, i){
+        var v = (d.scores && typeof d.scores[dim.key] === "number") ? d.scores[dim.key] : 0;
+        return { x: X(i), y: Y(v), v: v };
+      });
+      seriesPts[dim.key] = pts;
+      var path = pts.map(function(p, i){
+        return (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1);
+      }).join(" ");
+      s.push('<path d="' + path + '" fill="none" stroke="' + COLORS[dim.key] +
+             '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>');
+    });
+    // crosshair 與 hover 高亮點（先隱藏）
+    s.push('<line id="crossLine" x1="0" y1="' + padT + '" x2="0" y2="' + (padT + plotH) +
+           '" stroke="rgba(255,255,255,0.30)" stroke-width="1" style="display:none;"/>');
+    DIMS.forEach(function(dim){
+      s.push('<circle id="hover-' + dim.key + '" r="4.5" fill="' + COLORS[dim.key] +
+             '" stroke="' + COLORS.surface + '" stroke-width="2" style="display:none;"/>');
+    });
+    // 線尾直接標維度名（防重疊：由上而下至少間隔 15px）
+    var ends = DIMS.map(function(dim){
+      var pts = seriesPts[dim.key];
+      return { dim: dim, y: pts[pts.length - 1].y };
+    }).sort(function(a, b){ return a.y - b.y; });
+    for (var i = 1; i < ends.length; i++){
+      if (ends[i].y < ends[i - 1].y + 15) ends[i].y = ends[i - 1].y + 15;
+    }
+    ends.forEach(function(e){
+      var x = padL + plotW + 8;
+      s.push('<circle cx="' + (x + 4) + '" cy="' + (e.y - 4).toFixed(1) + '" r="4" fill="' + COLORS[e.dim.key] +
+             '" stroke="' + COLORS.surface + '" stroke-width="2"/>');
+      s.push('<text x="' + (x + 13) + '" y="' + e.y.toFixed(1) + '" font-size="12" fill="' + COLORS.ink2 + '">' + e.dim.label + '</text>');
+    });
+    // hover 捕捉層
+    s.push('<rect id="trendHit" x="' + padL + '" y="' + padT + '" width="' + plotW + '" height="' + plotH + '" fill="transparent"/>');
+    s.push('</svg>');
+    box.innerHTML = s.join("");
+    box.appendChild(tip); // tooltip 移回容器內（innerHTML 覆寫後）
+
+    legend.innerHTML = DIMS.map(function(dim){
+      return '<span class="item"><span class="dot" style="background:' + COLORS[dim.key] + '"></span>' + dim.label + '</span>';
+    }).join("");
+
+    trendState.pts = seriesPts;
+    trendState.dates = ds.map(function(d){ return d.date; });
+    trendState.geom = { W: W, H: H, padL: padL, padT: padT, plotW: plotW, plotH: plotH, n: n, X: X };
+    bindTrendHover();
+  }
+
+  function bindTrendHover(){
+    var svg = document.getElementById("trendSvg");
+    var hit = document.getElementById("trendHit");
+    var tip = el("trendTip");
+    if (!svg || !hit) return;
+    var g = trendState.geom;
+
+    function idxFromEvent(ev){
+      var rect = svg.getBoundingClientRect();
+      var clientX = (ev.touches && ev.touches.length) ? ev.touches[0].clientX : ev.clientX;
+      var vx = (clientX - rect.left) * g.W / rect.width; // 換算回 viewBox 座標
+      var t = (vx - g.padL) / g.plotW;
+      var i = Math.round(t * (g.n - 1));
+      return Math.max(0, Math.min(g.n - 1, i));
+    }
+    function show(ev){
+      var i = idxFromEvent(ev);
+      var x = g.X(i);
+      var cross = document.getElementById("crossLine");
+      cross.setAttribute("x1", x); cross.setAttribute("x2", x);
+      cross.style.display = "";
+      var rows = "";
+      DIMS.forEach(function(dim){
+        var p = trendState.pts[dim.key][i];
+        var c = document.getElementById("hover-" + dim.key);
+        c.setAttribute("cx", p.x); c.setAttribute("cy", p.y);
+        c.style.display = "";
+        rows += '<div class="tt-row"><span class="dot" style="background:' + COLORS[dim.key] + '"></span>' +
+                dim.label + '<b>' + p.v + '</b></div>';
+      });
+      tip.innerHTML = '<div class="tt-date">' + esc(trendState.dates[i]) + '</div>' + rows;
+      tip.style.display = "block";
+      // tooltip 定位（容器像素座標）
+      var rect = svg.getBoundingClientRect();
+      var boxRect = el("trendBox").getBoundingClientRect();
+      var px = (x * rect.width / g.W) + (rect.left - boxRect.left);
+      var left = px + 14;
+      if (left + tip.offsetWidth > boxRect.width - 4) left = px - tip.offsetWidth - 14;
+      tip.style.left = Math.max(0, left) + "px";
+      tip.style.top = "22px";
+    }
+    function hide(){
+      tip.style.display = "none";
+      var cross = document.getElementById("crossLine");
+      if (cross) cross.style.display = "none";
+      DIMS.forEach(function(dim){
+        var c = document.getElementById("hover-" + dim.key);
+        if (c) c.style.display = "none";
+      });
+    }
+    hit.addEventListener("mousemove", show);
+    hit.addEventListener("mouseleave", hide);
+    hit.addEventListener("touchstart", function(ev){ show(ev); }, { passive: true });
+    hit.addEventListener("touchmove", function(ev){ show(ev); }, { passive: true });
+    hit.addEventListener("touchend", hide);
+  }
+
+  /* ---------- AI 診斷卡 ---------- */
+  function renderDiagnosis(data){
+    var ds = data.diagnoses;
+    if (!ds.length){
+      el("diagDate").textContent = "尚無診斷資料";
+      return;
+    }
+    var d = ds[ds.length - 1];
+    el("diagDate").textContent = "診斷日期：" + d.date;
+    el("diagStrengths").innerHTML = (d.strengths || []).map(function(t){
+      return '<span class="tag-good">' + esc(t) + '</span>';
+    }).join("") || '<span style="color:var(--muted);font-size:12.5px;">—</span>';
+    el("diagWeaknesses").innerHTML = (d.weaknesses || []).map(function(t){
+      return '<span class="tag-warn">' + esc(t) + '</span>';
+    }).join("") || '<span style="color:var(--muted);font-size:12.5px;">—</span>';
+    el("diagEmo").innerHTML = '💛 情緒信心：' + esc(d.emotional_status || "—");
+    var ins = d.instructions || {};
+    el("instrClassroom").textContent = ins.classroom || "—";
+    el("instrDevice").textContent = ins.device || "—";
+    el("instrPeer").textContent = ins.peer || "—";
+  }
+
+  /* ---------- 互動紀錄 ---------- */
+  function meterSet(scores){
+    scores = scores || {};
+    return '<div class="meter-set">' + INTER_DIMS.map(function(d){
+      var v = typeof scores[d.key] === "number" ? scores[d.key] : 0;
+      return '<div class="meter-line"><span class="m-label">' + d.label + '</span>' +
+             '<span class="meter"><span style="width:' + Math.max(0, Math.min(100, v)) + '%;background:' + d.color + '"></span></span>' +
+             '<span class="m-val nums">' + v + '</span></div>';
+    }).join("") + '</div>';
+  }
+  function modeBadge(mode){
+    var isEdge = mode === "edge";
+    return '<span class="badge ' + (isEdge ? "edge" : "cloud") + '">' +
+           '<span class="dot" style="background:' + (isEdge ? COLORS.vocabulary : COLORS.pronunciation) + '"></span>' +
+           (isEdge ? "edge 離線" : "cloud 雲端") + '</span>';
+  }
+  function syncMark(synced){
+    return synced ? '<span class="sync-ok">✓ 已同步</span>' : '<span class="sync-pending">⏳ 待同步</span>';
+  }
+  function renderRecords(data){
+    var recent = data.interactions.slice(-20).reverse(); // 最新在前
+    el("recBody").innerHTML = recent.map(function(r){
+      return '<tr>' +
+        '<td class="t-time">' + esc(fmtTs(r.ts)) + '</td>' +
+        '<td class="t-said">' + esc(r.student_text) + '</td>' +
+        '<td class="t-resp">' + esc(r.ai_response_text) + '</td>' +
+        '<td>' + meterSet(r.scores) + '</td>' +
+        '<td>' + modeBadge(r.network_mode) + '</td>' +
+        '<td>' + syncMark(!!r.synced) + '</td>' +
+      '</tr>';
+    }).join("") || '<tr><td colspan="6" style="color:var(--muted);">尚無互動紀錄</td></tr>';
+
+    el("recCards").innerHTML = recent.map(function(r){
+      return '<div class="rec-card">' +
+        '<div class="rc-top"><span class="rc-time">' + esc(fmtTs(r.ts)) + '</span>' +
+          modeBadge(r.network_mode) + syncMark(!!r.synced) + '</div>' +
+        '<div class="rc-said">🧒 ' + esc(r.student_text) + '</div>' +
+        '<div class="rc-resp">🐧 ' + esc(r.ai_response_text) + '</div>' +
+        meterSet(r.scores) +
+      '</div>';
+    }).join("") || '<div style="color:var(--muted);font-size:13px;">尚無互動紀錄</div>';
+  }
+
+  /* ---------- 主渲染與輪詢 ---------- */
+  var lastSnapshot = "";
+  function renderAll(){
+    var data = loadData();
+    renderHead(data);
+    renderRadar(data);
+    renderTrend(data);
+    renderDiagnosis(data);
+    renderRecords(data);
+    var now = new Date();
+    el("updatedLine").textContent = "最後更新 " + pad2(now.getHours()) + ":" + pad2(now.getMinutes()) + ":" + pad2(now.getSeconds()) + "（每 5 秒自動更新）";
+  }
+  function snapshot(){
+    return (localStorage.getItem(LS_INTERACTIONS) || "") + " " + (localStorage.getItem(LS_DIAGNOSES) || "");
+  }
+  function pollTick(){
+    var s = snapshot();
+    if (s !== lastSnapshot){
+      lastSnapshot = s;
+      renderAll();
+    }
+  }
+
+  el("btnRefresh").addEventListener("click", function(){
+    lastSnapshot = snapshot();
+    renderAll();
+  });
+  el("btnReset").addEventListener("click", function(){
+    if (!confirm("確定要重置示範資料嗎？\n將清除 ssxb_interactions / ssxb_diagnoses / ssxb_seeded 並重新種入示範資料。")) return;
+    localStorage.removeItem(LS_INTERACTIONS);
+    localStorage.removeItem(LS_DIAGNOSES);
+    localStorage.removeItem(LS_SEEDED);
+    seedIfNeeded();
+    lastSnapshot = snapshot();
+    renderAll();
+  });
+  // 其他分頁（學生端）寫入時即時更新
+  window.addEventListener("storage", function(ev){
+    if (ev.key === LS_INTERACTIONS || ev.key === LS_DIAGNOSES) pollTick();
+  });
+
+  seedIfNeeded();
+  lastSnapshot = snapshot();
+  renderAll();
+  setInterval(pollTick, 5000);
+
+})();
+}
+</script>
+</body>
+</html>

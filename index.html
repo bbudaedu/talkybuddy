@@ -1,0 +1,3384 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>說說學伴 TalkyBuddy | 實體智能無螢幕伴讀系統展示門戶</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* ==========================================
+           1. 全域變數與重設 (Reset & Design Tokens)
+           ========================================== */
+        :root {
+            --bg-dark: #090d16;
+            --bg-gradient: linear-gradient(135deg, #070a13 0%, #0f1225 50%, #1a0f2b 100%);
+            --panel-bg: rgba(255, 255, 255, 0.03);
+            --panel-bg-hover: rgba(255, 255, 255, 0.06);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --panel-border-glow: rgba(255, 255, 255, 0.15);
+            
+            --accent-orange: #f97316;
+            --accent-orange-glow: rgba(249, 115, 22, 0.35);
+            --accent-teal: #14b8a6;
+            --accent-teal-glow: rgba(20, 184, 166, 0.35);
+            --accent-purple: #a855f7;
+            --accent-purple-glow: rgba(168, 85, 247, 0.35);
+            
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-dark: #0f172a;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            
+            --font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --transition-smooth: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background: var(--bg-dark);
+            background-image: var(--bg-gradient);
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* 背景漂浮光暈 */
+        .bg-glow-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -2;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .bg-glow-node {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.12;
+            animation: floating 25s infinite ease-in-out;
+        }
+
+        .bg-glow-orange {
+            width: 500px;
+            height: 500px;
+            background: var(--accent-orange);
+            top: 15%;
+            left: 10%;
+            animation-delay: 0s;
+        }
+
+        .bg-glow-purple {
+            width: 600px;
+            height: 600px;
+            background: var(--accent-purple);
+            bottom: 10%;
+            right: 10%;
+            animation-delay: -7s;
+        }
+
+        .bg-glow-teal {
+            width: 400px;
+            height: 400px;
+            background: var(--accent-teal);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            animation-delay: -14s;
+        }
+
+        @keyframes floating {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(40px, -60px) scale(1.1); }
+            66% { transform: translate(-50px, 30px) scale(0.95); }
+        }
+
+        /* Canvas Particle overlay */
+        #particle-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        /* 磨砂玻璃卡片通用樣式 */
+        .glass-card {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 20px;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 32px;
+            box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.3);
+            transition: var(--transition-smooth);
+        }
+
+        .glass-card:hover {
+            border-color: var(--panel-border-glow);
+            box-shadow: 0 16px 48px 0 rgba(0, 0, 0, 0.45);
+        }
+
+        /* ==========================================
+           2. 導覽列 (Navigation Bar)
+           ========================================== */
+        header.nav-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 72px;
+            background: rgba(9, 13, 22, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--panel-border);
+            z-index: 100;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 5%;
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            background: linear-gradient(135deg, var(--accent-orange), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-decoration: none;
+        }
+
+        .nav-logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent-orange), var(--accent-purple));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            box-shadow: 0 4px 12px var(--accent-orange-glow);
+        }
+
+        nav.nav-menu {
+            display: flex;
+            gap: 24px;
+        }
+
+        .nav-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: var(--transition-smooth);
+            position: relative;
+            padding: 6px 0;
+        }
+
+        .nav-link:hover, .nav-link.active {
+            color: var(--text-main);
+        }
+
+        .nav-link::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: linear-gradient(to right, var(--accent-orange), var(--accent-teal));
+            transition: var(--transition-smooth);
+        }
+
+        .nav-link:hover::after, .nav-link.active::after {
+            width: 100%;
+        }
+
+        /* ==========================================
+           3. 首頁視覺焦點區 (Hero Section)
+           ========================================== */
+        section.hero-section {
+            padding: 160px 5% 100px;
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 64px;
+            align-items: center;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .hero-content {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .badge-main {
+            align-self: flex-start;
+            background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(20, 184, 166, 0.15));
+            border: 1px solid rgba(249, 115, 22, 0.3);
+            color: #ffaa6e;
+            padding: 6px 16px;
+            border-radius: 30px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .hero-title h1 {
+            font-size: 48px;
+            font-weight: 700;
+            line-height: 1.2;
+            background: linear-gradient(to right, #ffffff, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-title .brand-span {
+            background: linear-gradient(to right, var(--accent-orange), var(--accent-teal));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+            display: inline-block;
+        }
+
+        .hero-desc {
+            font-size: 17px;
+            color: var(--text-muted);
+            line-height: 1.8;
+        }
+
+        .hero-features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin: 16px 0;
+        }
+
+        .hero-feat-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+            transition: var(--transition-smooth);
+        }
+
+        .hero-feat-item:hover {
+            transform: translateY(-4px);
+            border-color: rgba(20, 184, 166, 0.2);
+            background: rgba(20, 184, 166, 0.02);
+        }
+
+        .hero-feat-item .icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .hero-feat-item h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-bottom: 4px;
+        }
+
+        .hero-feat-item p {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 20px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-orange), var(--accent-purple));
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            font-size: 15px;
+            font-weight: 700;
+            border-radius: 30px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 20px var(--accent-orange-glow);
+            transition: var(--transition-smooth);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(249, 115, 22, 0.5);
+            filter: brightness(1.1);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            border: 1px solid var(--panel-border);
+            padding: 14px 32px;
+            font-size: 15px;
+            font-weight: 600;
+            border-radius: 30px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: var(--transition-smooth);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--text-muted);
+        }
+
+        /* Hero Image Panel */
+        .hero-visual {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .hero-img-card {
+            width: 100%;
+            max-width: 450px;
+            position: relative;
+            border-radius: 24px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+            transition: var(--transition-smooth);
+        }
+
+        .hero-img-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            border-color: rgba(249, 115, 22, 0.3);
+            box-shadow: 0 30px 70px rgba(249, 115, 22, 0.15);
+        }
+
+        .hero-img-card img {
+            width: 100%;
+            height: auto;
+            display: block;
+            object-fit: cover;
+        }
+
+        .hero-img-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(9,13,22,0.9), transparent);
+            padding: 24px;
+            text-align: left;
+        }
+
+        .hero-img-overlay h4 {
+            font-size: 16px;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 4px;
+        }
+
+        .hero-img-overlay p {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* ==========================================
+           4. 痛點剖析區 (Pain Points Section)
+           ========================================== */
+        section.section-container {
+            padding: 80px 5%;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 60px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .section-tag {
+            background: rgba(20, 184, 166, 0.08);
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            color: #2dd4bf;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        .section-title h2 {
+            font-size: 36px;
+            font-weight: 700;
+            background: linear-gradient(to right, #ffffff, #e2e8f0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .section-desc {
+            font-size: 15px;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin-top: 8px;
+        }
+
+        /* 統計數據牆 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            margin-bottom: 48px;
+        }
+
+        .stat-card {
+            text-align: center;
+            padding: 24px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 16px;
+            border: 1px solid var(--panel-border);
+        }
+
+        .stat-number {
+            font-size: 44px;
+            font-weight: 800;
+            color: var(--accent-orange);
+            line-height: 1;
+            margin-bottom: 8px;
+            font-family: 'Inter', sans-serif;
+            text-shadow: 0 0 15px var(--accent-orange-glow);
+        }
+
+        .stat-label {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 4px;
+        }
+
+        .stat-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* 三重困境卡片 */
+        .dilemmas-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-bottom: 60px;
+        }
+
+        .dilemma-card {
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .dilemma-num {
+            position: absolute;
+            top: 16px;
+            right: 20px;
+            font-size: 64px;
+            font-weight: 900;
+            color: rgba(255, 255, 255, 0.02);
+            line-height: 1;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .dilemma-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .dilemma-card h3 {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .dilemma-card p {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.7;
+        }
+
+        .dilemma-badge {
+            align-self: flex-start;
+            background: rgba(239, 68, 68, 0.1);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            padding: 2px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        /* 傳統與學伴對比矩陣 */
+        .comparison-container {
+            margin-top: 48px;
+        }
+
+        .comparison-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            text-align: center;
+            color: var(--accent-teal);
+        }
+
+        .comparison-table-wrapper {
+            overflow-x: auto;
+            border-radius: 12px;
+            border: 1px solid var(--panel-border);
+        }
+
+        table.comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        table.comparison-table th, table.comparison-table td {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--panel-border);
+        }
+
+        table.comparison-table th {
+            background: rgba(0, 0, 0, 0.4);
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        table.comparison-table td.table-highlight {
+            background: rgba(20, 184, 166, 0.03);
+            font-weight: 600;
+            color: #2dd4bf;
+        }
+
+        table.comparison-table tr:last-child th, table.comparison-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* ==========================================
+           5. 技術與架構區 (Technology & Architecture)
+           ========================================== */
+        .tech-layout {
+            display: grid;
+            grid-template-columns: 1.1fr 1.3fr;
+            gap: 64px;
+            align-items: center;
+        }
+
+        .tech-info {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .tech-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .tech-item {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--panel-border);
+            padding: 16px;
+            border-radius: 12px;
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        .tech-item-icon {
+            font-size: 20px;
+            padding: 8px;
+            background: rgba(168, 85, 247, 0.1);
+            border-radius: 8px;
+            color: #c084fc;
+        }
+
+        .tech-item-content h4 {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 4px;
+        }
+
+        .tech-item-content p {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        /* 狀態機切換控制面版 */
+        .state-machine-card {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            position: relative;
+        }
+
+        .state-controls {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 6px;
+            border-radius: 30px;
+            border: 1px solid var(--panel-border);
+            align-self: center;
+        }
+
+        .state-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            padding: 8px 20px;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+
+        .state-btn.active {
+            background: var(--text-main);
+            color: var(--text-dark);
+            box-shadow: 0 4px 10px rgba(255, 255, 255, 0.2);
+        }
+
+        /* SVG 架構圖 */
+        .arch-svg-container {
+            width: 100%;
+            height: auto;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 16px;
+            padding: 16px;
+            border: 1px solid var(--panel-border);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* SVG Glow class */
+        .glow-path {
+            stroke-dasharray: 8, 8;
+            animation: dash 1.5s linear infinite;
+            opacity: 0.15;
+            transition: var(--transition-smooth);
+        }
+
+        .glow-path.active {
+            opacity: 1;
+        }
+
+        .glow-path-offline {
+            stroke: var(--accent-teal);
+            filter: drop-shadow(0px 0px 3px var(--accent-teal));
+        }
+
+        .glow-path-online {
+            stroke: var(--accent-purple);
+            filter: drop-shadow(0px 0px 3px var(--accent-purple));
+        }
+
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -20;
+            }
+        }
+
+        .arch-box {
+            transition: var(--transition-smooth);
+            fill: #111524;
+            stroke: var(--panel-border);
+        }
+
+        .arch-box.active-edge {
+            stroke: var(--accent-teal);
+            fill: #0c1a20;
+        }
+
+        .arch-box.active-cloud {
+            stroke: var(--accent-purple);
+            fill: #160f24;
+        }
+
+        /* ==========================================
+           6. 核心互動體驗中心 (Interactive Demo Hub)
+           ========================================== */
+        .demo-hub-card {
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 720px;
+            min-height: 720px;
+        }
+
+        /* Tabs Container */
+        .demo-tabs-bar {
+            display: flex;
+            border-bottom: 1px solid var(--panel-border);
+            background: rgba(0, 0, 0, 0.2);
+            padding: 0 24px;
+        }
+
+        .demo-tab-button {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 20px 24px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+            position: relative;
+        }
+
+        .demo-tab-button:hover {
+            color: var(--text-main);
+        }
+
+        .demo-tab-button.active {
+            color: var(--text-main);
+        }
+
+        .demo-tab-button::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0;
+            height: 3px;
+            background: linear-gradient(to right, var(--accent-orange), var(--accent-teal));
+            transition: var(--transition-smooth);
+        }
+
+        .demo-tab-button.active::after {
+            width: 100%;
+        }
+
+        /* Content panels */
+        .demo-tab-content-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .demo-tab-panel {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+            padding: 24px;
+            display: grid;
+        }
+
+        .demo-tab-panel.active {
+            opacity: 1;
+            pointer-events: auto;
+            z-index: 5;
+        }
+
+        /* ------------------
+           A. 實體玩偶模擬器
+           ------------------ */
+        .simulator-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 24px;
+            height: 100%;
+        }
+
+        /* Left Column: Device 3D Model */
+        .sim-device-col {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sim-device-title {
+            position: absolute;
+            top: 16px;
+            left: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+        }
+
+        /* ==========================================
+           Egg/Penguin Device Model Style
+           ========================================== */
+        .device-egg {
+            width: 145px;
+            height: 185px;
+            background: #374151; /* Dark slate grey body */
+            border-radius: 60% 60% 45% 45% / 70% 70% 50% 50%;
+            box-shadow: 
+                inset -10px -10px 25px rgba(0,0,0,0.3),
+                inset 10px 10px 25px rgba(255,255,255,0.15),
+                0 25px 50px rgba(0,0,0,0.6);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            animation: egg-breathe 6s infinite ease-in-out;
+            transition: var(--transition-smooth);
+            border: 2px solid #1f2937;
+            z-index: 5;
+        }
+
+        /* Knitted texture overlay */
+        .device-egg::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border-radius: inherit;
+            background-image: 
+                radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+                radial-gradient(rgba(0,0,0,0.12) 1px, transparent 1px);
+            background-size: 4px 4px;
+            background-position: 0 0, 2px 2px;
+            pointer-events: none;
+            opacity: 0.8;
+            z-index: 0;
+        }
+
+        @keyframes egg-breathe {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-8px) scale(1.02); }
+        }
+
+        /* Speaks/Listens/Thinks classes for Penguin */
+        .device-egg.listening {
+            animation: egg-pulse-listen 0.35s infinite alternate ease-in-out;
+            box-shadow: 
+                inset -10px -10px 25px rgba(0,0,0,0.3),
+                inset 10px 10px 25px rgba(255,255,255,0.15),
+                0 25px 50px var(--accent-orange-glow),
+                0 0 35px rgba(249, 115, 22, 0.25);
+            border-color: rgba(249, 115, 22, 0.4);
+        }
+
+        .device-egg.speaking {
+            animation: egg-pulse-speak 0.45s infinite alternate ease-in-out;
+            box-shadow: 
+                inset -10px -10px 25px rgba(0,0,0,0.3),
+                inset 10px 10px 25px rgba(255,255,255,0.15),
+                0 25px 50px var(--accent-teal-glow),
+                0 0 35px rgba(20, 184, 166, 0.25);
+            border-color: rgba(20, 184, 166, 0.4);
+        }
+
+        .device-egg.thinking {
+            animation: egg-breathe 2s infinite ease-in-out;
+            box-shadow: 
+                inset -10px -10px 25px rgba(0,0,0,0.3),
+                inset 10px 10px 25px rgba(255,255,255,0.15),
+                0 25px 50px var(--accent-purple-glow),
+                0 0 35px rgba(168, 85, 247, 0.25);
+            border-color: rgba(168, 85, 247, 0.4);
+        }
+
+        @keyframes egg-pulse-listen {
+            0% { transform: scale(1) rotate(-1deg); }
+            100% { transform: scale(1.04) rotate(1deg); }
+        }
+
+        @keyframes egg-pulse-speak {
+            0% { transform: translateY(-3px) scale(1.01); }
+            100% { transform: translateY(-7px) scale(1.05); }
+        }
+
+        /* Headphones elements */
+        .penguin-headband {
+            position: absolute;
+            top: -10px;
+            width: 115px;
+            height: 65px;
+            border: 8px solid #2563eb; /* Royal blue */
+            border-bottom: none;
+            border-radius: 65px 65px 0 0;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .penguin-earcup {
+            position: absolute;
+            top: 35px;
+            width: 24px;
+            height: 44px;
+            background: #1d4ed8;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.35);
+            z-index: 6;
+        }
+
+        .penguin-earcup::after {
+            content: '';
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            width: 12px;
+            height: 32px;
+            background: #60a5fa;
+            border-radius: 6px;
+        }
+
+        .penguin-earcup.left {
+            left: -12px;
+            transform: rotate(-5deg);
+        }
+
+        .penguin-earcup.right {
+            right: -12px;
+            transform: rotate(5deg);
+        }
+
+        /* Face elements */
+        .penguin-face {
+            position: absolute;
+            top: 22px;
+            width: 90px;
+            height: 55px;
+            background: #ffffff;
+            border-radius: 50% 50% 45% 45% / 60% 60% 40% 40%;
+            z-index: 1;
+            box-shadow: inset 0 -3px 6px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: center;
+        }
+
+        .penguin-eye {
+            position: absolute;
+            top: 18px;
+            width: 8px;
+            height: 8px;
+            background: #1e293b;
+            border-radius: 50%;
+        }
+
+        .penguin-eye::before {
+            content: '';
+            position: absolute;
+            top: 1.5px;
+            left: 1.5px;
+            width: 2.5px;
+            height: 2.5px;
+            background: #ffffff;
+            border-radius: 50%;
+        }
+
+        .penguin-eye.left {
+            left: 22px;
+        }
+
+        .penguin-eye.right {
+            right: 22px;
+        }
+
+        .penguin-beak {
+            position: absolute;
+            top: 24px;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 10px solid #f97316; /* Orange beak */
+            border-radius: 3px;
+        }
+
+        /* Scarf elements */
+        .penguin-scarf {
+            position: absolute;
+            top: 72px;
+            width: 116px;
+            height: 16px;
+            background: #06b6d4; /* Cyan scarf */
+            border-radius: 8px;
+            z-index: 3;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+
+        .penguin-scarf-tail {
+            position: absolute;
+            top: 10px;
+            left: 24px;
+            width: 16px;
+            height: 38px;
+            background: #0891b2;
+            border-radius: 0 0 8px 8px;
+            transform: rotate(12deg);
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.25);
+            z-index: 2;
+        }
+
+        /* Belly elements */
+        .penguin-belly {
+            position: absolute;
+            bottom: 12px;
+            width: 100px;
+            height: 90px;
+            background: #ffffff;
+            border-radius: 50% 50% 45% 45% / 65% 65% 55% 55%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset 0 -5px 10px rgba(0,0,0,0.05);
+            border: 1px solid #f1f5f9;
+            z-index: 2;
+        }
+
+        /* Belly Glow / LED Ring */
+        .device-led-ring {
+            width: 60px;
+            height: 60px;
+            background: rgba(0, 0, 0, 0.03);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed rgba(0, 0, 0, 0.05);
+        }
+
+        .device-led-glow {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(249, 115, 22, 0.12); /* Default soft glow */
+            transition: var(--transition-smooth);
+            box-shadow: 0 0 8px rgba(249, 115, 22, 0.15);
+        }
+
+        /* LED ring active states (belly glow) */
+        .device-egg.listening .device-led-glow {
+            background: var(--accent-orange);
+            box-shadow: 
+                0 0 25px 8px var(--accent-orange), 
+                inset 0 2px 4px rgba(255,255,255,0.4);
+        }
+
+        .device-egg.speaking .device-led-glow {
+            background: var(--accent-teal);
+            box-shadow: 
+                0 0 25px 8px var(--accent-teal), 
+                inset 0 2px 4px rgba(255,255,255,0.4);
+        }
+
+        .device-egg.thinking .device-led-glow {
+            background: var(--accent-purple);
+            box-shadow: 0 0 30px 10px var(--accent-purple);
+            animation: led-thinking-blink 1.5s infinite linear;
+        }
+
+        @keyframes led-thinking-blink {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 1; }
+        }
+
+        /* Speaker Grille (Hidden in HTML but style kept) */
+        .device-speaker {
+            width: 80px;
+            height: 50px;
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            justify-items: center;
+            align-items: center;
+            margin-top: 40px;
+        }
+
+        .device-speaker-hole {
+            width: 3px;
+            height: 3px;
+            background-color: #382c18;
+            border-radius: 50%;
+            opacity: 0.75;
+        }
+
+        /* Wood base (Hidden in HTML but style kept) */
+        .device-wood-base {
+            width: 100px;
+            height: 16px;
+            background: linear-gradient(to right, #54341e, #784d2e, #54341e);
+            border-radius: 8px 8px 50% 50% / 8px 8px 12px 12px;
+            position: absolute;
+            bottom: -4px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+
+        /* Shadow below device */
+        .device-egg-shadow {
+            width: 125px;
+            height: 14px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 50%;
+            filter: blur(5px);
+            position: absolute;
+            bottom: 25px;
+            z-index: 1;
+            animation: egg-shadow-scale 6s infinite ease-in-out;
+        }
+
+        @keyframes egg-shadow-scale {
+            0%, 100% { transform: scale(1); opacity: 0.6; }
+            50% { transform: scale(0.9) translateY(2px); opacity: 0.45; filter: blur(6px); }
+        }
+
+        /* Hardware Monitor bars */
+        .sim-monitor-card {
+            width: 100%;
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sim-monitor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding-bottom: 6px;
+        }
+
+        .sim-monitor-header span {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+        }
+
+        .monitor-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 11px;
+        }
+
+        .monitor-label {
+            display: flex;
+            justify-content: space-between;
+            color: var(--text-muted);
+        }
+
+        .monitor-val {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        .monitor-bar-bg {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .monitor-bar-fill {
+            height: 100%;
+            background: var(--accent-teal);
+            border-radius: 2px;
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+
+        /* Right Column: Dialogue box */
+        .sim-chat-col {
+            display: flex;
+            flex-direction: column;
+            background: rgba(0, 0, 0, 0.15);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .sim-chat-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--panel-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0,0,0,0.1);
+        }
+
+        .sim-chat-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .sim-chat-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: red;
+            animation: red-pulse 1s infinite alternate;
+        }
+
+        @keyframes red-pulse {
+            0% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+
+        /* Chat history space */
+        .sim-chat-history {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            scroll-behavior: smooth;
+        }
+
+        .chat-bubble-row {
+            display: flex;
+            width: 100%;
+            opacity: 0;
+            transform: translateY(15px);
+            animation: bubble-slide-in 0.4s forwards cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes bubble-slide-in {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .chat-bubble-row.student { justify-content: flex-end; }
+        .chat-bubble-row.buddy { justify-content: flex-start; }
+
+        .chat-bubble-content {
+            max-width: 75%;
+            padding: 12px 18px;
+            border-radius: 16px;
+            font-size: 14px;
+            line-height: 1.5;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+
+        .student .chat-bubble-content {
+            background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .buddy .chat-bubble-content {
+            background: rgba(17, 21, 35, 0.85);
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            color: #f1f5f9;
+            border-bottom-left-radius: 4px;
+        }
+
+        .chat-bubble-sender {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .student .chat-bubble-sender {
+            color: #fed7aa;
+            text-align: right;
+        }
+
+        .buddy .chat-bubble-sender {
+            color: #2dd4bf;
+        }
+
+        /* SVG Voice Waveform */
+        .chat-waveform-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            padding-top: 8px;
+        }
+
+        .waveform-btn {
+            background: rgba(20, 184, 166, 0.1);
+            border: 1px solid rgba(20, 184, 166, 0.3);
+            color: #2dd4bf;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+        }
+
+        .waveform-visual {
+            display: none;
+            align-items: center;
+            gap: 2px;
+            height: 12px;
+        }
+
+        .waveform-visual.active {
+            display: flex;
+        }
+
+        .wave-bar {
+            width: 2px;
+            height: 4px;
+            background: var(--accent-teal);
+            border-radius: 1px;
+            animation: wave-bounce 0.8s ease-in-out infinite alternate;
+        }
+        .wave-bar:nth-child(2) { height: 10px; animation-delay: -0.2s; }
+        .wave-bar:nth-child(3) { height: 6px; animation-delay: -0.4s; }
+        .wave-bar:nth-child(4) { height: 12px; animation-delay: -0.1s; }
+        .wave-bar:nth-child(5) { height: 5px; animation-delay: -0.5s; }
+
+        @keyframes wave-bounce {
+            0% { transform: scaleY(0.3); }
+            100% { transform: scaleY(1.3); }
+        }
+
+        /* Final Score popup inside chat */
+        .sim-score-card {
+            background: linear-gradient(135deg, rgba(20, 184, 166, 0.08) 0%, rgba(168, 85, 247, 0.08) 100%);
+            border: 1px solid rgba(20, 184, 166, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            width: 100%;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+            margin-top: 8px;
+        }
+
+        .sim-score-header {
+            font-size: 13px;
+            font-weight: 700;
+            color: #2dd4bf;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .sim-score-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .sim-score-item {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255,255,255,0.03);
+            padding: 8px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .sim-score-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .sim-score-val {
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .sim-score-val.color-up {
+            color: var(--success);
+        }
+
+        /* Simulator Actions bar */
+        .sim-chat-actions {
+            padding: 16px 20px;
+            border-top: 1px solid var(--panel-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0,0,0,0.1);
+        }
+
+        .sim-step-text {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .btn-sim-next {
+            background: linear-gradient(135deg, var(--accent-orange), var(--accent-purple));
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            font-size: 13px;
+            font-weight: 700;
+            border-radius: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 4px 12px var(--accent-orange-glow);
+            transition: var(--transition-smooth);
+        }
+
+        .btn-sim-next:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(249, 115, 22, 0.5);
+            filter: brightness(1.1);
+        }
+
+        .btn-sim-next:disabled {
+            background: #334155;
+            color: #64748b;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .btn-sim-reset {
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--panel-border);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+
+        .btn-sim-reset:hover {
+            border-color: var(--text-muted);
+            color: var(--text-main);
+        }
+
+        /* ------------------
+           B. 教師智慧助教平台
+           ------------------ */
+        .dashboard-layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 24px;
+            height: 100%;
+        }
+
+        /* Left Side: Student List */
+        .dash-students-col {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow-y: auto;
+        }
+
+        .dash-students-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-muted);
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding-bottom: 8px;
+            margin-bottom: 4px;
+        }
+
+        .student-list-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            background: rgba(255, 255, 255, 0.01);
+            transition: var(--transition-smooth);
+        }
+
+        .student-list-item:hover {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .student-list-item.active {
+            background: rgba(20, 184, 166, 0.08);
+            border-color: rgba(20, 184, 166, 0.25);
+        }
+
+        .student-item-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .student-list-item.active .student-item-name {
+            color: #2dd4bf;
+        }
+
+        .student-item-level {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .level-a { background: rgba(16, 185, 129, 0.1); color: #34d399; }
+        .level-b { background: rgba(245, 158, 11, 0.1); color: #fbbf24; }
+        .level-c { background: rgba(239, 68, 68, 0.1); color: #f87171; }
+
+        /* Right Side: Dashboard Hub */
+        .dash-details-col {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        /* Stats bar */
+        .dash-stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+
+        .dash-mini-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .dash-mini-title {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .dash-mini-val {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin: 4px 0;
+        }
+
+        .dash-mini-footer {
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--success);
+        }
+
+        /* Charts & Diagnosis Grid */
+        .dash-workplace-grid {
+            display: grid;
+            grid-template-columns: 1.1fr 1.3fr;
+            gap: 20px;
+        }
+
+        .dash-panel-card {
+            background: rgba(255, 255, 255, 0.015);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .dash-card-header {
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding-bottom: 10px;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dash-card-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        /* Radar Chart container */
+        .radar-svg-space {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Diagnosis Panel */
+        .diag-profile-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding-bottom: 16px;
+        }
+
+        .diag-avatar {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--accent-orange), var(--accent-purple));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .diag-meta h3 {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .diag-meta p {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .diag-sections {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            flex: 1;
+        }
+
+        .diag-section-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .diag-section-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent-teal);
+        }
+
+        .diag-section-text {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .diag-section-box {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px dashed rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--text-main);
+            line-height: 1.5;
+        }
+
+        /* SVG Trend chart */
+        .dash-trend-card {
+            grid-column: 1 / span 2;
+            min-height: 160px;
+        }
+
+        .trend-svg-container {
+            width: 100%;
+            height: 100px;
+        }
+
+        /* ==========================================
+           7. 雙大普惠情境展示區 (Inclusive Scenarios)
+           ========================================== */
+        .scenarios-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 32px;
+        }
+
+        .scenario-card {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .scenario-img-box {
+            width: 100%;
+            height: 240px;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--panel-border);
+            position: relative;
+        }
+
+        .scenario-img-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: var(--transition-smooth);
+        }
+
+        .scenario-card:hover .scenario-img-box img {
+            transform: scale(1.05);
+        }
+
+        .scenario-img-tag {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            background: rgba(9, 13, 22, 0.8);
+            border: 1px solid var(--panel-border);
+            color: var(--text-main);
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .scenario-info h3 {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 8px;
+        }
+
+        .scenario-info p {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.7;
+            margin-bottom: 16px;
+        }
+
+        .scenario-highlights {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .scen-high-item {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 12px;
+            border-left: 3px solid var(--accent-orange);
+        }
+
+        .scenario-card:nth-child(2) .scen-high-item {
+            border-left-color: var(--accent-purple);
+        }
+
+        .scen-high-item span {
+            display: block;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 2px;
+        }
+
+        .scen-high-item p {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin: 0;
+            line-height: 1.3;
+        }
+
+        /* ==========================================
+           8. 資源下載與參考文獻區 (Downloads & References)
+           ========================================== */
+        .resources-layout {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr;
+            gap: 48px;
+        }
+
+        /* Left: Downloads */
+        .downloads-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .download-item-card {
+            background: rgba(255, 255, 255, 0.015);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 16px;
+            transition: var(--transition-smooth);
+        }
+
+        .download-item-card:hover {
+            border-color: var(--accent-teal);
+            background: rgba(20, 184, 166, 0.02);
+            transform: translateY(-4px);
+        }
+
+        .download-info-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .download-icon {
+            font-size: 24px;
+            padding: 10px;
+            background: rgba(20, 184, 166, 0.1);
+            border-radius: 10px;
+            color: #2dd4bf;
+        }
+
+        .download-item-card:nth-child(2) .download-icon {
+            background: rgba(249, 115, 22, 0.1);
+            color: #ff9d5c;
+        }
+
+        .download-item-card:nth-child(3) .download-icon {
+            background: rgba(168, 85, 247, 0.1);
+            color: #c084fc;
+        }
+
+        .download-size-tag {
+            font-size: 10px;
+            color: var(--text-muted);
+            font-family: 'Inter', sans-serif;
+            background: rgba(255,255,255,0.04);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .download-text h3 {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 4px;
+        }
+
+        .download-text p {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .btn-download-action {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--panel-border);
+            color: var(--text-main);
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+            text-decoration: none;
+            cursor: pointer;
+            display: block;
+            transition: var(--transition-smooth);
+        }
+
+        .download-item-card:hover .btn-download-action {
+            background: var(--accent-teal);
+            border-color: var(--accent-teal);
+            color: white;
+            box-shadow: 0 4px 12px var(--accent-teal-glow);
+        }
+
+        .download-item-card:nth-child(2):hover .btn-download-action {
+            background: var(--accent-orange);
+            border-color: var(--accent-orange);
+            box-shadow: 0 4px 12px var(--accent-orange-glow);
+        }
+
+        .download-item-card:nth-child(3):hover .btn-download-action {
+            background: var(--accent-purple);
+            border-color: var(--accent-purple);
+            box-shadow: 0 4px 12px var(--accent-purple-glow);
+        }
+
+        /* Right: References list */
+        .references-box {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .references-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding-bottom: 8px;
+        }
+
+        .references-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 280px;
+            overflow-y: auto;
+            padding-right: 8px;
+        }
+
+        .references-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        .references-list::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+        }
+
+        .ref-item {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.5;
+            padding-left: 14px;
+            position: relative;
+        }
+
+        .ref-item::before {
+            content: '▪';
+            position: absolute;
+            left: 0;
+            color: var(--accent-orange);
+        }
+
+        /* ==========================================
+           9. 頁尾 (Footer)
+           ========================================== */
+        footer.app-footer {
+            margin-top: 80px;
+            padding: 40px 5% 32px;
+            border-top: 1px solid var(--panel-border);
+            background: rgba(9, 13, 22, 0.8);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            align-items: center;
+            max-width: 100%;
+        }
+
+        .footer-row {
+            width: 100%;
+            max-width: 1400px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .footer-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .footer-right {
+            display: flex;
+            gap: 24px;
+        }
+
+        .footer-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: var(--transition-smooth);
+        }
+
+        .footer-link:hover {
+            color: var(--text-main);
+        }
+
+        .footer-bottom-text {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.15);
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        /* ==========================================
+           10. 響應式佈局適應 (Responsive Adaptation)
+           ========================================== */
+        @media (max-width: 1100px) {
+            section.hero-section {
+                grid-template-columns: 1fr;
+                text-align: center;
+                padding-top: 120px;
+                gap: 40px;
+            }
+            .badge-main {
+                align-self: center;
+            }
+            .hero-buttons {
+                justify-content: center;
+            }
+            .hero-visual {
+                order: -1;
+            }
+            .dilemmas-grid {
+                grid-template-columns: 1fr;
+            }
+            .tech-layout {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+            .scenarios-grid {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+            .resources-layout {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 16px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            header.nav-header {
+                padding: 0 4%;
+            }
+            nav.nav-menu {
+                display: none; /* Mobile menu collapsed */
+            }
+            .hero-title h1 {
+                font-size: 32px;
+            }
+            .hero-desc {
+                font-size: 15px;
+            }
+            .hero-features-grid {
+                grid-template-columns: 1fr;
+            }
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            .simulator-layout {
+                grid-template-columns: 1fr;
+            }
+            .dashboard-layout {
+                grid-template-columns: 1fr;
+            }
+            .dash-stats-row {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .dash-workplace-grid {
+                grid-template-columns: 1fr;
+            }
+            .downloads-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    
+    </style>
+</head>
+<body>
+
+    <!-- 背景漂浮光環與粒子 -->
+    <div class="bg-glow-container">
+        <div class="bg-glow-node bg-glow-orange"></div>
+        <div class="bg-glow-node bg-glow-purple"></div>
+        <div class="bg-glow-node bg-glow-teal"></div>
+    </div>
+    <canvas id="particle-canvas"></canvas>
+
+    <!-- 1. 頂部磨砂玻璃導覽列 -->
+    <header class="nav-header">
+        <a href="#" class="nav-logo">
+            <div class="nav-logo-icon">🗣️</div>
+            說說學伴 TalkyBuddy
+        </a>
+        <nav class="nav-menu">
+            <a href="#" class="nav-link active" data-sec="hero">首頁</a>
+            <a href="#pain-points" class="nav-link" data-sec="pain-points">痛點研究</a>
+            <a href="#tech-specs" class="nav-link" data-sec="tech-specs">技術架構</a>
+            <a href="#interactive-hub" class="nav-link" data-sec="interactive-hub">互動體驗</a>
+            <a href="#scenarios" class="nav-link" data-sec="scenarios">應用情境</a>
+            <a href="#downloads" class="nav-link" data-sec="downloads">資源下載</a>
+        </nav>
+    </header>
+
+    <!-- 2. Hero 視覺焦點首頁 -->
+    <section class="hero-section" id="hero">
+        <div class="hero-content">
+            <div class="badge-main">
+                <span>🏆 2026 雲湧智生黑客松 · 晶創未來提案</span>
+            </div>
+            <div class="hero-title">
+                <h1>以人本思維重構教育落差<br>
+                    <span class="brand-span">說說學伴 TalkyBuddy</span>
+                </h1>
+            </div>
+            <p class="hero-desc">
+                「說說學伴」是一款針對臺灣偏鄉教育現場打造的實體智能無螢幕伴讀裝置。我們結合國產 MediaTek Genio 邊緣 AI 晶片平台，以及 AWS 雲端生成式 AI 技術，在克服偏鄉斷網限制的同時，以「鷹架式雙語引導」讓孩子在無壓力、無螢幕焦慮的陪伴中重拾開口的自信。
+            </p>
+            <div class="hero-features-grid">
+                <div class="hero-feat-item">
+                    <span class="icon">🔇</span>
+                    <h3>完全無螢幕</h3>
+                    <p>消除分心與考試焦慮，專注在純粹的語音互動</p>
+                </div>
+                <div class="hero-feat-item">
+                    <span class="icon">⚡</span>
+                    <h3>雙網自適應</h3>
+                    <p>離線邊緣運算，網路不穩或斷網也能流暢伴讀</p>
+                </div>
+                <div class="hero-feat-item">
+                    <span class="icon">🧸</span>
+                    <h3>科技酷玩美學</h3>
+                    <p>親膚針織材質配戴耳機圍巾，打造有溫度的潮玩陪伴</p>
+                </div>
+            </div>
+            <div class="hero-buttons">
+                <a href="#interactive-hub" class="btn-primary">🎮 立即體驗互動 Demo</a>
+                <a href="./臺灣普惠科技應用痛點研究_說說學伴.pdf" class="btn-secondary" download>📄 下載研究報告 PDF</a>
+            </div>
+        </div>
+        <div class="hero-visual">
+            <div class="hero-img-card">
+                <img src="./images/device_concept_main.png" alt="說說學伴實體概念圖" onerror="this.src='https://images.unsplash.com/photo-1596495578065-6e0763fa1141?q=80&w=800'">
+                <div class="hero-img-overlay">
+                    <h4>說說學伴 實體玩偶概念外觀</h4>
+                    <p>科技玩偶視覺美學，可愛企鵝針織外殼配戴耳機圍巾與腹部動態呼吸燈</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. 痛點剖析區 (The Pain Points) -->
+    <section class="section-container" id="pain-points">
+        <div class="section-header">
+            <span class="section-tag">痛點研究 (Research)</span>
+            <div class="section-title">
+                <h2>偏鄉雙語教育的三重核心困境</h2>
+            </div>
+            <p class="section-desc">我們深入臺灣偏遠地區國小學習扶助（補救教學）現場，剖析現行普惠科技在實施過程中面臨的結構性問題。</p>
+        </div>
+
+        <!-- 統計數據牆 -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">47%+</div>
+                <div class="stat-label">國中英語會考待加強 (C)</div>
+                <div class="stat-desc">偏遠地區會考待加強比例，為都會區的 1.7 到 1.9 倍</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">74.15%</div>
+                <div class="stat-label">花蓮縣偏鄉待加強率</div>
+                <div class="stat-desc">偏遠學校未通過率高達全國平均的 1.3 至 2.4 倍</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">20%</div>
+                <div class="stat-label">代理師資流動率</div>
+                <div class="stat-desc">師資常態性流失，學童每學期都在適應不同的英語老師</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">200億</div>
+                <div class="stat-label">生生用平板「應用真空」</div>
+                <div class="stat-desc">硬體高度配發，但受限於斷網痛點，缺乏本地口說 AI 軟體</div>
+            </div>
+        </div>
+
+        <!-- 三大困境卡片 -->
+        <div class="dilemmas-grid">
+            <!-- 1 -->
+            <div class="glass-card dilemma-card">
+                <span class="dilemma-num">01</span>
+                <span class="dilemma-icon">📈</span>
+                <span class="dilemma-badge">資源與師資失衡</span>
+                <h3>雙語政策下的「雙峰現象」</h3>
+                <p>
+                    偏鄉與弱勢學生缺乏家庭支持系統與課後口說陪伴資源，在面對全英語授課或雙語學科時，常因起跑點落差產生極大的習得性無助。加上偏鄉英文專長師資招聘困難，代理與兼任比例高，導致英語學習成就的雙峰現象連年惡化。
+                </p>
+            </div>
+            <!-- 2 -->
+            <div class="glass-card dilemma-card">
+                <span class="dilemma-num">02</span>
+                <span class="dilemma-icon">😰</span>
+                <span class="dilemma-badge">心理防衛與焦慮</span>
+                <h3>學習扶助生的「開口焦慮」</h3>
+                <p>
+                    在學習扶助課堂中，低成就學童因害怕發音不標準被同儕嘲笑，往往選擇保持沉默。現行的數位平台介面設計（大量填空、選擇）類似傳統紙筆測驗，非但無法引導開口，反而引發學童更強烈的抗拒螢幕與考試焦慮。
+                </p>
+            </div>
+            <!-- 3 -->
+            <div class="glass-card dilemma-card">
+                <span class="dilemma-num">03</span>
+                <span class="dilemma-icon">🌐</span>
+                <span class="dilemma-badge">基礎設施瓶頸</span>
+                <h3>傳統數位工具的「斷網真空」</h3>
+                <p>
+                    現有主流平台如 Cool English 等皆高度依賴穩定的網際網路。一旦偏鄉校區發生斷網或訊號不穩，所有 AI 互動立即停擺。此外，傳統工具繁瑣的「手動派課」與「學習進度數據分析」，也給基層教師帶來沉重的行政負擔。
+                </p>
+            </div>
+        </div>
+
+        <!-- 對比矩陣 -->
+        <div class="comparison-container glass-card">
+            <h3 class="comparison-title">為什麼需要全新的實體伴讀載體？</h3>
+            <div class="comparison-table-wrapper">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>比較維度</th>
+                            <th>傳統平板 App / 線上學習平台</th>
+                            <th class="table-highlight">「說說學伴」實體智能伴讀方案</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>螢幕分散注意力</strong></td>
+                            <td>❌ 嚴重，學童容易被其他 App、遊戲或彈出訊息分心</td>
+                            <td class="table-highlight">✓ 無螢幕設計，將全部感官與專注力集中於聽覺與口說</td>
+                        </tr>
+                        <tr>
+                            <td><strong>開口學習焦慮</strong></td>
+                            <td>❌ 介面類似線上考試，紅字錯誤與倒數計時引發壓力</td>
+                            <td class="table-highlight">✓ 親切語音對話，以陪伴和聊天取代冷冰冰的打字測驗</td>
+                        </tr>
+                        <tr>
+                            <td><strong>斷網可用性</strong></td>
+                            <td>❌ 完全失效，AI 辨識與大腦服務無法在本地端運行</td>
+                            <td class="table-highlight">✓ 雙網混成自適應，斷網時邊緣 NPU 自動接管離線對話</td>
+                        </tr>
+                        <tr>
+                            <td><strong>數位操作門檻</strong></td>
+                            <td>❌ 需適應觸控打字、視窗切換等，對低年級與弱勢生是障礙</td>
+                            <td class="table-highlight">✓ 「說話即用」，離線關鍵字喚醒，徹底消除操作鴻溝</td>
+                        </tr>
+                        <tr>
+                            <td><strong>情感連結與安全感</strong></td>
+                            <td>❌ 平面、冰冷的玻璃螢幕，缺乏物理陪伴溫度</td>
+                            <td class="table-highlight">✓ 柔軟針織毛線與親膚企鵝玩偶，可擁抱、富生命感之腹部呼吸燈效</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. 技術規格與架構區 (Technology & Architecture) -->
+    <section class="section-container" id="tech-specs">
+        <div class="section-header">
+            <span class="section-tag">架構創新 (Architecture)</span>
+            <div class="section-title">
+                <h2>邊緣運算與雲端生成之雙網混成設計</h2>
+            </div>
+            <p class="section-desc">結合國產晶片之邊緣運算算力，與 AWS 雲端大語言模型，打造具備高度社會韌性的伴讀系統。</p>
+        </div>
+
+        <div class="tech-layout">
+            <div class="tech-info">
+                <div class="badge-main" style="border-color: rgba(168, 85, 247, 0.3); color: #c084fc;">
+                    <span>🛡️ 隱私安全設計 (Privacy by Design)</span>
+                </div>
+                <p class="hero-desc">
+                    「說說學伴」搭載**雙網混成自適應狀態機 (Adaptive State Machine)**。系統每 5 秒自動偵測環境 Wi-Fi 延遲，當延遲大於 800ms 或斷網時，自動轉入**本地邊緣模式 (Edge Mode)**，所有 ASR、LLM、TTS 運算皆在本地 NPU 加速完成，學童互動數據快取於 SQLite，確保資料「不落地、不升雲」，提供最高規格的兒童隱私安全保護。
+                </p>
+                <div class="tech-list">
+                    <!-- 1 -->
+                    <div class="tech-item">
+                        <span class="tech-item-icon">🖲️</span>
+                        <div class="tech-item-content">
+                            <h4>國產邊緣晶片加值 (MediaTek Genio)</h4>
+                            <p>採用 MediaTek Genio 520 (內建 APU) 開發平台。配合 **NeuroPilot 8 SDK** 將 ASR/LLM模型進行 INT4/INT8 量化編譯，離線推論速度大於 18 tokens/sec，首音延遲小於 150ms，以極低硬體成本實踐高品質離線伴讀。</p>
+                        </div>
+                    </div>
+                    <!-- 2 -->
+                    <div class="tech-item">
+                        <span class="tech-item-icon">🧠</span>
+                        <div class="tech-item-content">
+                            <h4>AWS Bedrock 雲端大腦與教材 RAG</h4>
+                            <p>連網時，大腦採用 AWS Bedrock (Claude 3.5 Sonnet)。配合**檢索增強生成 (RAG)**，檢索教育部 Cool English、均一教育平台與國教院課綱教材，確保生成對話 100% 契合臺灣十二年國教英語領域大綱。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 狀態機與 SVG 架構圖 -->
+            <div class="state-machine-card glass-card">
+                <div class="state-controls">
+                    <button class="state-btn active" id="btn-state-offline" onclick="setArchState('offline')">離線模式 (Edge Mode)</button>
+                    <button class="state-btn" id="btn-state-online" onclick="setArchState('online')">在線模式 (Cloud Mode)</button>
+                </div>
+
+                <div class="arch-svg-container">
+                    <!-- Custom High-Tech SVG Diagram -->
+                    <svg width="400" height="320" viewBox="0 0 400 320" fill="none" style="overflow: visible;">
+                        <!-- Defs for gradients/glows -->
+                        <defs>
+                            <linearGradient id="edge-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#0f766e" />
+                                <stop offset="100%" stop-color="#14b8a6" />
+                            </linearGradient>
+                            <linearGradient id="cloud-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#6b21a8" />
+                                <stop offset="100%" stop-color="#a855f7" />
+                            </linearGradient>
+                            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="5" result="blur" />
+                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                            </filter>
+                        </defs>
+
+                        <!-- Static elements -->
+                        <!-- Child Box -->
+                        <rect x="30" y="120" width="80" height="70" rx="8" class="arch-box" />
+                        <text x="70" y="152" fill="white" font-size="12" font-weight="bold" text-anchor="middle">學童 (阿明)</text>
+                        <text x="70" y="172" fill="var(--text-muted)" font-size="9" text-anchor="middle">語音 / 中英混合</text>
+
+                        <!-- Edge Hardware Box -->
+                        <rect x="150" y="120" width="100" height="70" rx="8" class="arch-box" id="svg-edge-box" />
+                        <text x="200" y="146" fill="white" font-size="11" font-weight="bold" text-anchor="middle">說說學伴裝置</text>
+                        <text x="200" y="162" fill="#2dd4bf" font-size="9" text-anchor="middle" font-weight="600">MediaTek NPU</text>
+                        <text x="200" y="176" fill="var(--text-muted)" font-size="8" text-anchor="middle">離線 ASR/LLM/TTS</text>
+
+                        <!-- Cloud Brain Box -->
+                        <rect x="290" y="40" width="90" height="70" rx="8" class="arch-box" id="svg-cloud-box" />
+                        <text x="335" y="68" fill="white" font-size="11" font-weight="bold" text-anchor="middle">AWS 雲端大腦</text>
+                        <text x="335" y="84" fill="#c084fc" font-size="9" text-anchor="middle" font-weight="600">Bedrock LLM</text>
+                        <text x="335" y="96" fill="var(--text-muted)" font-size="8" text-anchor="middle">教材 RAG + 診斷</text>
+
+                        <!-- Teacher Dashboard Box -->
+                        <rect x="290" y="200" width="90" height="70" rx="8" class="arch-box" />
+                        <text x="335" y="234" fill="white" font-size="11" font-weight="bold" text-anchor="middle">教師助教平台</text>
+                        <text x="335" y="252" fill="var(--text-muted)" font-size="9" text-anchor="middle">差異化教學指引</text>
+
+                        <!-- Connection Paths -->
+                        <!-- Child <-> Edge -->
+                        <path d="M 110 145 H 150" stroke="#475569" stroke-width="2" />
+                        <path d="M 150 165 H 110" stroke="#475569" stroke-width="2" />
+                        <!-- Edge Loop (Local offline inference) -->
+                        <path d="M 200 120 C 200 95, 230 95, 230 120" stroke="#475569" stroke-width="2" fill="none" />
+                        
+                        <!-- Edge -> Cloud -->
+                        <path d="M 220 120 C 220 75, 290 75, 290 75" stroke="#475569" stroke-width="2" fill="none" id="path-edge-cloud" />
+                        <!-- Cloud -> Edge -->
+                        <path d="M 290 85 C 290 85, 200 85, 200 120" stroke="#475569" stroke-width="2" fill="none" id="path-cloud-edge" />
+                        <!-- Cloud -> Teacher DB -->
+                        <path d="M 335 110 V 200" stroke="#475569" stroke-width="2" stroke-dasharray="3,3" />
+
+                        <!-- Glow paths (animated neon tracks) -->
+                        <!-- Offline Edge Glow Loop -->
+                        <path d="M 200 120 C 200 95, 230 95, 230 120" class="glow-path glow-path-offline active" id="svg-glow-offline-loop" fill="none" stroke-width="3" />
+                        <!-- Child -> Edge Glow -->
+                        <path d="M 110 145 H 150" class="glow-path glow-path-offline active" id="svg-glow-child-edge" fill="none" stroke-width="3" />
+                        <path d="M 150 165 H 110" class="glow-path glow-path-offline active" id="svg-glow-edge-child" fill="none" stroke-width="3" />
+
+                        <!-- Online Cloud Glow paths -->
+                        <path d="M 220 120 C 220 75, 290 75, 290 75" class="glow-path glow-path-online" id="svg-glow-edge-cloud" fill="none" stroke-width="3" />
+                        <path d="M 290 85 C 290 85, 200 85, 200 120" class="glow-path glow-path-online" id="svg-glow-cloud-edge" fill="none" stroke-width="3" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 5. 核心互動體驗中心 (The Interactive Demo Hub) -->
+    <section class="section-container" id="interactive-hub">
+        <div class="section-header">
+            <span class="section-tag">互動中心 (Experience Hub)</span>
+            <div class="section-title">
+                <h2>說說學伴 本地互動體驗大廳</h2>
+            </div>
+            <p class="section-desc">請在此處親自切換頁籤，操作體驗「學生端實體伴讀模擬器」以及「教師端智慧助教平台」。</p>
+        </div>
+
+        <!-- Unified Glassmorphism Card for Tabs -->
+        <div class="glass-card demo-hub-card">
+            <!-- Tabs Navigation -->
+            <div class="demo-tabs-bar">
+                <button class="demo-tab-button active" onclick="switchDemoTab(this, 'sim-panel')">🧸 說說學伴實體玩偶模擬器</button>
+                <button class="demo-tab-button" onclick="switchDemoTab(this, 'dash-panel')">📊 教師端智慧助教平台</button>
+            </div>
+
+            <!-- Tab Content Container -->
+            <div class="demo-tab-content-container">
+                
+                <!-- 頁籤一：實體玩偶模擬器 -->
+                <div class="demo-tab-panel active" id="sim-panel">
+                    <div class="simulator-layout">
+                        <!-- Left Column: 3D model & Hardware monitor -->
+                        <div class="sim-device-col">
+                            <span class="sim-device-title">說說學伴 狀態模擬</span>
+                            
+                            <!-- Penguin Device -->
+                            <div class="device-egg" id="sim-egg-model">
+                                <!-- Headphones -->
+                                <div class="penguin-headband"></div>
+                                <div class="penguin-earcup left"></div>
+                                <div class="penguin-earcup right"></div>
+                                
+                                <!-- Face -->
+                                <div class="penguin-face">
+                                    <div class="penguin-eye left"></div>
+                                    <div class="penguin-eye right"></div>
+                                    <div class="penguin-beak"></div>
+                                </div>
+                                
+                                <!-- Scarf -->
+                                <div class="penguin-scarf">
+                                    <div class="penguin-scarf-tail"></div>
+                                </div>
+                                
+                                <!-- White Belly -->
+                                <div class="penguin-belly">
+                                    <!-- Mapped LED ring for JS compatibility -->
+                                    <div class="device-led-ring">
+                                        <div class="device-led-glow"></div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Keep old components hidden for JS fallback -->
+                                <div class="device-speaker" style="display: none;"></div>
+                                <div class="device-wood-base" style="display: none;"></div>
+                            </div>
+                            <!-- Shadow -->
+                            <div class="device-egg-shadow"></div>
+
+                            <!-- Hardware Telemetry Monitor -->
+                            <div class="sim-monitor-card">
+                                <div class="sim-monitor-header">
+                                    <span>聯發科 Genio 遙測</span>
+                                    <span id="monitor-mode-badge" style="color: var(--accent-teal);">離線(Edge)模式</span>
+                                </div>
+                                <!-- CPU -->
+                                <div class="monitor-row">
+                                    <div class="monitor-label">
+                                        <span>Genio CPU 負載</span>
+                                        <span class="monitor-val" id="monitor-cpu-val">0%</span>
+                                    </div>
+                                    <div class="monitor-bar-bg">
+                                        <div class="monitor-bar-fill" id="monitor-cpu-bar" style="background: linear-gradient(to right, #38bdf8, #818cf8);"></div>
+                                    </div>
+                                </div>
+                                <!-- NPU -->
+                                <div class="monitor-row">
+                                    <div class="monitor-label">
+                                        <span>NeuroPilot NPU</span>
+                                        <span class="monitor-val" id="monitor-npu-val">0%</span>
+                                    </div>
+                                    <div class="monitor-bar-bg">
+                                        <div class="monitor-bar-fill" id="monitor-npu-bar" style="background: linear-gradient(to right, #f472b6, #db2777);"></div>
+                                    </div>
+                                </div>
+                                <!-- battery -->
+                                <div class="monitor-row">
+                                    <div class="monitor-label">
+                                        <span>剩餘電量</span>
+                                        <span class="monitor-val" id="monitor-bat-val">96%</span>
+                                    </div>
+                                    <div class="monitor-bar-bg">
+                                        <div class="monitor-bar-fill" id="monitor-bat-bar" style="background: linear-gradient(to right, #4ade80, #16a34a); width: 96%;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Interactive chat panel -->
+                        <div class="sim-chat-col">
+                            <div class="sim-chat-header">
+                                <div class="sim-chat-title">
+                                    <span class="sim-chat-dot"></span>
+                                    模擬伴讀現場：阿明與說說學伴
+                                </div>
+                                <span style="font-size: 11px; color: var(--text-muted);">鷹架式引導對話</span>
+                            </div>
+
+                            <!-- Chat bubbles history -->
+                            <div class="sim-chat-history" id="sim-chat-container">
+                                <!-- Dynamically populated by JS -->
+                            </div>
+
+                            <!-- Action Bar -->
+                            <div class="sim-chat-actions">
+                                <span class="sim-step-text" id="sim-step-indicator">回合：0 / 5</span>
+                                <div style="display: flex; gap: 12px;">
+                                    <button class="btn-sim-reset" onclick="resetSimulator()">重新啟動</button>
+                                    <button class="btn-sim-next" id="btn-sim-next" onclick="nextSimulatorStep()">下一回合 (Next) ➡️</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 頁籤二：教師智慧助教平台 -->
+                <div class="demo-tab-panel" id="dash-panel">
+                    <div class="dashboard-layout">
+                        <!-- Left: Student List -->
+                        <div class="dash-students-col">
+                            <span class="dash-students-title">秀林國小 四年甲班</span>
+                            <!-- Student list items -->
+                            <div class="student-list-item active" onclick="selectStudentData('阿明', this)">
+                                <span class="student-item-name">陳阿明 🌟</span>
+                                <span class="student-item-level level-c">待加強 C</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('小雅', this)">
+                                <span class="student-item-name">林小雅</span>
+                                <span class="student-item-level level-a">通過 A</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('阿華', this)">
+                                <span class="student-item-name">張阿華</span>
+                                <span class="student-item-level level-a">通過 A</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('小美', this)">
+                                <span class="student-item-name">王小美</span>
+                                <span class="student-item-level level-a">通過 A</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('志明', this)">
+                                <span class="student-item-name">李志明</span>
+                                <span class="student-item-level level-b">通過 B</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('小芳', this)">
+                                <span class="student-item-name">許小芳</span>
+                                <span class="student-item-level level-b">加強 B</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('阿信', this)">
+                                <span class="student-item-name">曾阿信</span>
+                                <span class="student-item-level level-b">加強 B</span>
+                            </div>
+                            <div class="student-list-item" onclick="selectStudentData('小光', this)">
+                                <span class="student-item-name">周小光</span>
+                                <span class="student-item-level level-c">待加強 C</span>
+                            </div>
+                        </div>
+
+                        <!-- Right: Details panel -->
+                        <div class="dash-details-col">
+                            
+                            <!-- Stats bar -->
+                            <div class="dash-stats-row">
+                                <div class="dash-mini-card">
+                                    <span class="dash-mini-title">學習扶助學生數</span>
+                                    <span class="dash-mini-val">8 人</span>
+                                    <span class="dash-mini-footer" style="color: var(--accent-teal);">口說開口率 100%</span>
+                                </div>
+                                <div class="dash-mini-card">
+                                    <span class="dash-mini-title">本月互動總次數</span>
+                                    <span class="dash-mini-val" id="dash-class-interactions">156 次</span>
+                                    <span class="dash-mini-footer">▲ 23% 較上月成長</span>
+                                </div>
+                                <div class="dash-mini-card">
+                                    <span class="dash-mini-title">平均信心指數</span>
+                                    <span class="dash-mini-val">72 / 100</span>
+                                    <span class="dash-mini-footer">▲ 15分 焦慮顯著下降</span>
+                                </div>
+                                <div class="dash-mini-card">
+                                    <span class="dash-mini-title">學扶預估通過率</span>
+                                    <span class="dash-mini-val">75%</span>
+                                    <span class="dash-mini-footer">▲ 20% 入學前相比</span>
+                                </div>
+                            </div>
+
+                            <!-- Radar and Diagnostic text -->
+                            <div class="dash-workplace-grid">
+                                <!-- Radar Card -->
+                                <div class="dash-panel-card">
+                                    <div class="dash-card-header">
+                                        <span class="dash-card-title">學童英語綜合維度能力圖</span>
+                                        <span style="font-size: 9px; color: var(--text-muted);">SVG 向量動態雷達圖</span>
+                                    </div>
+                                    <div class="radar-svg-space">
+                                        <!-- Interactive SVG Radar -->
+                                        <svg width="180" height="180" viewBox="0 0 200 200" style="overflow: visible;">
+                                            <!-- Pentagon grids -->
+                                            <polygon points="100,20 176,75 147,165 53,165 24,75" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+                                            <polygon points="100,40 157,81 135,150 65,150 43,81" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+                                            <polygon points="100,60 138,87 123,135 77,135 62,87" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+                                            <polygon points="100,80 119,93 111,120 89,120 81,93" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+                                            
+                                            <!-- Axes -->
+                                            <line x1="100" y1="100" x2="100" y2="20" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                                            <line x1="100" y1="100" x2="176" y2="75" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                                            <line x1="100" y1="100" x2="147" y2="165" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                                            <line x1="100" y1="100" x2="53" y2="165" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                                            <line x1="100" y1="100" x2="24" y2="75" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                                            
+                                            <!-- Axis Labels -->
+                                            <text x="100" y="14" text-anchor="middle" font-size="8" font-weight="700" fill="white">發音準確</text>
+                                            <text x="182" y="77" text-anchor="start" font-size="8" font-weight="700" fill="white">流暢度</text>
+                                            <text x="154" y="174" text-anchor="start" font-size="8" font-weight="700" fill="white">字彙量</text>
+                                            <text x="46" y="174" text-anchor="end" font-size="8" font-weight="700" fill="white">句型掌握</text>
+                                            <text x="18" y="77" text-anchor="end" font-size="8" font-weight="700" fill="white">學習動機</text>
+                                            
+                                            <!-- Class Average (Teal dashed) -->
+                                            <polygon points="100,45 152,82 131,146 82,132 54,92" fill="none" stroke="rgba(20, 184, 166, 0.4)" stroke-dasharray="3,3" stroke-width="1.5"/>
+                                            
+                                            <!-- Selected Student Polygon (Dynamic Neon Orange) -->
+                                            <!-- Default: 阿明 (陳阿明) -->
+                                            <polygon points="100,68 129,91 118,126 89,120 81,93" fill="rgba(249, 115, 22, 0.2)" stroke="var(--accent-orange)" stroke-width="2.5" id="radar-polygon" style="transition: var(--transition-smooth); filter: drop-shadow(0 0 4px var(--accent-orange-glow));"/>
+                                        </svg>
+                                    </div>
+                                </div>
+
+                                <!-- Diagnostic Card -->
+                                <div class="dash-panel-card" style="border-left: 4px solid var(--accent-orange);" id="diag-sidebar-card">
+                                    <div class="diag-profile-row">
+                                        <div class="diag-avatar" id="diag-card-avatar">明</div>
+                                        <div class="diag-meta">
+                                            <h3 id="diag-card-name">陳阿明</h3>
+                                            <p id="diag-card-desc">四年級 (9 歲) · 偏鄉學習扶助加強對象</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="diag-sections">
+                                        <div class="diag-section-item">
+                                            <span class="diag-section-label">🔍 AI 學習成效診斷報告</span>
+                                            <p class="diag-section-text" id="diag-card-strengths"><strong>核心優勢：</strong>阿明在「說說學伴」的對話中展現出優秀的單字記憶力。對於常用生活單字（如食物、交通工具）能快速理解並開口回應。</p>
+                                            <p class="diag-section-text" id="diag-card-weaknesses" style="margin-top: 4px;"><strong>待改善點：</strong>母音 /æ/（如 apple）與 /ɛ/ 容易混淆，且句型結構完整度不足，常以「中文主體 + 英文單字」交雜回應，尚難自主組織完整句子。</p>
+                                        </div>
+                                        <div class="diag-section-item">
+                                            <span class="diag-section-label">💡 AI 差異化教學與輔導建議</span>
+                                            <div class="diag-section-box" id="diag-card-suggestions">
+                                                林老師，阿明對食物與水果主題興趣極高。建議引導他套用「I like to eat...」句型。每天課後利用說說學伴練習5分鐘包含/æ/的短句，同儕安排林小雅（發音優異）與他共學。
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- SVG Trend Line Card (Spans full width) -->
+                                <div class="dash-panel-card dash-trend-card">
+                                    <div class="dash-card-header" style="margin-bottom: 8px;">
+                                        <span class="dash-card-title">學力成長趨勢 (第 1 週 至 第 4 週)</span>
+                                        <span style="font-size: 10px; color: var(--text-muted);">🔵 班級平均  🔴 個人表現</span>
+                                    </div>
+                                    <div class="trend-svg-container">
+                                        <svg width="100%" height="100%" viewBox="0 0 600 80" preserveAspectRatio="none" style="overflow: visible;">
+                                            <!-- Grids -->
+                                            <line x1="40" y1="10" x2="560" y2="10" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+                                            <line x1="40" y1="35" x2="560" y2="35" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+                                            <line x1="40" y1="60" x2="560" y2="60" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+                                            
+                                            <!-- X Axis Labels -->
+                                            <text x="70" y="74" font-size="8" fill="var(--text-muted)" text-anchor="middle">第一週</text>
+                                            <text x="210" y="74" font-size="8" fill="var(--text-muted)" text-anchor="middle">第二週</text>
+                                            <text x="350" y="74" font-size="8" fill="var(--text-muted)" text-anchor="middle">第三週</text>
+                                            <text x="490" y="74" font-size="8" fill="var(--text-muted)" text-anchor="middle">第四週 (本週)</text>
+                                            
+                                            <!-- Class Average path (Teal) -->
+                                            <path d="M 70 50 L 210 44 L 350 36 L 490 30" fill="none" stroke="var(--accent-teal)" stroke-width="2" stroke-linecap="round"/>
+                                            <circle cx="70" cy="50" r="2.5" fill="var(--accent-teal)"/>
+                                            <circle cx="210" cy="44" r="2.5" fill="var(--accent-teal)"/>
+                                            <circle cx="350" cy="36" r="2.5" fill="var(--accent-teal)"/>
+                                            <circle cx="490" cy="30" r="2.5" fill="var(--accent-teal)"/>
+                                            
+                                            <!-- Student path (Orange) -->
+                                            <path d="M 70 60 L 210 56 L 350 50 L 490 44" fill="none" stroke="var(--accent-orange)" stroke-width="2.5" stroke-linecap="round" id="trend-student-path" style="transition: var(--transition-smooth);"/>
+                                            <circle cx="70" cy="60" r="3" fill="var(--accent-orange)" id="trend-student-c1" style="transition: var(--transition-smooth);"/>
+                                            <circle cx="210" cy="56" r="3" fill="var(--accent-orange)" id="trend-student-c2" style="transition: var(--transition-smooth);"/>
+                                            <circle cx="350" cy="50" r="3" fill="var(--accent-orange)" id="trend-student-c3" style="transition: var(--transition-smooth);"/>
+                                            <circle cx="490" cy="44" r="3" fill="var(--accent-orange)" id="trend-student-c4" style="transition: var(--transition-smooth);"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- 6. 雙大普惠情境展示區 (The Inclusive Scenarios) -->
+    <section class="section-container" id="scenarios">
+        <div class="section-header">
+            <span class="section-tag">落地方案 (Scenarios)</span>
+            <div class="section-title">
+                <h2>雙大普惠應用場景實證</h2>
+            </div>
+            <p class="section-desc">「說說學伴」不只是客廳的語音伴讀，更是融入學校學扶課堂與城鄉社區共融的普惠科技載體。</p>
+        </div>
+
+        <div class="scenarios-grid">
+            <!-- 1 -->
+            <div class="glass-card scenario-card">
+                <div class="scenario-img-box">
+                    <img src="./images/usage_scenario_classroom.png" alt="偏鄉學扶課堂" onerror="this.src='https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?q=80&w=800'">
+                    <span class="scenario-img-tag">情境一</span>
+                </div>
+                <div class="scenario-info">
+                    <h3>偏鄉學扶課堂的「無壓力伴讀鷹架」</h3>
+                    <p>
+                        在花蓮縣秀林國小等試辦點中，學童在課堂上抱著說說學伴，在完全沒有螢幕干擾和分數壓力的環境下，一對一跟著 AI 說英文。邊緣 AI 排除網路卡頓的挫折感，自動生成的差異化報表也將教師從手動派課與分析進度的行政瑣事中解脫，實踐真正的高效因材施教。
+                    </p>
+                    <div class="scenario-highlights">
+                        <div class="scen-high-item">
+                            <span>零焦慮開口</span>
+                            <p>無錯誤紅字，AI 溫和示範中英雙語引導</p>
+                        </div>
+                        <div class="scen-high-item">
+                            <span>減負 80% 行政</span>
+                            <p>助教自動診斷，產出班級學力分析表</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- 2 -->
+            <div class="glass-card scenario-card">
+                <div class="scenario-img-box">
+                    <img src="./images/cross_generation_scene.png" alt="跨世代教育共創" onerror="this.src='https://images.unsplash.com/photo-1516627145497-ae6968895b74?q=80&w=800'">
+                    <span class="scenario-img-tag">情境二</span>
+                </div>
+                <div class="scenario-info">
+                    <h3>跨世代教育共創「在地記憶雙語繪本」</h3>
+                    <p>
+                        在社區關懷據點，美濃客家阿嬤用母語對著說說學伴講述古老的菸樓歷史。學伴採集語音上傳 AWS，AI 自動翻譯重構成中英雙語大綱。學童小雅隨後在學伴的鷹架指引下，嘗試用英文改寫阿嬤的故事。最終共創一本富有溫度的「AI 雙語有聲繪本」，將科技轉化為社區文化傳承與流動的媒介。
+                    </p>
+                    <div class="scenario-highlights">
+                        <div class="scen-high-item">
+                            <span>有溫度的任務</span>
+                            <p>學英語是為了說阿嬤的故事，建立真實動機</p>
+                        </div>
+                        <div class="scen-high-item">
+                            <span>敘事文化永續</span>
+                            <p>延緩長者老化，在地記憶雙語化保存並傳承</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 7. 資源下載與參考文獻區 (Downloads & References) -->
+    <section class="section-container" id="downloads" style="margin-bottom: 40px;">
+        <div class="section-header">
+            <span class="section-tag">資源共享 (Resources)</span>
+            <div class="section-title">
+                <h2>專案文獻與資源下載中心</h2>
+            </div>
+            <p class="section-desc">評審可在此處一鍵下載說說學伴專案的全部核心研發文件、原始碼及學術文獻。</p>
+        </div>
+
+        <div class="resources-layout">
+            <!-- Left downloads -->
+            <div class="downloads-grid">
+                <!-- 1 -->
+                <div class="download-item-card">
+                    <div class="download-info-header">
+                        <span class="download-icon">📄</span>
+                        <span class="download-size-tag">284 KB</span>
+                    </div>
+                    <div class="download-text">
+                        <h3>痛點研究與系統方案報告書 (PDF)</h3>
+                        <p>35頁完整論文研究報告，剖析偏鄉三重困境、雙網混成推論數學架構、以及普惠社會價值。</p>
+                    </div>
+                                        <a href="./臺灣普惠科技應用痛點研究_說說學伴.pdf" class="btn-download-action" download>下載 PDF 原檔</a>
+                </div>
+                <!-- 3 -->
+                <div class="download-item-card">
+                    <div class="download-info-header">
+                        <span class="download-icon">⚙️</span>
+                        <span class="download-size-tag">14.1 KB</span>
+                    </div>
+                    <div class="download-text">
+                        <h3>專案技術棧與開發規格書 (SPEC)</h3>
+                        <p>研發專用 SPEC 文件，詳解聯發科 NPU 量化編譯指令、Ollama 載入參數及 API payload。</p>
+                    </div>
+                                        <a href="./專案技術棧與開發規格書.md" class="btn-download-action" download>下載 Markdown 規格書</a>
+                </div>
+            </div>
+
+            <!-- Right references -->
+            <div class="glass-card references-box">
+                <span class="references-title">📚 核心參考文獻</span>
+                <div class="references-list">
+                    <div class="ref-item">教育部國教署「中小學數位學習精進方案」生生用平板成果報告(2022-2025)</div>
+                    <div class="ref-item">臺灣教育部學習扶助（補救教學）篩選測驗與國中教育會考學力落差分析</div>
+                    <div class="ref-item">教育部「Cool English 英語線上學習平台」酷英網 AI 功能與大專專區建置指引</div>
+                    <div class="ref-item">聯發科技 (MediaTek) Genio 520 / MT8365 NPU 運算元與 NeuroPilot 8 SDK 技術手冊</div>
+                    <div class="ref-item">AWS Bedrock 基礎模型(Claude 3.5 Sonnet)推論API與檢索增強生成(RAG)架構指南</div>
+                    <div class="ref-item">語言教育學：鷹架引導理論 (Scaffolding Theory) 在第二語言習得(SLA)中的應用</div>
+                    <div class="ref-item">均一教育基金會：永續城鄉與教育均等之城鄉教育數位落差白皮書</div>
+                    <div class="ref-item">賽微科技：邊緣運算語音聲控辨識(離線 ASR)解決方案</div>
+                    <div class="ref-item">Ollama & Qwen 1.7B/2.5-Instruct 邊緣物聯網小型離線 LLM 量化部署效能測試報告</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 9. 頁尾 (Footer) -->
+    <footer class="app-footer">
+        <div class="footer-row">
+            <div class="footer-left">
+                <span>🤖 說說學伴 TalkyBuddy 專案開發組</span>
+            </div>
+            <div class="footer-right">
+                <a href="#" class="footer-link">回到頂端</a>
+                <a href="#interactive-hub" class="footer-link">互動展示</a>
+            </div>
+        </div>
+        <div class="footer-bottom-text">
+            📋 本展示平台由「說說學伴」智慧教學大腦自動生成 | 運算使能：聯發科 Genio 520 NPU + AWS Bedrock<br>
+            2026 雲湧智生：臺灣生成式 AI 應用黑客松競賽 · 晶創未來組
+        </div>
+    </footer>
+
+
+    <!-- ==========================================
+       12. 互動控制邏輯 (JavaScript Logic)
+       ========================================== -->
+    <script>
+        /* ==========================================
+           A. 全域粒子背景動畫 (Particle Canvas)
+           ========================================== */
+        const canvas = document.getElementById('particle-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let particles = [];
+        const maxParticles = 60;
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                this.size = Math.random() * 2.5 + 0.5;
+                this.speedX = Math.random() * 0.4 - 0.2;
+                this.speedY = Math.random() * 0.4 - 0.2;
+                this.opacity = Math.random() * 0.4 + 0.1;
+            }
+
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+
+                if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
+                    this.reset();
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function initParticles() {
+            particles = [];
+            for (let i = 0; i < maxParticles; i++) {
+                particles.push(new Particle());
+            }
+        }
+
+        function animateParticles() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            requestAnimationFrame(animateParticles);
+        }
+
+        initParticles();
+        animateParticles();
+
+        /* ==========================================
+           B. 導覽列 Scrollspy & 錨點平滑滾動
+           ========================================== */
+        const navLinks = document.querySelectorAll('.nav-link');
+        const sections = document.querySelectorAll('section');
+
+        window.addEventListener('scroll', () => {
+            let current = 'hero';
+            sections.forEach(sec => {
+                const secTop = sec.offsetTop;
+                const secHeight = sec.clientHeight;
+                if (pageYOffset >= (secTop - 120)) {
+                    current = sec.getAttribute('id');
+                }
+            });
+
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('data-sec') === current) {
+                    link.classList.add('active');
+                }
+            });
+        });
+
+        /* ==========================================
+           C. 技術架構 SVG 在線/離線狀態切換
+           ========================================== */
+        function setArchState(state) {
+            const btnOffline = document.getElementById('btn-state-offline');
+            const btnOnline = document.getElementById('btn-state-online');
+            
+            const edgeBox = document.getElementById('svg-edge-box');
+            const cloudBox = document.getElementById('svg-cloud-box');
+            
+            const glowOfflineLoop = document.getElementById('svg-glow-offline-loop');
+            const glowChildEdge = document.getElementById('svg-glow-child-edge');
+            const glowEdgeChild = document.getElementById('svg-glow-edge-child');
+            
+            const glowEdgeCloud = document.getElementById('svg-glow-edge-cloud');
+            const glowCloudEdge = document.getElementById('svg-glow-cloud-edge');
+            
+            const monitorModeBadge = document.getElementById('monitor-mode-badge');
+
+            if (state === 'offline') {
+                btnOffline.classList.add('active');
+                btnOnline.classList.remove('active');
+                
+                edgeBox.classList.add('active-edge');
+                edgeBox.classList.remove('active-cloud');
+                cloudBox.classList.remove('active-cloud');
+                
+                glowOfflineLoop.classList.add('active');
+                glowChildEdge.classList.add('active');
+                glowEdgeChild.classList.add('active');
+                
+                glowEdgeCloud.classList.remove('active');
+                glowCloudEdge.classList.remove('active');
+                
+                monitorModeBadge.innerText = "離線(Edge)模式";
+                monitorModeBadge.style.color = "var(--accent-teal)";
+            } else {
+                btnOnline.classList.add('active');
+                btnOffline.classList.remove('active');
+                
+                edgeBox.classList.remove('active-edge');
+                edgeBox.classList.add('active-cloud');
+                cloudBox.classList.add('active-cloud');
+                
+                glowOfflineLoop.classList.remove('active');
+                
+                glowEdgeCloud.classList.add('active');
+                glowCloudEdge.classList.add('active');
+                
+                monitorModeBadge.innerText = "在線(Cloud)模式";
+                monitorModeBadge.style.color = "var(--accent-purple)";
+            }
+        }
+
+        // Initialize state
+        setArchState('offline');
+
+        /* ==========================================
+           D. 互動體驗頁籤切換 (Tabs Control)
+           ========================================== */
+        function switchDemoTab(btn, panelId) {
+            const tabs = document.querySelectorAll('.demo-tab-button');
+            const panels = document.querySelectorAll('.demo-tab-panel');
+            
+            tabs.forEach(t => t.classList.remove('active'));
+            panels.forEach(p => p.classList.remove('active'));
+            
+            btn.classList.add('active');
+            document.getElementById(panelId).classList.add('active');
+        }
+
+        /* ==========================================
+           E. 學生端實體玩偶模擬器對話邏輯
+           ========================================== */
+        const chatSteps = [
+            {
+                sender: 'buddy',
+                name: '說說學伴',
+                text: '（暖黃色呼吸燈微閃）你好呀，阿明！今天在學校有沒有聽流行歌呢？我想跟你分享一個關於森林怪獸的小故事喔！',
+                cpu: 10, npu: 5, led: 'thinking', duration: 1500
+            },
+            {
+                sender: 'student',
+                name: '阿明',
+                text: '說說學伴，我想吃 apple。',
+                cpu: 50, npu: 60, led: 'listening', duration: 1000
+            },
+            {
+                sender: 'buddy',
+                name: '說說學伴',
+                text: '哇，阿明肚子餓想吃蘋果了！跟著我大聲唸一遍好嗎：I want to eat an apple.',
+                cpu: 85, npu: 90, led: 'speaking', duration: 2000
+            },
+            {
+                sender: 'student',
+                name: '阿明',
+                text: 'I want to eat... an apple.',
+                cpu: 60, npu: 75, led: 'listening', duration: 1200
+            },
+            {
+                sender: 'buddy',
+                name: '說說學伴',
+                text: '太棒了！你說得非常完整！apple 的 /æ/ 音唸得好大聲，真有自信！我們再來挑戰一個草莓好不好？跟著我唸：strawberry...',
+                cpu: 88, npu: 85, led: 'speaking', duration: 2200
+            }
+        ];
+
+        let currentSimStep = 0;
+        const chatContainer = document.getElementById('sim-chat-container');
+        const stepIndicator = document.getElementById('sim-step-indicator');
+        const btnSimNext = document.getElementById('btn-sim-next');
+
+        const eggModel = document.getElementById('sim-egg-model');
+        const cpuValText = document.getElementById('monitor-cpu-val');
+        const npuValText = document.getElementById('monitor-npu-val');
+        const cpuBar = document.getElementById('monitor-cpu-bar');
+        const npuBar = document.getElementById('monitor-npu-bar');
+
+        function appendChatBubble(step) {
+            const row = document.createElement('div');
+            row.className = `chat-bubble-row ${step.sender}`;
+            
+            const content = document.createElement('div');
+            content.className = 'chat-bubble-content';
+            
+            const senderSpan = document.createElement('div');
+            senderSpan.className = 'chat-bubble-sender';
+            senderSpan.innerText = step.name;
+            
+            const textSpan = document.createElement('span');
+            textSpan.innerText = step.text;
+            
+            content.appendChild(senderSpan);
+            content.appendChild(textSpan);
+
+            // Add SVG audio waveform for buddy voice response
+            if (step.sender === 'buddy') {
+                const waveContainer = document.createElement('div');
+                waveContainer.className = 'chat-waveform-container';
+                
+                const playBtn = document.createElement('button');
+                playBtn.className = 'waveform-btn';
+                playBtn.innerHTML = '🔊 語音播放';
+                
+                const waveVisual = document.createElement('div');
+                waveVisual.className = 'waveform-visual active';
+                waveVisual.innerHTML = `
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                `;
+                
+                waveContainer.appendChild(playBtn);
+                waveContainer.appendChild(waveVisual);
+                content.appendChild(waveContainer);
+
+                // Stop wave after duration
+                setTimeout(() => {
+                    waveVisual.classList.remove('active');
+                }, step.duration);
+            }
+            
+            row.appendChild(content);
+            chatContainer.appendChild(row);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function updateTelemetry(cpu, npu, led) {
+            cpuValText.innerText = `${cpu}%`;
+            npuValText.innerText = `${npu}%`;
+            cpuBar.style.width = `${cpu}%`;
+            npuBar.style.width = `${npu}%`;
+            
+            eggModel.classList.remove('speaking', 'listening', 'thinking');
+            if (led) {
+                eggModel.classList.add(led);
+            }
+        }
+
+        function nextSimulatorStep() {
+            if (currentSimStep < chatSteps.length) {
+                const step = chatSteps[currentSimStep];
+                appendChatBubble(step);
+                updateTelemetry(step.cpu, step.npu, step.led);
+                
+                currentSimStep++;
+                stepIndicator.innerText = `回合：${currentSimStep} / 5`;
+                
+                if (currentSimStep === chatSteps.length) {
+                    // Show final report popup inside chat
+                    setTimeout(() => {
+                        const scoreCard = document.createElement('div');
+                        scoreCard.className = 'sim-score-card';
+                        scoreCard.innerHTML = `
+                            <div class="sim-score-header">🎯 本回合學習成效診斷 (邊緣 NPU 即時算力生成)</div>
+                            <div class="sim-score-grid">
+                                <div class="sim-score-item">
+                                    <div class="sim-score-label">開口信心</div>
+                                    <div class="sim-score-val color-up">▲ 18%</div>
+                                </div>
+                                <div class="sim-score-item">
+                                    <div class="sim-score-label">發音準確</div>
+                                    <div class="sim-score-val" style="color: var(--accent-orange);">75 分</div>
+                                </div>
+                                <div class="sim-score-item">
+                                    <div class="sim-score-label">同儕推薦</div>
+                                    <div class="sim-score-val" style="color: var(--accent-teal);">小雅共學</div>
+                                </div>
+                            </div>
+                        `;
+                        chatContainer.appendChild(scoreCard);
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                        
+                        // Update class total interactions
+                        document.getElementById('dash-class-interactions').innerText = "157 次";
+                        document.getElementById('dash-class-interactions').style.color = "var(--accent-orange)";
+                    }, 800);
+
+                    btnSimNext.disabled = true;
+                    btnSimNext.innerText = "互動結束";
+                }
+            }
+        }
+
+        function resetSimulator() {
+            chatContainer.innerHTML = '';
+            currentSimStep = 0;
+            stepIndicator.innerText = `回合：0 / 5`;
+            btnSimNext.disabled = false;
+            btnSimNext.innerText = "下一回合 (Next) ➡️";
+            updateTelemetry(0, 0, null);
+            // Trigger greeting step automatically
+            nextSimulatorStep();
+        }
+
+        // Start simulator automatically
+        resetSimulator();
+
+        /* ==========================================
+           F. 教師智慧助教平台學生數據連動
+           ========================================== */
+        const studentDatabase = {
+            '阿明': {
+                avatar: '明',
+                name: '陳阿明',
+                desc: '四年級 (9 歲) · 偏鄉學習扶助加強對象',
+                level: '待加強 C',
+                levelClass: 'level-c',
+                strengths: '阿明在「說說學伴」的對話中展現出優秀的單字記憶力。對於常用生活單字（如食物、交通工具）能快速理解並開口回應。',
+                weaknesses: '母音 /æ/（如 apple）與 /ɛ/ 容易混淆，且句型結構完整度不足，常以「中文主體 + 英文單字」交雜回應，尚難自主組織完整句子。',
+                suggestions: '林老師，阿明對食物與水果主題興趣極高。建議引導他套用「I like to eat...」句型。每天課後利用說說學伴練習5分鐘包含/æ/的短句，同儕安排林小雅（發音優異）與他共學。',
+                radar: '100,68 129,91 118,126 89,120 81,93',
+                trend: {
+                    path: 'M 70 60 L 210 56 L 350 50 L 490 44',
+                    c1: [70, 60], c2: [210, 56], c3: [350, 50], c4: [490, 44]
+                }
+            },
+            '小雅': {
+                avatar: '雅',
+                name: '林小雅',
+                desc: '四年級 (9 歲) · 英語口說優良學童',
+                level: '通過 A',
+                levelClass: 'level-a',
+                strengths: '小雅語感極佳，發音精準且音調自然。在說說學伴的聊天互動中能自如地使用簡單完整句型與 AI 對話，毫無開口焦慮。',
+                weaknesses: '較少使用複合型連接句（如 because, but 等連詞），詞彙庫多集中在日常主題，可開始擴展學科英語字彙。',
+                suggestions: '林老師，小雅已具備高度獨立對話能力。建議在說說學伴後台為她開啟「英語故事描述模式」，引導她用 3 句話描述主題，並可安排她作為「同儕導師」，帶領阿明共學。',
+                radar: '100,24 172,77 142,160 120,138 72,77',
+                trend: {
+                    path: 'M 70 36 L 210 28 L 350 20 L 490 14',
+                    c1: [70, 36], c2: [210, 28], c3: [350, 20], c4: [490, 14]
+                }
+            },
+            '阿華': {
+                avatar: '華',
+                name: '張阿華',
+                desc: '四年級 (10 歲) · 英語穩定發展對象',
+                level: '通過 A',
+                levelClass: 'level-a',
+                strengths: '阿華口說流暢度佳，主動發問意願高。對於說說學伴所提出之流行遊戲（如 Minecraft）主題對話表現出極高的詞彙理解。',
+                weaknesses: '名詞單複數與動詞第三人稱單數形態在口說中偶有遺漏。發音輕重音掌握尚待加強。',
+                suggestions: '建議利用說說學伴之「趣味跟讀任務」加強詞尾發音，並多練習「I have... / He has...」句型。',
+                radar: '100,35 158,83 138,154 114,130 76,80',
+                trend: {
+                    path: 'M 70 46 L 210 40 L 350 32 L 490 26',
+                    c1: [70, 46], c2: [210, 40], c3: [350, 32], c4: [490, 26]
+                }
+            },
+            '小美': {
+                avatar: '美',
+                name: '王小美',
+                desc: '四年級 (9 歲) · 語意理解優良對象',
+                level: '通過 A',
+                levelClass: 'level-a',
+                strengths: '聽力理解力極佳，對說說學伴的提問能快速給予合乎邏輯的答覆。單字拼讀底子扎實。',
+                weaknesses: '發音時音量偏小，語調較平淡平板。對於長句的發音流暢度與斷句點掌握較弱。',
+                suggestions: '請林老師在課堂中給予小美正面肯定以提升信心，引導她多練習語音語調起伏，並搭配說說學伴的動態 LED 呼吸光環進行跟讀挑戰。',
+                radar: '100,38 155,85 137,152 112,129 79,83',
+                trend: {
+                    path: 'M 70 48 L 210 42 L 350 35 L 490 28',
+                    c1: [70, 48], c2: [210, 42], c3: [350, 35], c4: [490, 28]
+                }
+            },
+            '志明': {
+                avatar: '明',
+                name: '李志明',
+                desc: '四年級 (9 歲) · 口說進步顯著學童',
+                level: '通過 B',
+                levelClass: 'level-b',
+                strengths: '使用說說學伴三週後，志明的口說焦慮明顯下降，已經能大聲說出短句。發音清晰度中等偏上。',
+                weaknesses: '字彙量稍微不足，經常需要 AI 鷹架混合中英引導。聽力偶有漏聽關鍵字的情況。',
+                suggestions: '利用說說學伴後台鎖定「生活場景單字卡」單元，配合課堂複習。鼓勵志明每天嘗試解鎖一個語音徽章。',
+                radar: '100,42 152,87 132,148 108,126 81,85',
+                trend: {
+                    path: 'M 70 55 L 210 48 L 350 40 L 490 34',
+                    c1: [70, 55], c2: [210, 48], c3: [350, 40], c4: [490, 34]
+                }
+            },
+            '小芳': {
+                avatar: '芳',
+                name: '許小芳',
+                desc: '四年級 (10 歲) · 學扶重點追蹤學童',
+                level: '加強 B',
+                levelClass: 'level-b',
+                strengths: '小芳發音準確度良好，尤其是母音發音清晰。在熟悉的故事主題中能被引導說出簡單單字。',
+                weaknesses: '口說信心十分脆弱。只要單字較長即退縮不願嘗試，課堂上完全不敢對人開口。',
+                suggestions: '目前說說學伴的實體物理陪伴對小芳極具安全感。請讓小芳在無人打擾的安靜角落獨立與學伴對話，以小步快跑（2分鐘任務）累積成就感。',
+                radar: '100,48 145,90 128,144 104,123 85,88',
+                trend: {
+                    path: 'M 70 58 L 210 52 L 350 48 L 490 40',
+                    c1: [70, 58], c2: [210, 52], c3: [350, 48], c4: [490, 40]
+                }
+            },
+            '阿信': {
+                avatar: '信',
+                name: '曾阿信',
+                desc: '四年級 (9 歲) · 學習動機待引導學童',
+                level: '加強 B',
+                levelClass: 'level-b',
+                strengths: '單字理解迅速，對科技裝置的操作興趣濃厚。若對話主題切入他熱愛的動漫角色，反應會非常靈敏。',
+                weaknesses: '注意力極易渙散。使用平板時常切換畫面分心，且發音急促，常導致辨識晶片判斷漏字。',
+                suggestions: '說說學伴的無螢幕設計可強制阿信專注。建議老師設定單次對話限時為15分鐘防沉迷，以確保學習密度。主題多切入動漫與遊戲。',
+                radar: '100,54 139,92 124,138 98,121 88,91',
+                trend: {
+                    path: 'M 70 58 L 210 54 L 350 50 L 490 45',
+                    c1: [70, 58], c2: [210, 54], c3: [350, 50], c4: [490, 45]
+                }
+            },
+            '小光': {
+                avatar: '光',
+                name: '周小光',
+                desc: '四年級 (9 歲) · 學習扶助加強對象',
+                level: '待加強 C',
+                levelClass: 'level-c',
+                strengths: '小光對發聲指令反應正常，認真態度佳。願意跟著裝置大聲發出音節。',
+                weaknesses: '字彙量極度匱乏，語句理解速度慢，開口時有明顯的母語語音干擾（客語腔調混淆）。',
+                suggestions: '需要大量的課堂單字打底。請林老師為小光部署說說學伴「最基礎字母拼讀」單元，並設定語速為慢速（0.8x），給予小光充分的反應時間。',
+                radar: '100,70 125,93 114,124 93,118 87,95',
+                trend: {
+                    path: 'M 70 65 L 210 60 L 350 56 L 490 52',
+                    c1: [70, 65], c2: [210, 60], c3: [350, 56], c4: [490, 52]
+                }
+            }
+        };
+
+        function selectStudentData(key, element) {
+            // Manage active class in list
+            const items = document.querySelectorAll('.student-list-item');
+            element.parentElement.querySelectorAll('.student-list-item').forEach(i => i.classList.remove('active'));
+            element.classList.add('active');
+
+            const data = studentDatabase[key];
+            if (data) {
+                // Update text elements with transitions
+                document.getElementById('diag-card-avatar').innerText = data.avatar;
+                document.getElementById('diag-card-name').innerText = data.name;
+                document.getElementById('diag-card-desc').innerText = data.desc;
+                
+                document.getElementById('diag-card-strengths').innerHTML = `<strong>核心優勢：</strong>${data.strengths}`;
+                document.getElementById('diag-card-weaknesses').innerHTML = `<strong>待改善點：</strong>${data.weaknesses}`;
+                document.getElementById('diag-card-suggestions').innerText = data.suggestions;
+
+                // Update decorative card border based on level
+                const card = document.getElementById('diag-sidebar-card');
+                card.style.borderLeftColor = key === '阿明' || key === '小光' ? 'var(--danger)' : (data.level.includes('A') ? 'var(--success)' : 'var(--warning)');
+
+                // Update SVG Radar polygon points (triggers smooth morphing!)
+                document.getElementById('radar-polygon').setAttribute('points', data.radar);
+                
+                // Update SVG Trend student path and points
+                document.getElementById('trend-student-path').setAttribute('d', data.trend.path);
+                document.getElementById('trend-student-c1').setAttribute('cx', data.trend.c1[0]);
+                document.getElementById('trend-student-c1').setAttribute('cy', data.trend.c1[1]);
+                document.getElementById('trend-student-c2').setAttribute('cx', data.trend.c2[0]);
+                document.getElementById('trend-student-c2').setAttribute('cy', data.trend.c2[1]);
+                document.getElementById('trend-student-c3').setAttribute('cx', data.trend.c3[0]);
+                document.getElementById('trend-student-c3').setAttribute('cy', data.trend.c3[1]);
+                document.getElementById('trend-student-c4').setAttribute('cx', data.trend.c4[0]);
+                document.getElementById('trend-student-c4').setAttribute('cy', data.trend.c4[1]);
+            }
+        }
+    
+    </script>
+    
+</body>
+</html>
