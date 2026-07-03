@@ -10,8 +10,16 @@
 * **運算落點與加分策略**：ASR (Whisper) 與 TTS (Piper) 利用免 NDA 的 NeuroPilot Public (TFLite Neuron Delegate) 部署至 NPU，LLM (llama.cpp Qwen2.5 1.5B GGUF) 跑在 CPU（限制 Context 512 tokens 以防 OOM 崩潰）。
 * **解碼優化**：改用 Python `soundfile` 在記憶體中進行 WebM 到 WAV 的音訊解碼與 stream 送出，完全捨棄 FFmpeg 外部 `subprocess` 呼叫，消除進程切換延遲與 Flash I/O 損耗。
 
-### 1.2 Web 即時投影監控面板 (React + Tailwind)
-* 設計精緻的 React 投影大螢幕介面，使用 Recharts 視覺化庫動態更新 ASR 文字、情緒雷達圖、四維評分柱狀圖與 Claude 發音改進建議。
+### 1.2 Web 即時投影監控面板 (Vanilla JS + 手刻 SVG，零外部依賴)
+* 技術棧：**已捨棄 React/Tailwind/Recharts**，改用零建置步驟的 vanilla JS + 手刻 SVG 圖表（見 `talkybuddy/web/teacher.html`、`index.html`），原因是黑客松展示現場需離線可靠、免打包，且已完成的實作已涵蓋所需視覺化。
+* 更新機制為 5 秒輪詢 `/api/diagnoses`、`/api/interactions`（**非 WebSocket**），簡化雲端伺服器實作與斷網重連邏輯。
+* 教師儀表板（`teacher.html`）既有元件：深色設計權杖系統（CSS variables，含四維色彩 `--c-pron`/`--c-flu`/`--c-voc`/`--c-gra`）、學生檔案卡、四維能力雷達圖、14 天趨勢折線圖、Claude 生成診斷卡、互動紀錄表；已涵蓋 RWD 斷點（980px/700px/560px 表格轉卡片）、空狀態（`.empty`）與離線狀態（`.offline`）提示。
+* 學生端（`index.html`）既有元件：奶油色系「企鵝」介面，LED 呼吸燈動畫對應 idle/listen/think/talk 四種語音狀態機，飛航模式（離線模式）手動切換開關。
+* **待補設計決策**（design review 發現的缺口）：
+  1. 大螢幕投影情境下的最小字級與對比度規範尚未驗證（教室後排可視性）。
+  2. 錯誤狀態（API 逾時、資料格式異常）目前僅有籠統的 `.offline` 提示，未區分「暫時離線顯示快取」與「請求失敗」。
+  3. 無障礙檢查（鍵盤導覽、SVG 圖表的 `aria-label` 完整度）尚未逐項驗證。
+  4. 建議將 `teacher.html` 內的 CSS variables 設計權杖萃取為專案根目錄 `DESIGN.md`，供後續頁面（如同儕共學介面，見 TODOS.md）延續一致視覺語言。
 
 ### 1.3 雲端中介伺服器 (FastAPI)
 * 接收 Genio 520 送出的衍生文字 Telemetry，利用 SQLite 保存。
@@ -31,7 +39,7 @@
 ### 階段二：雲端中介與即時監控 Web 實作 (Day 2)
 1. 建立 FastAPI 伺服器，對接 AWS Bedrock (Claude 3.5 Sonnet)。
 2. 設計評語生成與分數計算 Prompt。
-3. 建置 React 前端監控面板，以 WebSockets 連接 FastAPI，動態更新 ASR 文字與分數。
+3. 沿用既有 `talkybuddy/web/teacher.html` 監控面板，以 5 秒輪詢連接 FastAPI，動態更新 ASR 文字與分數。
 
 ### 階段三：軟硬串接與降級 Demo 測試 (Day 3)
 1. 實作 Genio 520 捏肚子按鈕 (GPIO) 與 ASR 錄音觸發綁定。
@@ -56,7 +64,7 @@
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR | 4 issues, 0 critical gaps |
-| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
+| Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAR | 1 critical (stack mismatch: plan said React/Tailwind/Recharts+WebSocket, code is vanilla JS+SVG+polling — fixed), 4 gaps flagged (投影可視性、錯誤狀態、無障礙、DESIGN.md 萃取) |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
 **VERDICT:** ENG CLEARED — ready to implement.
