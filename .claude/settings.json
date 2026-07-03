@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "command": "bash .claude/hooks/check-gstack.sh"
+      }
+    ]
+  }
+}
