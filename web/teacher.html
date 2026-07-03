@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>說說學伴 TalkyBuddy — 教師儀表板</title>
+<style>
+  /* ============ 深色專業系設計權杖 ============ */
+  :root{
+    --page:#0d0d0d;          /* 頁底 */
+    --surface:#1a1a19;       /* 卡片表面 */
+    --ink:#ffffff;           /* 主文字 */
+    --ink-2:#c3c2b7;         /* 次文字 */
+    --ink-3:#898781;         /* 弱文字 */
+    --grid:#2c2c2a;          /* 圖表格線 */
+    --axis:#383835;          /* 圖表軸線 */
+    --hairline:rgba(255,255,255,.10);
+    --c-pron:#3987e5;        /* 發音 */
+    --c-flu:#199e70;         /* 流暢度 */
+    --c-voc:#c98500;         /* 詞彙 */
+    --c-gra:#9085e9;         /* 句型 */
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--page);color:var(--ink);
+    font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,-apple-system,sans-serif;
+    font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:var(--ink-2);text-decoration:none}
+
+  .wrap{max-width:1180px;margin:0 auto;padding:20px 16px 48px}
+
+  /* ============ 頂列 ============ */
+  header.topbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:20px}
+  .topbar h1{font-size:20px;font-weight:700;letter-spacing:.02em}
+  .topbar .sub{font-size:12.5px;color:var(--ink-3)}
+  .topbar .spacer{flex:1}
+  .btn{appearance:none;border:1px solid var(--hairline);background:var(--surface);
+    color:var(--ink);font:inherit;font-size:13.5px;padding:8px 14px;border-radius:10px;
+    cursor:pointer;transition:border-color .15s,background .15s}
+  .btn:hover{border-color:rgba(255,255,255,.28)}
+  .btn.danger{color:#f0b8a8;border-color:rgba(240,140,110,.35)}
+  .btn.danger:hover{border-color:rgba(240,140,110,.6)}
+  a.backlink{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;
+    border:1px solid var(--hairline);border-radius:10px;padding:8px 14px;background:var(--surface)}
+  a.backlink:hover{border-color:rgba(255,255,255,.28)}
+
+  /* ============ 卡片 & 版面 ============ */
+  .card{background:var(--surface);border:1px solid var(--hairline);
+    border-radius:var(--radius);padding:18px 20px;min-width:0}
+  .card h2{font-size:14px;font-weight:600;color:var(--ink-2);margin-bottom:4px;
+    letter-spacing:.03em}
+  .card .note{font-size:11.5px;color:var(--ink-3);margin-bottom:12px}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
+  .col-student{grid-column:span 4}
+  .col-radar{grid-column:span 4}
+  .col-trend{grid-column:span 4}
+  .col-diag{grid-column:span 12}
+  .col-table{grid-column:span 12}
+  @media (max-width:980px){
+    .col-student{grid-column:span 12}
+    .col-radar{grid-column:span 6}
+    .col-trend{grid-column:span 6}
+  }
+  @media (max-width:700px){
+    .col-radar,.col-trend{grid-column:span 12}
+  }
+
+  /* ============ 學生卡 ============ */
+  .stu-head{display:flex;align-items:baseline;gap:10px;margin:2px 0 4px}
+  .stu-name{font-size:30px;font-weight:700}
+  .stu-class{font-size:13px;color:var(--ink-2)}
+  .stu-ids{font-size:12px;color:var(--ink-3);margin-bottom:14px;line-height:1.8}
+  .stu-ids code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;
+    background:rgba(255,255,255,.06);padding:1px 6px;border-radius:6px;color:var(--ink-2)}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .stat{border:1px solid var(--hairline);border-radius:10px;padding:10px 12px}
+  .stat .lb{font-size:11.5px;color:var(--ink-3);margin-bottom:2px}
+  .stat .v{font-size:22px;font-weight:600}
+  .stat .v.small{font-size:15px;font-weight:600}
+
+  /* ============ 圖表共通 ============ */
+  .chartbox{position:relative}
+  .chartbox svg{display:block;width:100%;height:auto;touch-action:none}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:12px;color:var(--ink-2)}
+  .legend .li{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
+  .tip{position:absolute;pointer-events:none;background:#242422;border:1px solid rgba(255,255,255,.16);
+    border-radius:10px;padding:8px 11px;font-size:12px;color:var(--ink-2);z-index:5;
+    box-shadow:0 6px 18px rgba(0,0,0,.5);min-width:130px}
+  .tip .d{font-weight:600;color:var(--ink);margin-bottom:4px}
+  .tip .row{display:flex;align-items:center;gap:6px;justify-content:space-between}
+  .tip .row .nm{display:inline-flex;align-items:center;gap:6px}
+  .tip .row .val{font-variant-numeric:tabular-nums;color:var(--ink)}
+
+  /* ============ 診斷卡 ============ */
+  .diag-src{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-3);
+    border:1px solid var(--hairline);border-radius:999px;padding:3px 12px;margin-bottom:14px}
+  .diag-src .pulse{width:7px;height:7px;border-radius:50%;background:var(--c-flu)}
+  .tags{display:flex;flex-wrap:wrap;gap:7px;margin:6px 0 14px}
+  .tag{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-2);
+    border-radius:999px;padding:4px 12px;border:1px solid}
+  .tag.good{background:rgba(25,158,112,.13);border-color:rgba(25,158,112,.38)}
+  .tag.warn{background:rgba(201,133,0,.13);border-color:rgba(201,133,0,.42)}
+  .tag .dot.good{background:var(--c-flu)}
+  .tag .dot.warn{background:var(--c-voc)}
+  .sec-lb{font-size:12px;color:var(--ink-3);margin-bottom:4px;letter-spacing:.04em}
+  .emo{font-size:13.5px;color:var(--ink-2);border-left:2px solid var(--axis);
+    padding:4px 0 4px 12px;margin-bottom:16px}
+  .instr{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  @media (max-width:700px){.instr{grid-template-columns:1fr}}
+  .instr .cell{border:1px solid var(--hairline);border-radius:10px;padding:12px 14px}
+  .instr .cell h3{font-size:12.5px;color:var(--ink);font-weight:600;margin-bottom:6px}
+  .instr .cell p{font-size:13px;color:var(--ink-2)}
+
+  /* ============ 互動紀錄表 ============ */
+  .tbl{width:100%;font-size:13px}
+  .tbl-head,.tbl-row{display:grid;gap:12px;align-items:center;
+    grid-template-columns:52px minmax(120px,1.1fr) minmax(160px,1.5fr) 190px 92px 82px;
+    padding:9px 6px;border-bottom:1px solid var(--hairline)}
+  .tbl-head{font-size:11.5px;color:var(--ink-3);letter-spacing:.04em;border-bottom:1px solid var(--axis)}
+  .tbl-row:last-child{border-bottom:none}
+  .cell-time{font-variant-numeric:tabular-nums;color:var(--ink-2)}
+  .cell-stu{color:var(--ink)}
+  .cell-ai{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .meters{display:grid;gap:4px}
+  .meter-line{display:grid;grid-template-columns:16px 1fr 26px;align-items:center;gap:7px}
+  .meter-line .mlb{font-size:10px;color:var(--ink-3)}
+  .meter-line .mval{font-size:10.5px;color:var(--ink-2);font-variant-numeric:tabular-nums;text-align:right}
+  .track{height:6px;border-radius:3px;overflow:hidden}
+  .fill{height:100%;border-radius:3px}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-2);
+    border-radius:999px;padding:2px 10px;border:1px solid}
+  .badge.edge{background:rgba(201,133,0,.13);border-color:rgba(201,133,0,.42)}
+  .badge.edge .dot{background:var(--c-voc)}
+  .badge.cloud{background:rgba(57,135,229,.13);border-color:rgba(57,135,229,.42)}
+  .badge.cloud .dot{background:var(--c-pron)}
+  .sync{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2)}
+  .sync .dot.ok{background:var(--c-flu)}
+  .sync .dot.pend{background:var(--c-voc)}
+  .mob-lb{display:none}
+
+  /* <560px：表格改卡片式 */
+  @media (max-width:560px){
+    .tbl-head{display:none}
+    .tbl-row{display:block;border:1px solid var(--hairline);border-radius:10px;
+      padding:12px 14px;margin-bottom:10px}
+    .tbl-row>div{margin-bottom:8px}
+    .tbl-row>div:last-child{margin-bottom:0}
+    .cell-ai{white-space:normal}
+    .row-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .mob-lb{display:inline;font-size:10.5px;color:var(--ink-3);margin-right:4px}
+    .stats{grid-template-columns:1fr 1fr}
+  }
+
+  .empty{color:var(--ink-3);font-size:13px;padding:16px 0;text-align:center}
+  .offline{display:none;font-size:12.5px;color:#f0b8a8;margin-left:4px}
+  .offline.show{display:inline}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header class="topbar">
+    <div>
+      <h1>教師儀表板</h1>
+      <div class="sub">說說學伴 TalkyBuddy · Genio 520 邊緣裝置學習分析
+        <span id="offline" class="offline">（暫時無法連線，顯示上次資料）</span>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="btnRefresh" type="button">重新整理</button>
+    <button class="btn danger" id="btnReset" type="button">重置示範資料</button>
+    <a class="backlink" href="/">🐧 回學生端</a>
+  </header>
+
+  <div class="grid">
+    <!-- 1. 學生卡 -->
+    <section class="card col-student">
+      <h2>學生檔案</h2>
+      <div class="stu-head">
+        <div class="stu-name">阿明</div>
+        <div class="stu-class">三年級忠班</div>
+      </div>
+      <div class="stu-ids">
+        學生編號 <code>STUDENT-AMING-004</code><br>
+        配對裝置 <code>GENIO-520-X992</code>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="lb">總互動數</div><div class="v" id="statTotal">–</div></div>
+        <div class="stat"><div class="lb">待同步</div><div class="v" id="statPending">–</div></div>
+        <div class="stat"><div class="lb">最近互動</div><div class="v small" id="statLast">–</div></div>
+      </div>
+    </section>
+
+    <!-- 2. 四維雷達圖 -->
+    <section class="card col-radar">
+      <h2>四維能力雷達</h2>
+      <div class="note">最新診斷 vs 14 天前</div>
+      <div class="chartbox" id="radarBox"></div>
+      <div class="legend" id="radarLegend"></div>
+    </section>
+
+    <!-- 3. 14 天趨勢折線圖 -->
+    <section class="card col-trend">
+      <h2>14 天成長趨勢</h2>
+      <div class="note">每日 AI 診斷四維分數（0–100）</div>
+      <div class="chartbox" id="trendBox"></div>
+      <div class="legend" id="trendLegend"></div>
+    </section>
+
+    <!-- 4. 最新 AI 診斷卡 -->
+    <section class="card col-diag">
+      <h2>最新 AI 診斷</h2>
+      <div class="diag-src"><span class="pulse"></span>由 Hermes Agent（持久記憶）＋ AWS Bedrock（Claude）產出</div>
+      <div id="diagBody"><div class="empty">尚無診斷資料</div></div>
+    </section>
+
+    <!-- 5. 互動紀錄表 -->
+    <section class="card col-table">
+      <h2>互動紀錄</h2>
+      <div class="note">最新 20 筆 · 每 5 秒自動更新</div>
+      <div class="tbl" id="tblBox"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+ * 說說學伴 — 教師儀表板（vanilla JS，手刻 SVG，零外部資源）
+ * 資料來源：GET /api/diagnoses、GET /api/interactions?limit=20
+ * 純函式（build*）不觸碰 DOM，可在 node 環境單獨驗證。
+ * ===================================================================== */
+
+/* ---------- 常數：四維定義（順序固定，色彩不循環） ---------- */
+var DIMS = [
+  { key: 'pronunciation', label: '發音',   color: '#3987e5' },
+  { key: 'fluency',       label: '流暢度', color: '#199e70' },
+  { key: 'vocabulary',    label: '詞彙',   color: '#c98500' },
+  { key: 'grammar',       label: '句型',   color: '#9085e9' }
+];
+/* 互動紀錄三維（interactions 的 scores 無 pronunciation） */
+var MINI_DIMS = [
+  { key: 'fluency',    label: '流', color: '#199e70' },
+  { key: 'vocabulary', label: '詞', color: '#c98500' },
+  { key: 'grammar',    label: '句', color: '#9085e9' }
+];
+var SURFACE = '#1a1a19', GRID = '#2c2c2a', AXIS = '#383835';
+var INK = '#ffffff', INK2 = '#c3c2b7', INK3 = '#898781';
+
+/* ---------- 工具 ---------- */
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function clamp01(v) { return Math.max(0, Math.min(100, Number(v) || 0)); }
+function fmt2(n) { return String(n).padStart(2, '0'); }
+/* ISO 時間字串 → HH:MM */
+function tsToHM(ts) {
+  var m = /T(\d{2}):(\d{2})/.exec(String(ts || ''));
+  return m ? m[1] + ':' + m[2] : '--:--';
+}
+/* ISO 時間字串 → MM/DD HH:MM */
+function tsToShort(ts) {
+  var m = /(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(ts || ''));
+  return m ? m[2] + '/' + m[3] + ' ' + m[4] + ':' + m[5] : '–';
+}
+/* 日期字串 "2026-07-03" → "07/03" */
+function dateToMD(d) {
+  var m = /(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ''));
+  return m ? m[2] + '/' + m[3] : String(d || '');
+}
+
+/* =====================================================================
+ * 2. 四維雷達圖（純函式：吃最新與最舊診斷，回傳 SVG 字串）
+ * ===================================================================== */
+function radarPoint(cx, cy, r, idx, ratio) {
+  var ang = -Math.PI / 2 + idx * (Math.PI * 2 / DIMS.length);
+  return [cx + Math.cos(ang) * r * ratio, cy + Math.sin(ang) * r * ratio];
+}
+function radarPolygon(scores, cx, cy, r) {
+  return DIMS.map(function (d, i) {
+    var p = radarPoint(cx, cy, r, i, clamp01(scores && scores[d.key]) / 100);
+    return p[0].toFixed(1) + ',' + p[1].toFixed(1);
+  }).join(' ');
+}
+/* latest / oldest 為 diagnosis dict（可為 null）。 */
+function buildRadarSVG(latest, oldest) {
+  var W = 340, H = 300, cx = W / 2, cy = H / 2 + 4, R = 104;
+  var s = [];
+  s.push('<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="四維能力雷達圖">');
+  /* 同心環（25/50/75/100）＝格線 */
+  [0.25, 0.5, 0.75, 1].forEach(function (ratio) {
+    var pts = DIMS.map(function (_d, i) {
+      var p = radarPoint(cx, cy, R, i, ratio);
+      return p[0].toFixed(1) + ',' + p[1].toFixed(1);
+    }).join(' ');
+    s.push('<polygon points="' + pts + '" fill="none" stroke="' + GRID + '" stroke-width="1"/>');
+  });
+  /* 軸輻線 */
+  DIMS.forEach(function (_d, i) {
+    var p = radarPoint(cx, cy, R, i, 1);
+    s.push('<line x1="' + cx + '" y1="' + cy + '" x2="' + p[0].toFixed(1) + '" y2="' + p[1].toFixed(1) +
+      '" stroke="' + AXIS + '" stroke-width="1"/>');
+  });
+  /* 軸標籤（文字用 ink 色系，不穿 series 色） */
+  var lblPos = [
+    [cx, cy - R - 12, 'middle'],          /* 發音（上） */
+    [cx + R + 12, cy + 4, 'start'],       /* 流暢度（右） */
+    [cx, cy + R + 20, 'middle'],          /* 詞彙（下） */
+    [cx - R - 12, cy + 4, 'end']          /* 句型（左） */
+  ];
+  DIMS.forEach(function (d, i) {
+    var lp = lblPos[i];
+    s.push('<text x="' + lp[0] + '" y="' + lp[1] + '" text-anchor="' + lp[2] +
+      '" font-size="12" fill="' + INK2 + '">' + esc(d.label) + '</text>');
+  });
+  /* 兩層資料：最舊（muted 灰）畫在下、最新（ink 白）畫在上 */
+  var layers = [];
+  if (oldest) layers.push({ scores: oldest.scores, color: INK3 });
+  if (latest) layers.push({ scores: latest.scores, color: INK });
+  layers.forEach(function (ly) {
+    var poly = radarPolygon(ly.scores, cx, cy, R);
+    s.push('<polygon points="' + poly + '" fill="' + ly.color + '" fill-opacity="0.10" ' +
+      'stroke="' + ly.color + '" stroke-width="2" stroke-linejoin="round"/>');
+    /* 頂點圓點 r=4，外圈 2px surface ring（以 stroke 實作） */
+    DIMS.forEach(function (d, i) {
+      var p = radarPoint(cx, cy, R, i, clamp01(ly.scores && ly.scores[d.key]) / 100);
+      s.push('<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) +
+        '" r="4" fill="' + ly.color + '" stroke="' + SURFACE + '" stroke-width="2"/>');
+    });
+  });
+  s.push('</svg>');
+  return s.join('');
+}
+
+/* =====================================================================
+ * 3. 14 天趨勢折線圖（純函式：吃診斷陣列，回傳 { svg, meta }）
+ * meta 供 crosshair / tooltip 換算座標使用。
+ * ===================================================================== */
+function buildTrendSVG(diags) {
+  var W = 640, H = 300;
+  var padL = 40, padR = 86, padT = 14, padB = 30;
+  var plotW = W - padL - padR, plotH = H - padT - padB;
+  var n = diags.length;
+  var xs = [];
+  for (var i = 0; i < n; i++) {
+    xs.push(n <= 1 ? padL + plotW / 2 : padL + plotW * i / (n - 1));
+  }
+  function yOf(v) { return padT + (1 - clamp01(v) / 100) * plotH; }
+
+  var s = [];
+  s.push('<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="14 天四維趨勢折線圖">');
+  /* y 刻度 0/25/50/75/100：hairline 格線 + 刻度文字 */
+  [0, 25, 50, 75, 100].forEach(function (v) {
+    var y = yOf(v).toFixed(1);
+    s.push('<line x1="' + padL + '" y1="' + y + '" x2="' + (W - padR) + '" y2="' + y +
+      '" stroke="' + (v === 0 ? AXIS : GRID) + '" stroke-width="1"/>');
+    s.push('<text x="' + (padL - 8) + '" y="' + (Number(y) + 4) + '" text-anchor="end" font-size="11" ' +
+      'fill="' + INK3 + '" style="font-variant-numeric:tabular-nums">' + v + '</text>');
+  });
+  /* x 軸日期標籤：首、中、尾 */
+  if (n > 0) {
+    var idxs = n >= 3 ? [0, Math.floor((n - 1) / 2), n - 1] : (n === 2 ? [0, 1] : [0]);
+    idxs.forEach(function (ix) {
+      s.push('<text x="' + xs[ix].toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" ' +
+        'fill="' + INK3 + '" style="font-variant-numeric:tabular-nums">' +
+        esc(dateToMD(diags[ix].date)) + '</text>');
+    });
+  }
+  /* 線尾標籤碰撞偵測：任兩線尾 y 間距 <14px 就全部收進圖例 */
+  var endYs = [], collide = false;
+  if (n > 0) {
+    endYs = DIMS.map(function (d) {
+      return yOf(diags[n - 1].scores && diags[n - 1].scores[d.key]);
+    });
+    var sorted = endYs.slice().sort(function (a, b) { return a - b; });
+    for (var k = 1; k < sorted.length; k++) {
+      if (sorted[k] - sorted[k - 1] < 14) { collide = true; break; }
+    }
+  }
+  /* 四條 2px 折線（round join/cap）＋ 線尾維度名 */
+  DIMS.forEach(function (d, di) {
+    if (n === 0) return;
+    var pts = diags.map(function (g, ix) {
+      return xs[ix].toFixed(1) + ',' + yOf(g.scores && g.scores[d.key]).toFixed(1);
+    }).join(' ');
+    s.push('<polyline points="' + pts + '" fill="none" stroke="' + d.color +
+      '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>');
+    /* 線尾端點 r=4 + 2px surface ring */
+    s.push('<circle cx="' + xs[n - 1].toFixed(1) + '" cy="' + endYs[di].toFixed(1) +
+      '" r="4" fill="' + d.color + '" stroke="' + SURFACE + '" stroke-width="2"/>');
+    if (!collide) {
+      s.push('<text x="' + (xs[n - 1] + 10).toFixed(1) + '" y="' + (endYs[di] + 4).toFixed(1) +
+        '" font-size="12" fill="' + INK2 + '">' + esc(d.label) + '</text>');
+    }
+  });
+  /* crosshair 元件（JS 顯示/移動） */
+  s.push('<line id="trendCross" x1="0" y1="' + padT + '" x2="0" y2="' + (padT + plotH) +
+    '" stroke="' + AXIS + '" stroke-width="1" visibility="hidden"/>');
+  /* 透明命中層：pointer 事件掛在整張 svg，這層確保空白處也可命中 */
+  s.push('<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="transparent"/>');
+  s.push('</svg>');
+  return { svg: s.join(''), meta: { W: W, H: H, padL: padL, padR: padR, padT: padT, padB: padB, xs: xs } };
+}
+
+/* =====================================================================
+ * 5. 互動列元件（純函式）
+ * ===================================================================== */
+/* 6px 迷你 meter：填色 = 該維 series 色，軌 = 同色 20% opacity */
+function buildMeter(value, color) {
+  var v = clamp01(value);
+  return '<div class="track" style="background:' + color + '33">' +
+    '<div class="fill" style="width:' + v + '%;background:' + color + '"></div></div>';
+}
+function buildModeBadge(mode) {
+  var cloud = mode === 'cloud';
+  return '<span class="badge ' + (cloud ? 'cloud' : 'edge') + '"><span class="dot"></span>' +
+    (cloud ? 'cloud' : 'edge') + '</span>';
+}
+function buildSyncCell(synced) {
+  return synced
+    ? '<span class="sync"><span class="dot ok"></span>✓ 已同步</span>'
+    : '<span class="sync"><span class="dot pend"></span>待同步</span>';
+}
+function buildInteractionRow(it) {
+  var sc = it.scores || {};
+  var meters = MINI_DIMS.map(function (d) {
+    var v = Math.round(clamp01(sc[d.key]));
+    return '<div class="meter-line"><span class="mlb">' + d.label + '</span>' +
+      buildMeter(v, d.color) + '<span class="mval">' + v + '</span></div>';
+  }).join('');
+  return '<div class="tbl-row">' +
+    '<div class="cell-time"><span class="mob-lb">時間</span>' + esc(tsToHM(it.ts)) + '</div>' +
+    '<div class="cell-stu"><span class="mob-lb">學生</span>' + esc(it.student_text) + '</div>' +
+    '<div class="cell-ai" title="' + esc(it.ai_response_text) + '"><span class="mob-lb">AI</span>' +
+      esc(it.ai_response_text) + '</div>' +
+    '<div class="meters">' + meters + '</div>' +
+    '<div class="row-meta">' + buildModeBadge(it.network_mode) + '</div>' +
+    '<div class="row-meta">' + buildSyncCell(!!it.synced) + '</div>' +
+    '</div>';
+}
+function buildInteractionTable(items) {
+  if (!items || !items.length) return '<div class="empty">尚無互動紀錄</div>';
+  var head = '<div class="tbl-head"><div>時間</div><div>學生的話</div><div>AI 回應</div>' +
+    '<div>流暢 / 詞彙 / 句型</div><div>模式</div><div>同步</div></div>';
+  return head + items.map(buildInteractionRow).join('');
+}
+
+/* =====================================================================
+ * 4. 診斷卡（純函式）
+ * ===================================================================== */
+function buildDiagCard(diag) {
+  if (!diag) return '<div class="empty">尚無診斷資料</div>';
+  var s = [];
+  s.push('<div class="note" style="margin-bottom:10px">診斷日期 ' + esc(diag.date || '–') + '</div>');
+  s.push('<div class="sec-lb">優勢</div><div class="tags">');
+  (diag.strengths || []).forEach(function (t) {
+    s.push('<span class="tag good"><span class="dot good"></span>' + esc(t) + '</span>');
+  });
+  s.push('</div>');
+  s.push('<div class="sec-lb">待加強</div><div class="tags">');
+  (diag.weaknesses || []).forEach(function (t) {
+    s.push('<span class="tag warn"><span class="dot warn"></span>' + esc(t) + '</span>');
+  });
+  s.push('</div>');
+  s.push('<div class="sec-lb">情緒觀察</div>');
+  s.push('<div class="emo">' + esc(diag.emotional_status || '–') + '</div>');
+  var ins = diag.instructions || {};
+  s.push('<div class="instr">');
+  s.push('<div class="cell"><h3>課堂指引</h3><p>' + esc(ins.classroom || '–') + '</p></div>');
+  s.push('<div class="cell"><h3>裝置端主題</h3><p>' + esc(ins.device || '–') + '</p></div>');
+  s.push('<div class="cell"><h3>同儕共學</h3><p>' + esc(ins.peer || '–') + '</p></div>');
+  s.push('</div>');
+  return s.join('');
+}
+
+/* =====================================================================
+ * DOM 接線層（node 驗證時不會執行）
+ * ===================================================================== */
+var state = { diagnoses: [], interactions: [], trendMeta: null };
+
+function renderAll() {
+  var diags = state.diagnoses, inters = state.interactions;
+
+  /* 學生卡統計：總互動數以 max seq 估算（seq 為遞增序號） */
+  var maxSeq = 0, pending = 0, lastTs = '';
+  inters.forEach(function (it) {
+    if ((it.seq || 0) > maxSeq) maxSeq = it.seq;
+    if (!it.synced) pending++;
+    if (String(it.ts || '') > lastTs) lastTs = it.ts;
+  });
+  document.getElementById('statTotal').textContent = maxSeq || '–';
+  document.getElementById('statPending').textContent = pending;
+  document.getElementById('statLast').textContent = lastTs ? tsToShort(lastTs) : '–';
+
+  /* 雷達圖：最新 vs 最舊（診斷依 date 升冪） */
+  var latest = diags.length ? diags[diags.length - 1] : null;
+  var oldest = diags.length > 1 ? diags[0] : null;
+  document.getElementById('radarBox').innerHTML =
+    diags.length ? buildRadarSVG(latest, oldest) : '<div class="empty">尚無診斷資料</div>';
+  var rl = [];
+  if (latest) rl.push('<span class="li"><span class="dot" style="background:' + INK + '"></span>最新（' + esc(dateToMD(latest.date)) + '）</span>');
+  if (oldest) rl.push('<span class="li"><span class="dot" style="background:' + INK3 + '"></span>14 天前（' + esc(dateToMD(oldest.date)) + '）</span>');
+  document.getElementById('radarLegend').innerHTML = rl.join('');
+
+  /* 趨勢圖 */
+  var trendBox = document.getElementById('trendBox');
+  if (diags.length) {
+    var t = buildTrendSVG(diags);
+    state.trendMeta = t.meta;
+    trendBox.innerHTML = t.svg + '<div class="tip" id="trendTip" hidden></div>';
+    bindTrendPointer(trendBox);
+  } else {
+    state.trendMeta = null;
+    trendBox.innerHTML = '<div class="empty">尚無診斷資料</div>';
+  }
+  document.getElementById('trendLegend').innerHTML = DIMS.map(function (d) {
+    return '<span class="li"><span class="dot" style="background:' + d.color + '"></span>' + esc(d.label) + '</span>';
+  }).join('');
+
+  /* 診斷卡 */
+  document.getElementById('diagBody').innerHTML = buildDiagCard(latest);
+
+  /* 互動表：依 ts 降冪取最新 20 筆 */
+  var sorted = inters.slice().sort(function (a, b) {
+    return String(b.ts || '').localeCompare(String(a.ts || ''));
+  }).slice(0, 20);
+  document.getElementById('tblBox').innerHTML = buildInteractionTable(sorted);
+}
+
+/* crosshair + tooltip（pointer 事件涵蓋滑鼠與觸控） */
+function bindTrendPointer(box) {
+  var svg = box.querySelector('svg');
+  var tip = box.querySelector('#trendTip');
+  if (!svg || !tip) return;
+
+  function move(ev) {
+    var meta = state.trendMeta, diags = state.diagnoses;
+    if (!meta || !diags.length) return;
+    var rect = svg.getBoundingClientRect();
+    var vx = (ev.clientX - rect.left) / rect.width * meta.W;
+    /* 找最近的資料點 index */
+    var best = 0, bestD = Infinity;
+    meta.xs.forEach(function (x, i) {
+      var dd = Math.abs(x - vx);
+      if (dd < bestD) { bestD = dd; best = i; }
+    });
+    var g = diags[best];
+    var cross = svg.querySelector('#trendCross');
+    if (cross) {
+      cross.setAttribute('x1', meta.xs[best]);
+      cross.setAttribute('x2', meta.xs[best]);
+      cross.setAttribute('visibility', 'visible');
+    }
+    var rows = DIMS.map(function (d) {
+      var v = Math.round(clamp01(g.scores && g.scores[d.key]));
+      return '<div class="row"><span class="nm"><span class="dot" style="background:' + d.color +
+        '"></span>' + esc(d.label) + '</span><span class="val">' + v + '</span></div>';
+    }).join('');
+    tip.innerHTML = '<div class="d">' + esc(g.date || '') + '</div>' + rows;
+    tip.hidden = false;
+    /* tooltip 位置：跟隨資料點 x，靠右超界就翻到左側 */
+    var px = meta.xs[best] / meta.W * rect.width;
+    var left = px + 14;
+    if (left + tip.offsetWidth > rect.width - 4) left = px - tip.offsetWidth - 14;
+    tip.style.left = Math.max(4, left) + 'px';
+    tip.style.top = '18px';
+  }
+  function leave() {
+    tip.hidden = true;
+    var cross = svg.querySelector('#trendCross');
+    if (cross) cross.setAttribute('visibility', 'hidden');
+  }
+  svg.addEventListener('pointermove', move);
+  svg.addEventListener('pointerdown', move);
+  svg.addEventListener('pointerleave', leave);
+  svg.addEventListener('pointercancel', leave);
+}
+
+/* ---------- 資料抓取與輪詢 ---------- */
+function refresh() {
+  return Promise.all([
+    fetch('/api/diagnoses').then(function (r) { return r.json(); }),
+    fetch('/api/interactions?limit=20').then(function (r) { return r.json(); })
+  ]).then(function (res) {
+    state.diagnoses = Array.isArray(res[0]) ? res[0] : [];
+    state.interactions = Array.isArray(res[1]) ? res[1] : [];
+    document.getElementById('offline').classList.remove('show');
+    renderAll();
+  }).catch(function () {
+    document.getElementById('offline').classList.add('show');
+  });
+}
+
+function init() {
+  document.getElementById('btnRefresh').addEventListener('click', refresh);
+  document.getElementById('btnReset').addEventListener('click', function () {
+    if (!confirm('確定要重置示範資料嗎？現有互動與診斷將全部清空並重新灌入示範資料。')) return;
+    fetch('/api/seed_reset', { method: 'POST' })
+      .then(function () { return refresh(); })
+      .catch(function () { document.getElementById('offline').classList.add('show'); });
+  });
+  refresh();
+  setInterval(refresh, 5000); /* 每 5 秒輪詢重繪 */
+}
+
+/* node 驗證環境無 document，僅瀏覽器才接線 */
+if (typeof document !== 'undefined' && document.getElementById('app')) init();
+</script>
+</body>
+</html>

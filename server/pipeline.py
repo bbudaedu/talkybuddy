@@ -1,0 +1,245 @@
+"""VoicePipeline 狀態機（SPEC v2 §5.1、CONTRACTS.md pipeline 契約）。
+
+流程：webm → ffmpeg 轉 16kHz mono wav → ASR → 鷹架引擎（scaffold）→
+（LLM 可用時加值生成，逾時/失敗降級回 scaffold）→ TTS → SQLite。
+
+設計重點：
+- 依賴注入：__init__ 收 asr/llm/tts 實例，測試可傳 stub。
+- 半雙工：asyncio.Lock，單一 session 同時只跑一輪，重入 emit busy 並回 None。
+- 低信心（conf < ASR_CONF_THRESHOLD 或空字串）→ FALLBACK_LINES 輪替、不寫 DB。
+- 每階段透過 emit(dict) async callback 送 {"type":"state","state":...} 事件。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import datetime
+import itertools
+import os
+import subprocess
+import tempfile
+import time
+from dataclasses import dataclass, field
+
+from server import config, scaffold, store
+
+# LLM 加值生成的逾時秒數（契約：>8s 即降級用 scaffold 結果；測試可 monkeypatch）
+LLM_TIMEOUT_S: float = 8.0
+
+# ffmpeg 轉檔逾時秒數
+FFMPEG_TIMEOUT_S: float = 10.0
+
+
+@dataclass
+class TurnResult:
+    """單輪對話的完整結果（欄位名依 CONTRACTS.md 逐字一致）。"""
+
+    state_events: list[str] = field(default_factory=list)
+    asr_text: str = ""
+    asr_conf: float = 0.0
+    reply_text: str = ""
+    tts_wav: bytes | None = None
+    scores: dict = field(default_factory=dict)
+    latency_ms: dict = field(default_factory=dict)
+    fallback: bool = False
+    seq: int = 0
+
+
+def _now_iso_taipei() -> str:
+    """回傳台北時區（UTC+8）的 ISO8601 時間字串。"""
+    tz = datetime.timezone(datetime.timedelta(hours=8))
+    return datetime.datetime.now(tz).isoformat(timespec="seconds")
+
+
+def _webm_to_wav(webm_bytes: bytes) -> str | None:
+    """把 webm/ogg 錄音 bytes 轉成 16kHz mono wav 暫存檔，回傳 wav 路徑。
+
+    以 subprocess 呼叫 ffmpeg（-loglevel error，timeout=10s），
+    失敗（ffmpeg 不存在 / 轉檔錯誤 / 逾時）回 None，由呼叫端走兜底路徑。
+    此函式為同步阻塞，呼叫端應以 asyncio.to_thread 執行。
+    """
+    webm_path = None
+    wav_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
+            f.write(webm_bytes)
+            webm_path = f.name
+        fd, wav_path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-i", webm_path,
+                "-ar", "16000", "-ac", "1", "-f", "wav",
+                wav_path,
+            ],
+            capture_output=True,
+            timeout=FFMPEG_TIMEOUT_S,
+        )
+        if proc.returncode != 0 or not os.path.getsize(wav_path):
+            raise RuntimeError(f"ffmpeg failed: {proc.stderr.decode(errors='replace')[:200]}")
+        return wav_path
+    except Exception:
+        # 轉檔失敗：清掉 wav 暫存檔，回 None 走兜底
+        if wav_path:
+            try:
+                os.unlink(wav_path)
+            except OSError:
+                pass
+        return None
+    finally:
+        # webm 原始暫存檔一律清除
+        if webm_path:
+            try:
+                os.unlink(webm_path)
+            except OSError:
+                pass
+
+
+class VoicePipeline:
+    """單一 session 的語音對話狀態機（半雙工）。"""
+
+    def __init__(self, asr, llm, tts):
+        """依賴注入 ASR / LLM / TTS 引擎實例（測試可傳 stub）。"""
+        self.asr = asr
+        self.llm = llm
+        self.tts = tts
+        # "edge" | "cloud"，由 app.py 切換
+        self.network_mode: str = "edge"
+        # 半雙工鎖：同時只跑一輪
+        self._lock = asyncio.Lock()
+        # 兜底話術輪替器
+        self._fallback_cycle = itertools.cycle(scaffold.FALLBACK_LINES)
+
+    # ---------- 對外入口 ----------
+
+    async def run_turn_audio(self, webm_bytes: bytes, emit) -> TurnResult | None:
+        """語音輪：webm bytes → ffmpeg 轉 wav → ASR → 共同文字流程。
+
+        半雙工：若上一輪還在跑，emit {"type":"busy"} 並回 None。
+        """
+        if self._lock.locked():
+            await emit({"type": "busy"})
+            return None
+        async with self._lock:
+            result = TurnResult()
+            t0 = time.monotonic()
+
+            # 階段：ASR（含轉檔）
+            await self._emit_state(emit, result, "asr")
+            t_asr = time.monotonic()
+            wav_path = await asyncio.to_thread(_webm_to_wav, webm_bytes)
+            text, conf = "", 0.0
+            if wav_path is not None:
+                try:
+                    if self.asr is not None and self.asr.available():
+                        text, conf = await asyncio.to_thread(self.asr.transcribe, wav_path)
+                except Exception:
+                    text, conf = "", 0.0
+                finally:
+                    try:
+                        os.unlink(wav_path)
+                    except OSError:
+                        pass
+            result.latency_ms["asr"] = int((time.monotonic() - t_asr) * 1000)
+            result.asr_text = (text or "").strip()
+            result.asr_conf = float(conf)
+
+            return await self._process_text(result, emit, t0)
+
+    async def run_turn_text(self, text: str, emit) -> TurnResult | None:
+        """文字輪（快速語句）：跳過 ASR，直接走共同文字流程（asr_conf=1.0）。"""
+        if self._lock.locked():
+            await emit({"type": "busy"})
+            return None
+        async with self._lock:
+            result = TurnResult()
+            t0 = time.monotonic()
+            result.latency_ms["asr"] = 0
+            result.asr_text = (text or "").strip()
+            result.asr_conf = 1.0
+            return await self._process_text(result, emit, t0)
+
+    # ---------- 內部流程 ----------
+
+    async def _emit_state(self, emit, result: TurnResult, state: str) -> None:
+        """emit 狀態事件並記錄到 state_events。"""
+        result.state_events.append(state)
+        await emit({"type": "state", "state": state})
+
+    async def _process_text(self, result: TurnResult, emit, t0: float) -> TurnResult:
+        """共同文字流程：低信心兜底 / scaffold → LLM 加值 → TTS → 寫 DB。"""
+        # 低信心或空字串 → 兜底話術輪替，不寫 DB
+        if (not result.asr_text) or result.asr_conf < config.ASR_CONF_THRESHOLD:
+            result.fallback = True
+            result.reply_text = next(self._fallback_cycle)
+            result.latency_ms.setdefault("llm", 0)
+            segments = scaffold.split_tts_segments(result.reply_text)
+            await self._synth_tts(result, emit, segments)
+            result.latency_ms["round_total"] = int((time.monotonic() - t0) * 1000)
+            await self._emit_state(emit, result, "idle")
+            return result
+
+        # 階段：thinking（鷹架 + LLM）
+        await self._emit_state(emit, result, "thinking")
+        scaffold.safety_check(result.asr_text)  # 禁詞檢查（respond 內部亦會處理安撫話術）
+        sc = scaffold.respond(result.asr_text)
+        result.reply_text = sc.reply_text
+        result.scores = dict(sc.scores)
+        segments = list(sc.tts_segments)
+
+        # LLM 加值：available 時以 thread 生成，逾時/例外/None 一律降級回 scaffold
+        t_llm = time.monotonic()
+        llm_text: str | None = None
+        try:
+            if self.llm is not None and self.llm.available():
+                llm_text = await asyncio.wait_for(
+                    asyncio.to_thread(self.llm.generate, result.asr_text, sc),
+                    timeout=LLM_TIMEOUT_S,
+                )
+        except Exception:
+            llm_text = None
+        result.latency_ms["llm"] = int((time.monotonic() - t_llm) * 1000)
+        if llm_text and isinstance(llm_text, str) and llm_text.strip():
+            result.reply_text = llm_text.strip()
+            segments = scaffold.split_tts_segments(result.reply_text)
+
+        # 階段：TTS
+        await self._synth_tts(result, emit, segments)
+
+        # 寫 DB（低信心兜底已在前面 return，不會到這裡）
+        result.latency_ms["round_total"] = int((time.monotonic() - t0) * 1000)
+        try:
+            result.seq = store.add_interaction(
+                {
+                    "device_id": config.DEVICE_ID,
+                    "student_id": config.STUDENT_ID,
+                    "ts": _now_iso_taipei(),
+                    "network_mode": self.network_mode,
+                    "student_text": result.asr_text,
+                    "asr_confidence": round(result.asr_conf, 4),
+                    "ai_response_text": result.reply_text,
+                    "scores": result.scores,
+                    "latency_ms": dict(result.latency_ms),
+                    "synced": self.network_mode == "cloud",
+                }
+            )
+        except Exception:
+            # DB 寫入失敗不阻斷回覆（demo 韌性優先）
+            result.seq = 0
+
+        await self._emit_state(emit, result, "idle")
+        return result
+
+    async def _synth_tts(self, result: TurnResult, emit, segments: list[tuple[str, str]]) -> None:
+        """階段：TTS 合成（to_thread；不可用/失敗 → tts_wav=None，前端降級）。"""
+        await self._emit_state(emit, result, "tts")
+        t_tts = time.monotonic()
+        wav: bytes | None = None
+        try:
+            if self.tts is not None and self.tts.available() and segments:
+                wav = await asyncio.to_thread(self.tts.synth, segments)
+        except Exception:
+            wav = None
+        result.latency_ms["tts_first"] = int((time.monotonic() - t_tts) * 1000)
+        result.tts_wav = wav
