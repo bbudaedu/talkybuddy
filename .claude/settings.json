@@ -3,8 +3,16 @@
     "PreToolUse": [
       {
         "matcher": ".*",
-        "command": "bash .claude/hooks/check-gstack.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/check-gstack.sh"
+          }
+        ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
   }
 }
