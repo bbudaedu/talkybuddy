@@ -36,7 +36,7 @@ STUDENT_ID = "STUDENT-AMING-004"
 ASR_CONF_THRESHOLD = 0.5
 
 # ASR 後端選擇：feature flag，可切換 sherpa-onnx SenseVoice 或 faster-whisper fallback
-ASR_BACKEND = "whisper"  # "sensevoice" | "whisper"（Task 3 會改為預設 sensevoice）
+ASR_BACKEND = "sensevoice"  # "sensevoice" | "whisper"；切回 whisper 僅需改此值
 # SenseVoice int8 模型解壓目錄（sherpa-onnx 官方 asr-models release）
 SENSEVOICE_DIR: Path = MODELS_DIR / "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17"
 # OpenCC 簡轉繁設定檔（簡體→繁體＋台灣慣用詞）

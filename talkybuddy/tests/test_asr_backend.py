@@ -10,6 +10,12 @@ def test_factory_returns_whisper_class():
     assert get_asr_engine_class("whisper") is WhisperASREngine
 
 
+def test_factory_default_is_sensevoice():
+    from server.asr_base import get_asr_engine_class
+    from server.asr_sensevoice import SenseVoiceASREngine
+    assert get_asr_engine_class() is SenseVoiceASREngine
+
+
 def test_asr_shim_exposes_engine_class():
     # shim 需可實例化，且具契約方法
     from server.asr import ASREngine
