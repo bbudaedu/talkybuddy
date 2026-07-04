@@ -19,6 +19,9 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# ASR model artifacts (fetched at install time by setup script; not committed)
+# Model artifacts (fetched at install time by scripts/setup_env.sh; not committed)
 talkybuddy/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/
 talkybuddy/models/_sherpa_cache/
+# Large model binaries — LLM (qwen .gguf) and piper TTS voices (.onnx)
+talkybuddy/models/*.gguf
+talkybuddy/models/*.onnx
