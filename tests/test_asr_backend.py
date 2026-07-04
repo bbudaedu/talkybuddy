@@ -48,6 +48,12 @@ def test_factory_returns_sensevoice_class():
     assert get_asr_engine_class("sensevoice") is SenseVoiceASREngine
 
 
+def test_factory_unknown_backend_routes_to_sensevoice():
+    from server.asr_base import get_asr_engine_class
+    from server.asr_sensevoice import SenseVoiceASREngine
+    assert get_asr_engine_class("bogus") is SenseVoiceASREngine
+
+
 def test_sensevoice_available_false_when_model_missing(monkeypatch, tmp_path):
     from server import config
     from server.asr_sensevoice import SenseVoiceASREngine
