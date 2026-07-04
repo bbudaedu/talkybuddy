@@ -11,7 +11,13 @@ python3 -m venv .venv
 
 echo "=== [2/4] 安裝 ASR / TTS ==="
 .venv/bin/pip install faster-whisper 2>&1 | tail -2
+# TTS 合成後端：sherpa-onnx（Apache-2.0），取代 piper-tts（GPL-3.0），沿用既有 Piper 格式聲音檔
+.venv/bin/pip install sherpa-onnx onnx 2>&1 | tail -2
+# 註：piper-tts 目前僅用來取得其內附的 espeak-ng-data 音素化資料（tts.py 的 fallback 路徑），
+# 並非用於語音合成本身；espeak-ng-data 上游授權為 GPL-3.0，屬已知殘留風險（見 README 已知限制）。
 .venv/bin/pip install piper-tts 2>&1 | tail -2
+# ASR 主力：sherpa-onnx + SenseVoice-Small（int8）；OpenCC 做簡轉繁（s2twp）
+.venv/bin/pip install opencc 2>&1 | tail -2
 
 echo "=== [3/4] 下載模型（Qwen2.5-1.5B GGUF / whisper small / piper 聲音）==="
 .venv/bin/python - <<'PY'
@@ -39,6 +45,19 @@ for repo_path, out in [
     shutil.copy(p, out)
 print('TTS ok')
 PY
+
+echo "=== [3.5/4] 下載 SenseVoice int8 模型（sherpa-onnx 官方 release, ~226MB）==="
+SENSEVOICE_TARBALL="sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2"
+SENSEVOICE_DIR="models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17"
+if [ ! -f "$SENSEVOICE_DIR/model.int8.onnx" ]; then
+  curl -L -o "models/$SENSEVOICE_TARBALL" \
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$SENSEVOICE_TARBALL"
+  tar -xjf "models/$SENSEVOICE_TARBALL" -C models/
+  rm -f "models/$SENSEVOICE_TARBALL"
+  echo "SenseVoice ok"
+else
+  echo "SenseVoice 已存在，略過下載"
+fi
 
 echo "=== [4/4] 編譯安裝 llama-cpp-python（最耗時，失敗不擋整體）==="
 .venv/bin/pip install llama-cpp-python 2>&1 | tail -3 || echo "WARN: llama-cpp-python 安裝失敗，系統將以規則式鷹架引擎運行（介面已預留降級）"
