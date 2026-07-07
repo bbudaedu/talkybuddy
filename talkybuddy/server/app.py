@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from server import config, diagnose, store
+from server import config, diagnose, profile, store
 from server.asr import ASREngine
 from server.llm import EdgeLLM
 from server.pipeline import VoicePipeline
@@ -166,6 +166,13 @@ async def api_network_mode(body: NetworkModeBody):
         prev = diagnoses[-1] if diagnoses else None
         new_diag = diagnose.generate_diagnosis(recent, prev)
         store.add_diagnosis(new_diag)
+        # B1：把新診斷的 companion_directive 推進 pipeline 快取，即時路徑下輪即採用
+        pipeline._directive = diagnose.format_directive_for_prompt(
+            new_diag.get("companion_directive"))
+        # B2：同異步時機更新長期 profile（全量重算；失敗不影響同步）
+        all_inter = store.list_interactions(limit=500)
+        prof = profile.build_profile(all_inter, store.list_diagnoses(), store.get_profile())
+        store.save_profile(prof)
     except Exception:
         # 診斷失敗不影響同步結果（demo 韌性優先）
         new_diag = None
