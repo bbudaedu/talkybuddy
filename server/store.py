@@ -110,6 +110,12 @@ def init_db() -> None:
             " date TEXT PRIMARY KEY,"
             " payload TEXT NOT NULL)"
         )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS student_profile ("
+            " student_id TEXT PRIMARY KEY,"
+            " payload TEXT NOT NULL,"
+            " updated_at TEXT NOT NULL)"
+        )
         conn.commit()
 
 
@@ -204,6 +210,42 @@ def list_diagnoses() -> list[dict]:
             "SELECT payload FROM diagnoses ORDER BY date ASC"
         ).fetchall()
     return [json.loads(p) for (p,) in rows]
+
+
+def get_profile(student_id: str | None = None) -> dict | None:
+    """取回某學生的長期 profile；尚未存過回 None。
+
+    student_id 省略時預設用 config.STUDENT_ID（demo 單一學生）。
+    """
+    sid = student_id if student_id is not None else _student_id()
+    with _lock:
+        conn = _get_conn()
+        row = conn.execute(
+            "SELECT payload FROM student_profile WHERE student_id = ?",
+            (sid,),
+        ).fetchone()
+    if row is None:
+        return None
+    return json.loads(row[0])
+
+
+def save_profile(d: dict) -> None:
+    """存入（或覆寫同一學生的）長期 profile；單列 / 學生。
+
+    student_id 取自 payload；updated_at 取 payload 內既有值，
+    無則以現在台北時區補上（仿 add_diagnosis 的 INSERT OR REPLACE 範式）。
+    """
+    sid = str(d.get("student_id") or _student_id())
+    updated_at = d.get("updated_at") or datetime.datetime.now(
+        datetime.timezone(datetime.timedelta(hours=8))
+    ).isoformat(timespec="seconds")
+    with _lock:
+        conn = _get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO student_profile (student_id, payload, updated_at) VALUES (?, ?, ?)",
+            (sid, json.dumps(d, ensure_ascii=False), updated_at),
+        )
+        conn.commit()
 
 
 def seed_demo() -> None:

@@ -40,6 +40,9 @@ _DEFAULT_SCORES = {"pronunciation": 60, "fluency": 55, "vocabulary": 60, "gramma
 # 四維鍵順序（輸出 schema 固定）
 _DIM_KEYS = ("pronunciation", "fluency", "vocabulary", "grammar")
 
+# 微階梯：avg 分數 → level 字串（(上界, 名稱)，由低到高）
+_LEVEL_BANDS = ((50, "L1"), (65, "L2"), (80, "L3"), (999, "L4"))
+
 # 四維的中文名稱（供 strengths / 建議文案使用）
 _DIM_ZH = {
     "pronunciation": "發音",
@@ -85,6 +88,16 @@ def _chinese_ratio(text: str) -> float:
 def _english_word_count(text: str) -> int:
     """粗略計算英文詞數（連續字母序列視為一個詞）。"""
     return len(re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", text))
+
+
+def _has_giveup_signal(student_text: str) -> bool:
+    """偵測學生放棄語（§3.3-A，低侵入、只看有寫進 DB 的字面）。"""
+    t = student_text.strip().lower()
+    if any(kw in student_text for kw in ("我不會", "不知道", "不會啦", "放棄", "不想")):
+        return True
+    if re.search(r"\b(i\s*don'?t\s*know|dunno|no\s*idea|give\s*up)\b", t):
+        return True
+    return False
 
 
 def _has_article_correction(response_text: str) -> bool:
@@ -148,6 +161,7 @@ def _detect_patterns(interactions: list[dict]) -> dict:
         "high_chinese_ratio": False,   # 中文比例 > 40%
         "short_sentences": False,      # 平均句長 < 4 詞
         "article_hits": 0,
+        "giveup_signal": 0,            # B3：近窗放棄語計數（沉默訊號選項 A）
     }
     if not interactions:
         return flags
@@ -161,6 +175,8 @@ def _detect_patterns(interactions: list[dict]) -> dict:
         word_counts.append(_english_word_count(student))
         if _has_article_correction(response):
             flags["article_hits"] += 1
+        if _has_giveup_signal(student):
+            flags["giveup_signal"] += 1
 
     flags["article_correction"] = flags["article_hits"] > 0
     flags["high_chinese_ratio"] = (sum(ratios) / len(ratios)) > 0.40
@@ -293,6 +309,121 @@ def _build_instructions(flags: dict, scores: dict) -> dict:
     return {"classroom": classroom, "device": device, "peer": peer}
 
 
+# ---------------------------------------------------------------------------
+# B1 雙 Agent 閉環：companion_directive（陪聊下一輪策略指令）
+# ---------------------------------------------------------------------------
+
+def _avg(scores: dict) -> float:
+    """四維平均。"""
+    return sum(float(scores[d]) for d in _DIM_KEYS) / len(_DIM_KEYS)
+
+
+def _level_for(scores: dict) -> str:
+    """由四維平均映射微階梯字串（展示用）。"""
+    a = _avg(scores)
+    for hi, name in _LEVEL_BANDS:
+        if a < hi:
+            return name
+    return "L4"
+
+
+def _build_companion_directive(flags: dict, scores: dict, prev: dict | None) -> dict:
+    """依既有 flags/scores/prev 組出陪聊下一輪策略指令（規則式，零依賴）。
+
+    - difficulty 重用趨勢 delta 邏輯（與 _build_emotional_status 一致）。
+    - goal/topic/questions 由最高優先旗標決定（與 _build_instructions 分流一致）。
+    """
+    # difficulty：趨勢 delta（avg 上升且達標 → up；下滑 → down；否則 hold）
+    prev_scores = (prev or {}).get("scores") or {}
+    if prev_scores:
+        old_avg = sum(float(prev_scores.get(d, scores[d])) for d in _DIM_KEYS) / len(_DIM_KEYS)
+        delta = _avg(scores) - old_avg
+    else:
+        delta = 0.0
+    if delta >= 1.5 and _avg(scores) >= 60:
+        difficulty = "up"
+    elif delta <= -1.5:
+        difficulty = "down"
+    else:
+        difficulty = "hold"
+
+    # goal / topic / questions 由最高優先旗標決定
+    if flags["article_correction"]:
+        goal = "冠詞 a/an 穩定使用（母音開頭名詞前用 an）"
+        topic = "食物與水果"
+        questions = ["Do you want an apple?", "Is it an egg or a banana?"]
+        fb = "若學生困惑，退回二選一：Is it a or an?"
+    elif flags["high_chinese_ratio"]:
+        goal = "整句英文輸出、減少中文替代"
+        topic = "今天的一天"
+        questions = ["What did you eat today?", "How are you today?"]
+        fb = "若學生說中文，退回單字引導：先說一個英文單字就好。"
+    elif flags["short_sentences"]:
+        goal = "把句子講長、加上形容詞或地點"
+        topic = "顏色與數量"
+        questions = ["What color is it?", "How many do you have?"]
+        fb = "若學生只說單字，退回二選一：Is it big or small?"
+    elif difficulty == "up":
+        goal = "升級句型：用 and / because 造複合句"
+        topic = "喜歡的事物與原因"
+        questions = ["What do you like and why?"]
+        fb = "若學生卡住，退回單句：What do you like?"
+    else:
+        low_dim = min(_DIM_KEYS, key=lambda d: scores[d])
+        goal = f"鞏固{_DIM_ZH[low_dim]}：多做成功經驗"
+        topic = "日常問候與自我介紹"
+        questions = ["What is your name?", "How old are you?"]
+        fb = "若學生困惑，退回二選一。"
+
+    return {
+        "level": _level_for(scores),
+        "difficulty": difficulty,
+        "next_goal": goal,
+        "topic": topic,
+        "example_questions": questions,
+        "fallback_hint": fb,
+    }
+
+
+def _normalize_directive(cd) -> dict | None:
+    """正規化 companion_directive；格式不符回 None（呼叫端補規則式）。"""
+    if not isinstance(cd, dict):
+        return None
+    try:
+        qs = cd.get("example_questions") or []
+        qs = [str(q) for q in qs if isinstance(q, str) and q.strip()][:3]
+        out = {
+            "level": str(cd.get("level", "")) or "L1",
+            "difficulty": cd.get("difficulty") if cd.get("difficulty") in ("up", "hold", "down") else "hold",
+            "next_goal": str(cd.get("next_goal", "")).strip(),
+            "topic": str(cd.get("topic", "")).strip(),
+            "example_questions": qs,
+            "fallback_hint": str(cd.get("fallback_hint", "")).strip(),
+        }
+        if not (out["next_goal"] and out["topic"]):
+            return None
+        return out
+    except Exception:
+        return None
+
+
+def format_directive_for_prompt(cd: dict | None) -> str | None:
+    """把 companion_directive dict 壓成注入 prompt 的短中文區塊；None → None。"""
+    if not cd:
+        return None
+    qs = " / ".join(cd.get("example_questions") or [])
+    diff_zh = {"up": "可升句型", "down": "請降到二選一/單字", "hold": "維持難度"}.get(
+        cd.get("difficulty"), "維持難度")
+    return (
+        "【本輪教學策略】"
+        f"目標：{cd.get('next_goal', '')}；話題：{cd.get('topic', '')}；"
+        f"難度：{diff_zh}；可用引導問句：{qs}；"
+        f"困惑時：{cd.get('fallback_hint', '')}。"
+        "請在稱讚後自然帶入此話題與問句；"
+        "但「跟我說一遍：」後面仍必須逐字使用目標英文句，不可改寫。"
+    )
+
+
 def _rule_based_diagnosis(interactions: list[dict], prev: dict | None) -> dict:
     """規則式（mock Hermes Agent + Bedrock Claude）診斷主流程。"""
     interactions = interactions or []
@@ -305,6 +436,7 @@ def _rule_based_diagnosis(interactions: list[dict], prev: dict | None) -> dict:
         "weaknesses": _build_weaknesses(flags, scores),
         "emotional_status": _build_emotional_status(scores, prev, len(interactions)),
         "instructions": _build_instructions(flags, scores),
+        "companion_directive": _build_companion_directive(flags, scores, prev),
     }
 
 
@@ -349,6 +481,8 @@ def _validate_diagnosis(d: dict) -> dict:
         "weaknesses": weaknesses,
         "emotional_status": emotional,
         "instructions": norm_instr,
+        # 可選欄位：軟性正規化，值可能為 None（由 generate_diagnosis 保底補上）
+        "companion_directive": _normalize_directive(d.get("companion_directive")),
     }
 
 
@@ -375,6 +509,14 @@ def _call_anthropic_api(interactions: list[dict], prev: dict | None, api_key: st
         "weaknesses": ["..."],
         "emotional_status": "...",
         "instructions": {"classroom": "...", "device": "...", "peer": "..."},
+        "companion_directive": {
+            "level": "L2",
+            "difficulty": "up | hold | down",
+            "next_goal": "下一步教學目標（繁體中文）",
+            "topic": "本輪要帶的話題",
+            "example_questions": ["What color is the pig?", "Do you see a cat?"],
+            "fallback_hint": "學生沉默或困惑時的降級指引",
+        },
     }
     prompt = (
         "你是台灣國小英語學習診斷專家。以下是一位學生近期的口說互動紀錄"
@@ -387,7 +529,9 @@ def _call_anthropic_api(interactions: list[dict], prev: dict | None, api_key: st
         "所有文字內容用繁體中文（台灣用語），schema 與此範例完全一致：\n"
         + json.dumps(schema_example, ensure_ascii=False)
         + "\n\n注意：weaknesses 需具體（例如冠詞 a/an 誤用、中英夾雜比例、句長）；"
-        "instructions 三欄分別給老師課堂活動、裝置端練習主題、同儕配對方式的具體建議。"
+        "instructions 三欄分別給老師課堂活動、裝置端練習主題、同儕配對方式的具體建議；"
+        "companion_directive 是給即時陪聊玩偶的下一輪策略（difficulty 依趨勢、"
+        "next_goal/topic/example_questions 具體可帶入對話），example_questions 用英文、其餘用繁體中文。"
     )
     body = json.dumps(
         {
@@ -424,20 +568,35 @@ def _call_anthropic_api(interactions: list[dict], prev: dict | None, api_key: st
 # 對外主函式（契約入口）
 # ---------------------------------------------------------------------------
 
-def generate_diagnosis(interactions: list[dict], prev: dict | None) -> dict:
+def generate_diagnosis(interactions: list[dict], prev: dict | None,
+                       profile: dict | None = None) -> dict:
     """產生今日學習診斷 dict（欄位契約見 CONTRACTS.md）。
 
     有 ANTHROPIC_API_KEY 時先嘗試真 API（claude-sonnet-5），
     任何失敗即靜默 fallback 到規則式 mock —— mock 是 demo 主線。
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
+    result = None
     if api_key:
         try:
-            return _call_anthropic_api(interactions, prev, api_key)
+            result = _call_anthropic_api(interactions, prev, api_key)
         except Exception:
             # 雲端層失敗：不拋錯、不阻塞，改用邊緣端規則式診斷
-            pass
-    return _rule_based_diagnosis(interactions, prev)
+            result = None
+    if result is None:
+        result = _rule_based_diagnosis(interactions, prev)
+    # 收斂保底：不論走 API 或規則式，最終一定有合法 companion_directive
+    flags = _detect_patterns(interactions or [])
+    if not result.get("companion_directive"):
+        result["companion_directive"] = _build_companion_directive(flags, result["scores"], prev)
+    # B3：併入 CEFR level_state（遲滯用 prev.level_state；失敗不影響診斷）
+    try:
+        from server import curriculum
+        result["level_state"] = curriculum.compute_level_state(
+            result, profile, (prev or {}).get("level_state"), flags=flags)
+    except Exception:
+        result["level_state"] = None
+    return result
 
 
 # ---------------------------------------------------------------------------
