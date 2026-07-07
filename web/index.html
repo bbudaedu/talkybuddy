@@ -725,6 +725,10 @@ function initWakeLayer() {
     var MicRouter = mods[1].MicRouter;
     var createPorcupineEngine = mods[2].createPorcupineEngine;
 
+    // I2 半雙工鎖：這輪是否真的送出音訊。有送→busy 交給 server 的 state:"idle"/ttsDone 清；
+    // 沒送（誤觸/太短未達 minBytes／斷線，server 不會回覆）→靠去抖 re-arm 的 timer 清，避免永卡。
+    var turnAudioSent = false;
+
     var micRouter = new MicRouter({
       getUserMedia: function () { return navigator.mediaDevices.getUserMedia({ audio: true }); },
       createRecorder: function (stream, mime) { return new MediaRecorder(stream, { mimeType: mime }); },
@@ -734,6 +738,7 @@ function initWakeLayer() {
             interimBubble = addBubble("student", "（辨識中…）", { interim: true });
             ws.send(buf);
             ws.send(JSON.stringify({ type: "audio_end" }));
+            turnAudioSent = true;   // 已送出：busy 由 server 完成訊號清（見 onState ARMED 分支）
           } else {
             showToast("斷線了，錄音沒送出");
           }
@@ -752,9 +757,14 @@ function initWakeLayer() {
         micRouter: micRouter,
         canWake: function () { return wsReady && !busy && !playingTTS; },
         onState: function (state) {
-          if (state === WakeState.ACTIVE) { busy = true; setVisualState("listen"); }
+          if (state === WakeState.ACTIVE) { busy = true; turnAudioSent = false; setVisualState("listen"); }
           else if (state === WakeState.COOLDOWN) { setVisualState("think"); }
-          else { busy = false; if (!playingTTS) { setVisualState("idle"); } }
+          else {
+            // ARMED（去抖後 re-arm）：只有「這輪沒送出音訊」才由此解半雙工鎖並回 idle；
+            // 有送音訊時 busy 留給 server 的 state:"idle"/ttsDone 清、視覺由 server 狀態驅動，
+            // 避免 round-trip > cooldown(1.5s) 時提早解鎖、處理中被重入（I2）。
+            if (!turnAudioSent) { busy = false; if (!playingTTS) { setVisualState("idle"); } }
+          }
         },
         onWakeEvent: function (source) {
           playWakeCue();
