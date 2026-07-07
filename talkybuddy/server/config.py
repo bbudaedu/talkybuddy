@@ -54,7 +54,7 @@ WAKE_KEYWORD_BUILTIN: str = os.environ.get("WAKE_KEYWORD_BUILTIN", "Bumblebee")
 WAKE_KEYWORD_LABEL: str = os.environ.get("WAKE_KEYWORD_LABEL", "Bumblebee")
 # 自訂 .ppn（Web/WASM target）相對 URL；非空則優先於內建，空字串=用內建。
 WAKE_KEYWORD_PUBLIC_PATH: str = os.environ.get("WAKE_KEYWORD_PUBLIC_PATH", "")
-# Porcupine 參數模型 .pv（英文）相對 URL。
-WAKE_MODEL_PUBLIC_PATH: str = os.environ.get("WAKE_MODEL_PUBLIC_PATH", "/assets/porcupine_params.pv")
+# Porcupine 參數模型 .pv（英文）相對 URL（由 /static 掛載點提供，對應 web/assets/ 目錄）。
+WAKE_MODEL_PUBLIC_PATH: str = os.environ.get("WAKE_MODEL_PUBLIC_PATH", "/static/assets/porcupine_params.pv")
 # 喚醒靈敏度 0~1（越高越易觸發、也越易誤觸）。
 WAKE_SENSITIVITY: float = float(os.environ.get("WAKE_SENSITIVITY", "0.6"))

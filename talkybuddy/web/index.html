@@ -714,9 +714,9 @@ function playWakeCue() {
 function initWakeLayer() {
   fetch("/api/wake-config").then(function (r) { return r.json(); }).then(function (cfg) {
     return Promise.all([
-      import("./wake-controller.js"),
-      import("./mic-router.js"),
-      import("./porcupine-engine.js")
+      import("/static/wake-controller.js"),
+      import("/static/mic-router.js"),
+      import("/static/porcupine-engine.js")
     ]).then(function (mods) {
       var WakeController = mods[0].WakeController;
       var WakeState = mods[0].WakeState;
@@ -732,6 +732,8 @@ function initWakeLayer() {
               interimBubble = addBubble("student", "（辨識中…）", { interim: true });
               ws.send(buf);
               ws.send(JSON.stringify({ type: "audio_end" }));
+            } else {
+              showToast("斷線了，錄音沒送出");
             }
           });
         },
