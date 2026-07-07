@@ -1,0 +1,5 @@
+# 拋棄式 spike：venv 與下載的模型快取不進 git
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

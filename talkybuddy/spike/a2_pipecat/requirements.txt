@@ -1,0 +1,5 @@
+# A2-1 spike 獨立 venv 依賴（與正式 talkybuddy/.venv 隔離）
+pipecat-ai[funasr]
+sherpa-onnx
+numpy
+pytest
