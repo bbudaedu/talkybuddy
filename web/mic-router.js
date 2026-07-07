@@ -17,22 +17,30 @@ export class MicRouter {
     return new Promise(function (resolve, reject) {
       self.getUserMedia().then(function (stream) {
         self._stream = stream;
-        const chunks = [];
-        const recorder = self.createRecorder(stream, self.mimeType);
-        self._recorder = recorder;
-        recorder.ondataavailable = function (ev) {
-          if (ev && ev.data && ev.data.size > 0) { chunks.push(ev.data); }
-        };
-        recorder.onstop = function () {
-          const blob = new Blob(chunks, { type: self.mimeType });
+        try {
+          const chunks = [];
+          const recorder = self.createRecorder(stream, self.mimeType);
+          self._recorder = recorder;
+          recorder.ondataavailable = function (ev) {
+            if (ev && ev.data && ev.data.size > 0) { chunks.push(ev.data); }
+          };
+          recorder.onstop = function () {
+            const blob = new Blob(chunks, { type: self.mimeType });
+            self._release();
+            if (blob.size >= self.minBytes) {
+              Promise.resolve(self.sendBlob(blob)).then(resolve, resolve);
+            } else {
+              resolve();   // 太短視為誤觸，不送
+            }
+          };
+          recorder.start();
+        } catch (err) {
+          // createRecorder/start 同步拋錯：麥克風已取得但錄音無法開始，
+          // 必須釋放（否則 onstop 永不觸發、track 常駐漏麥）。
           self._release();
-          if (blob.size >= self.minBytes) {
-            Promise.resolve(self.sendBlob(blob)).then(resolve, resolve);
-          } else {
-            resolve();   // 太短視為誤觸，不送
-          }
-        };
-        recorder.start();
+          reject(err);
+          return;
+        }
       }).catch(reject);
     });
   }

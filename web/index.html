@@ -644,7 +644,7 @@ function micDisabled() {
 penguinWrap.addEventListener("contextmenu", function (e) { e.preventDefault(); });
 penguinWrap.addEventListener("click", function (e) {
   e.preventDefault();
-  if (!window._wakeController) { showToast("喚醒功能載入中，請稍候…"); return; }
+  if (!window._wakeController) { showToast("語音輸入暫不可用，請重新整理或用下方快速語句"); return; }
   if (!micAvailable) { showToast("麥克風不可用，請點下方快速語句"); return; }
   window._wakeController.triggerPush();
 });
@@ -712,67 +712,81 @@ function playWakeCue() {
 }
 
 function initWakeLayer() {
-  fetch("/api/wake-config").then(function (r) { return r.json(); }).then(function (cfg) {
-    return Promise.all([
-      import("/static/wake-controller.js"),
-      import("/static/mic-router.js"),
-      import("/static/porcupine-engine.js")
-    ]).then(function (mods) {
-      var WakeController = mods[0].WakeController;
-      var WakeState = mods[0].WakeState;
-      var MicRouter = mods[1].MicRouter;
-      var createPorcupineEngine = mods[2].createPorcupineEngine;
+  /* push 必須永遠可用，不能依賴 /api/wake-config 或 Porcupine：
+   * 先載入三個 /static 模組、以 noopEngine 建好可 push 的 controller 並立刻掛上
+   * window._wakeController；喚醒詞引擎改為「事後升級」，失敗也不拆掉已可用的 push controller。 */
+  Promise.all([
+    import("/static/wake-controller.js"),
+    import("/static/mic-router.js"),
+    import("/static/porcupine-engine.js")
+  ]).then(function (mods) {
+    var WakeController = mods[0].WakeController;
+    var WakeState = mods[0].WakeState;
+    var MicRouter = mods[1].MicRouter;
+    var createPorcupineEngine = mods[2].createPorcupineEngine;
 
-      var micRouter = new MicRouter({
-        getUserMedia: function () { return navigator.mediaDevices.getUserMedia({ audio: true }); },
-        createRecorder: function (stream, mime) { return new MediaRecorder(stream, { mimeType: mime }); },
-        sendBlob: function (blob) {
-          return blob.arrayBuffer().then(function (buf) {
-            if (wsReady) {
-              interimBubble = addBubble("student", "（辨識中…）", { interim: true });
-              ws.send(buf);
-              ws.send(JSON.stringify({ type: "audio_end" }));
-            } else {
-              showToast("斷線了，錄音沒送出");
-            }
-          });
-        },
-        mimeType: pickMime() || "audio/webm;codecs=opus"
-      });
-
-      function noopEngine() {
-        return { available: function () { return false; }, start: function () { return Promise.resolve(); }, stop: function () { return Promise.resolve(); } };
-      }
-      var enginePromise = cfg.enabled
-        ? createPorcupineEngine({
-            accessKey: cfg.access_key, keywordBuiltin: cfg.keyword_builtin,
-            keywordLabel: cfg.keyword_label, keywordPublicPath: cfg.keyword_public_path,
-            modelPublicPath: cfg.model_public_path, sensitivity: cfg.sensitivity
-          }).catch(function () { return noopEngine(); })
-        : Promise.resolve(noopEngine());
-
-      return enginePromise.then(function (engine) {
-        var controller = new WakeController({
-          engine: engine,
-          micRouter: micRouter,
-          canWake: function () { return wsReady && !busy && !playingTTS; },
-          onState: function (state) {
-            if (state === WakeState.ACTIVE) { busy = true; setVisualState("listen"); }
-            else if (state === WakeState.COOLDOWN) { setVisualState("think"); }
-            else { busy = false; if (!playingTTS) { setVisualState("idle"); } }
-          },
-          onWakeEvent: function (source) {
-            playWakeCue();
-            if (wsReady) { ws.send(JSON.stringify({ type: "wake", source: source })); }
+    var micRouter = new MicRouter({
+      getUserMedia: function () { return navigator.mediaDevices.getUserMedia({ audio: true }); },
+      createRecorder: function (stream, mime) { return new MediaRecorder(stream, { mimeType: mime }); },
+      sendBlob: function (blob) {
+        return blob.arrayBuffer().then(function (buf) {
+          if (wsReady) {
+            interimBubble = addBubble("student", "（辨識中…）", { interim: true });
+            ws.send(buf);
+            ws.send(JSON.stringify({ type: "audio_end" }));
+          } else {
+            showToast("斷線了，錄音沒送出");
           }
         });
-        window._wakeController = controller;
-        return controller.arm();
+      },
+      mimeType: pickMime() || "audio/webm;codecs=opus"
+    });
+
+    function noopEngine() {
+      return { available: function () { return false; }, start: function () { return Promise.resolve(); }, stop: function () { return Promise.resolve(); } };
+    }
+
+    function buildController(engine) {
+      return new WakeController({
+        engine: engine,
+        micRouter: micRouter,
+        canWake: function () { return wsReady && !busy && !playingTTS; },
+        onState: function (state) {
+          if (state === WakeState.ACTIVE) { busy = true; setVisualState("listen"); }
+          else if (state === WakeState.COOLDOWN) { setVisualState("think"); }
+          else { busy = false; if (!playingTTS) { setVisualState("idle"); } }
+        },
+        onWakeEvent: function (source) {
+          playWakeCue();
+          if (wsReady) { ws.send(JSON.stringify({ type: "wake", source: source })); }
+        }
       });
+    }
+
+    /* 1) 先以 noopEngine 建 controller 並立刻掛上，push 不等 wake-config／Porcupine。 */
+    var pushController = buildController(noopEngine());
+    window._wakeController = pushController;
+    pushController.arm();
+
+    /* 2) 事後嘗試升級為喚醒詞引擎；此鏈失敗也不動 window._wakeController（push 仍可用）。 */
+    fetch("/api/wake-config").then(function (r) { return r.json(); }).then(function (cfg) {
+      if (!cfg || !cfg.enabled) { return; }
+      return createPorcupineEngine({
+        accessKey: cfg.access_key, keywordBuiltin: cfg.keyword_builtin,
+        keywordLabel: cfg.keyword_label, keywordPublicPath: cfg.keyword_public_path,
+        modelPublicPath: cfg.model_public_path, sensitivity: cfg.sensitivity
+      }).then(function (engine) {
+        var wakeController = buildController(engine);
+        window._wakeController = wakeController;
+        return wakeController.arm();
+      });
+    }).catch(function () {
+      /* wake-config 讀取或 Porcupine 引擎建置失敗：維持既有 noopEngine controller，push 仍可用。 */
+      showToast("語音喚醒詞暫不可用，仍可點企鵝或用下方快速語句");
     });
   }).catch(function () {
-    /* 喚醒層失敗不影響 push→text：仍可用快速語句；push 需 controller，故提示 */
-    showToast("語音喚醒暫不可用，可用下方快速語句");
+    /* 三個 /static 模組本身載入失敗才會走到這裡：push 也無法運作，需明確提示可行動作。 */
+    showToast("語音輸入暫不可用，請重新整理或用下方快速語句");
   });
 }
 
