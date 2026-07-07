@@ -58,3 +58,15 @@ test("錄音過短（< minBytes）視為誤觸，不上傳但仍釋放麥", asyn
   assert.equal(sendCount, 0);
   assert.equal(stream._track.stopped, true);
 });
+
+test("createRecorder 同步拋錯時仍需釋放麥克風（避免漏麥）", async () => {
+  const stream = fakeStream();
+  const router = new MicRouter({
+    getUserMedia: async () => stream,
+    createRecorder: () => { throw new Error("recorder 建構失敗"); },
+    sendBlob: () => {},
+    minBytes: 200,
+  });
+  await assert.rejects(router.recordTurn(), /recorder 建構失敗/);
+  assert.equal(stream._track.stopped, true, "recorder 建構同步拋錯也必須 track.stop() 釋放麥");
+});
