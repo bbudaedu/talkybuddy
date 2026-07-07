@@ -83,8 +83,13 @@ Controller 只依賴此介面。Porcupine 與未來 openWakeWord/中文詞各自
 
 ## Porcupine 引擎細節（`PorcupineEngine`）
 
-- **套件**：`@picovoice/porcupine-web`（喚醒詞推論，WASM）+ `@picovoice/web-voice-processor`
-  （抓 mic 原始 16kHz PCM 餵給 Porcupine）。兩者皆裝置端推論、無雲端往返。
+- **套件（查證定版）**：`@picovoice/porcupine-web@4.0.1`（喚醒詞推論，WASM）+
+  `@picovoice/web-voice-processor@4.0.10`（抓 mic 原始 16kHz PCM 餵給 Porcupine）。皆 Apache-2.0、
+  裝置端推論、無雲端往返。**生命週期無 `start/stop/pause`**：由 `WebVoiceProcessor.subscribe(worker)`
+  = 開始聽、`WebVoiceProcessor.unsubscribe(worker)` = 停止（會 `track.stop()` 釋放麥）。
+  建構 `PorcupineWorker.create(accessKey, keywords, onDetected, model, options?)`，`onDetected` 收
+  `{index, label}`。**漸進**：先用內建 `BuiltInKeyword.Porcupine`/`Bumblebee`（bytes 已內嵌、免 .ppn）
+  跑通管線，再換 Console 產的自訂「Hey Penguin」`.ppn`（Web/WASM target）。
 - **引入方式（待確認，因 client 無 build）**：現況是無 bundler 的單檔 vanilla JS。
   預設用 **ESM CDN 動態 import**（`import('https://cdn.jsdelivr.net/npm/@picovoice/porcupine-web@.../dist/...+esm')`）
   或改在 `web/` 引一個 `<script type="module">` 側掛。實作時先驗證 CDN ESM 路徑與 WASM/worker
@@ -113,9 +118,13 @@ Controller 只依賴此介面。Porcupine 與未來 openWakeWord/中文詞各自
 - 單一 `getUserMedia` 麥克風串流的去向裁決：
   - **ARMED**：串流交給 WebVoiceProcessor→Porcupine；**不**建立 MediaRecorder、**不**送 WS。
   - **ACTIVE**：暫停 Porcupine 訂閱，串流交給既有 MediaRecorder 錄一輪→WS。
-- 需釐清 WebVoiceProcessor 與現有 MediaRecorder 能否共用同一 `getUserMedia` 串流，或需分別取得
-  （實作時驗證；多數瀏覽器可對同一 stream 多路訂閱，必要時用兩次 getUserMedia 並在切換時釋放）。
-- 目標：任何時刻只有一個消費者在用麥克風，切換乾淨、無回授自我喚醒。
+- **查證定論：WebVoiceProcessor 不接受外部 MediaStream、無法與 MediaRecorder 共用同一串流**，
+  必須**循序切換**同一支實體麥克風（不可並行持有兩個 getUserMedia，某些瀏覽器會 NotReadableError）：
+  1. 偵測到喚醒 → `await WebVoiceProcessor.unsubscribe(worker)`（停 WVP、`track.stop()` 釋放麥）。
+  2. `await navigator.mediaDevices.getUserMedia({audio:true})` → 既有 MediaRecorder 錄一輪 → WS。
+  3. 錄畢 `stream.getTracks().forEach(t => t.stop())` 釋放。
+  4. `await WebVoiceProcessor.subscribe(worker)` 重新 always-listening。
+- 此循序（每步 await）由 WakeController 協調；任何時刻只有一個消費者用麥克風，切換乾淨、無回授自我喚醒。
 
 ## 降級與相容
 
