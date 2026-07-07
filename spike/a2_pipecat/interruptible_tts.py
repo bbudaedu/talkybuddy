@@ -56,3 +56,7 @@ class SherpaInterruptibleTTSService(TTSService):
                 num_channels=1,
                 context_id=context_id,
             )
+            # 擬真：sherpa 合成遠快於即時播放，若不模擬播放節奏，4 句會在 barge-in
+            # 觸發前就全合成完、無從觀察句界中止。以音訊時長 sleep 模擬「播放中」，
+            # 讓下一句開始前有機會看到 interrupt flag → 句界乾淨停（criterion #4）。
+            await asyncio.sleep(len(samples) / int(audio.sample_rate))
