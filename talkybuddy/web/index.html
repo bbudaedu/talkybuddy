@@ -193,7 +193,7 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
 </header>
 
 <div class="stage">
-  <div id="penguinWrap" aria-label="按住企鵝肚子說話">
+  <div id="penguinWrap" aria-label="點一下企鵝肚子說話">
     <!-- 手繪圓潤針織感企鵝 -->
     <svg viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="企鵝學伴">
       <defs>
@@ -259,8 +259,8 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
       <circle cx="100" cy="9" r="6" fill="#ffd166"/>
     </svg>
   </div>
-  <div id="stateHint">待機中，按住肚子開始說話</div>
-  <div class="hold-hint" id="holdHint">&#128075; 按住企鵝肚子說話，放開送出</div>
+  <div id="stateHint">待機中，點一下企鵝開始說話</div>
+  <div class="hold-hint" id="holdHint">&#128070; 點一下企鵝開始說話，說完再點一下（或喊喚醒詞）</div>
 </div>
 
 <main id="chat" aria-live="polite"></main>
@@ -315,7 +315,7 @@ var networkMode = "edge";
 function setVisualState(s) {
   body.classList.remove("st-idle", "st-listen", "st-think", "st-talk");
   var map = {
-    idle:   ["st-idle",   "待機中，按住肚子開始說話"],
+    idle:   ["st-idle",   "待機中，點一下企鵝開始說話"],
     listen: ["st-listen", "我在聽～說給我聽！"],
     think:  ["st-think",  "嗯…我想一想…"],
     talk:   ["st-talk",   "換我說囉！"]
@@ -625,9 +625,9 @@ function initMic() {
     return;
   }
   navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
-    mediaStream = stream;
+    stream.getTracks().forEach(function (t) { t.stop(); });   /* 只探測權限，不常駐；每輪由 MicRouter 重新取得 */
     micAvailable = true;
-    holdHint.textContent = "👋 按住企鵝肚子說話，放開送出";
+    holdHint.textContent = "👆 點一下企鵝開始說話，說完再點一下（或喊喚醒詞）";
     holdHint.classList.remove("disabled");
   }).catch(function () {
     micDisabled();
@@ -640,79 +640,14 @@ function micDisabled() {
   holdHint.classList.add("disabled");
 }
 
-function startRecording() {
-  if (!micAvailable || !mediaStream) { return; }
-  if (recording || busy || playingTTS) {
-    if (busy || playingTTS) { showToast("等企鵝說完再換你喔！"); }
-    return;
-  }
-  if (!wsReady) { showToast("尚未連線，請稍候…"); return; }
-  var mime = pickMime();
-  recChunks = [];
-  try {
-    mediaRecorder = new MediaRecorder(mediaStream, { mimeType: mime });
-  } catch (e) {
-    micDisabled();
-    return;
-  }
-  mediaRecorder.ondataavailable = function (ev) {
-    if (ev.data && ev.data.size > 0) { recChunks.push(ev.data); }
-  };
-  mediaRecorder.onstop = function () {
-    var blob = new Blob(recChunks, { type: mime });
-    recChunks = [];
-    if (blob.size < 200) {
-      /* 太短視為誤觸 */
-      setVisualState("idle");
-      return;
-    }
-    if (!wsReady) { setVisualState("idle"); showToast("斷線了，錄音沒送出"); return; }
-    busy = true;
-    setVisualState("think");
-    interimBubble = addBubble("student", "（辨識中…）", { interim: true });
-    blob.arrayBuffer().then(function (buf) {
-      ws.send(buf);                                   /* 單一 binary frame */
-      ws.send(JSON.stringify({ type: "audio_end" })); /* 結束標記 */
-    });
-  };
-  recording = true;
-  penguinWrap.classList.add("pressing");
-  setVisualState("listen");
-  mediaRecorder.start();
-}
-
-function stopRecording() {
-  penguinWrap.classList.remove("pressing");
-  if (!recording) { return; }
-  recording = false;
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    mediaRecorder.stop();
-  }
-}
-
-/* pointer + touch 事件；防長按選單 */
+/* pointer 事件：tap-to-toggle（點一下開始、再點結束）；防長按選單 */
 penguinWrap.addEventListener("contextmenu", function (e) { e.preventDefault(); });
-penguinWrap.addEventListener("pointerdown", function (e) {
+penguinWrap.addEventListener("click", function (e) {
   e.preventDefault();
+  if (!window._wakeController) { showToast("喚醒功能載入中，請稍候…"); return; }
   if (!micAvailable) { showToast("麥克風不可用，請點下方快速語句"); return; }
-  startRecording();
+  window._wakeController.triggerPush();
 });
-penguinWrap.addEventListener("pointerup", function (e) { e.preventDefault(); stopRecording(); });
-penguinWrap.addEventListener("pointercancel", function () { stopRecording(); });
-penguinWrap.addEventListener("pointerleave", function () { if (recording) { stopRecording(); } });
-/* iOS Safari 舊版 touch 後援（pointer 事件已涵蓋新版） */
-penguinWrap.addEventListener("touchstart", function (e) {
-  if (typeof PointerEvent === "undefined") {
-    e.preventDefault();
-    if (micAvailable) { startRecording(); }
-  }
-}, { passive: false });
-penguinWrap.addEventListener("touchend", function (e) {
-  if (typeof PointerEvent === "undefined") {
-    e.preventDefault();
-    stopRecording();
-  }
-}, { passive: false });
 
 /* ---------- /api/status 輪詢（每 5 秒） ---------- */
 function refreshStatus() {
@@ -764,16 +699,92 @@ airplaneSwitch.addEventListener("click", function () {
   });
 });
 
+/* ---------- A1 喚醒層接線 ---------- */
+function playWakeCue() {
+  /* 喚醒回饋音「我在！」：優先 speechSynthesis，無則略過（視覺已亮燈） */
+  try {
+    if (typeof speechSynthesis !== "undefined") {
+      var u = new SpeechSynthesisUtterance("我在！");
+      u.lang = "zh-TW"; u.rate = 1.05;
+      speechSynthesis.speak(u);
+    }
+  } catch (e) { /* 忽略 */ }
+}
+
+function initWakeLayer() {
+  fetch("/api/wake-config").then(function (r) { return r.json(); }).then(function (cfg) {
+    return Promise.all([
+      import("./wake-controller.js"),
+      import("./mic-router.js"),
+      import("./porcupine-engine.js")
+    ]).then(function (mods) {
+      var WakeController = mods[0].WakeController;
+      var WakeState = mods[0].WakeState;
+      var MicRouter = mods[1].MicRouter;
+      var createPorcupineEngine = mods[2].createPorcupineEngine;
+
+      var micRouter = new MicRouter({
+        getUserMedia: function () { return navigator.mediaDevices.getUserMedia({ audio: true }); },
+        createRecorder: function (stream, mime) { return new MediaRecorder(stream, { mimeType: mime }); },
+        sendBlob: function (blob) {
+          return blob.arrayBuffer().then(function (buf) {
+            if (wsReady) {
+              interimBubble = addBubble("student", "（辨識中…）", { interim: true });
+              ws.send(buf);
+              ws.send(JSON.stringify({ type: "audio_end" }));
+            }
+          });
+        },
+        mimeType: pickMime() || "audio/webm;codecs=opus"
+      });
+
+      function noopEngine() {
+        return { available: function () { return false; }, start: function () { return Promise.resolve(); }, stop: function () { return Promise.resolve(); } };
+      }
+      var enginePromise = cfg.enabled
+        ? createPorcupineEngine({
+            accessKey: cfg.access_key, keywordBuiltin: cfg.keyword_builtin,
+            keywordLabel: cfg.keyword_label, keywordPublicPath: cfg.keyword_public_path,
+            modelPublicPath: cfg.model_public_path, sensitivity: cfg.sensitivity
+          }).catch(function () { return noopEngine(); })
+        : Promise.resolve(noopEngine());
+
+      return enginePromise.then(function (engine) {
+        var controller = new WakeController({
+          engine: engine,
+          micRouter: micRouter,
+          canWake: function () { return wsReady && !busy && !playingTTS; },
+          onState: function (state) {
+            if (state === WakeState.ACTIVE) { busy = true; setVisualState("listen"); }
+            else if (state === WakeState.COOLDOWN) { setVisualState("think"); }
+            else { busy = false; if (!playingTTS) { setVisualState("idle"); } }
+          },
+          onWakeEvent: function (source) {
+            playWakeCue();
+            if (wsReady) { ws.send(JSON.stringify({ type: "wake", source: source })); }
+          }
+        });
+        window._wakeController = controller;
+        return controller.arm();
+      });
+    });
+  }).catch(function () {
+    /* 喚醒層失敗不影響 push→text：仍可用快速語句；push 需 controller，故提示 */
+    showToast("語音喚醒暫不可用，可用下方快速語句");
+  });
+}
+
 /* ---------- 啟動 ---------- */
 buildChips();
 setVisualState("idle");
 connectWS();
 initMic();
+initWakeLayer();
 refreshStatus();
 setInterval(refreshStatus, 5000);
 
 /* 開場招呼 */
-addBubble("penguin", "嘿！我是你的說說學伴！按住我的肚子跟我說話，或點下面的快速語句試試看～", {});
+addBubble("penguin", "嘿！我是你的說說學伴！點一下我的肚子開始說話，或喊喚醒詞叫我，也可以點下面的快速語句試試看～", {});
 </script>
 </body>
 </html>
