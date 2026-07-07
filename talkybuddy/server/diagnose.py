@@ -407,8 +407,36 @@ def _normalize_directive(cd) -> dict | None:
         return None
 
 
-def format_directive_for_prompt(cd: dict | None) -> str | None:
-    """把 companion_directive dict 壓成注入 prompt 的短中文區塊；None → None。"""
+def _format_cefr_clause(level_state: dict | None) -> str:
+    """B3 接法 A：把 level_state 的 CEFR 目標語言形式壓成一段追加句。
+
+    無 level_state 或缺 target_form → 回空字串（等同不追加，向後相容）。
+    只取 target_form/cefr/level 三個穩定欄位，避免與策略區塊過度重複。
+    """
+    if not isinstance(level_state, dict):
+        return ""
+    target_form = str(level_state.get("target_form", "")).strip()
+    if not target_form:
+        return ""
+    cefr = str(level_state.get("cefr", "")).strip()
+    level = str(level_state.get("level", "")).strip()
+    tag = f"程度 {cefr}（{level}）；" if (cefr or level) else ""
+    return (
+        "【CEFR 難度】"
+        f"{tag}本輪目標語言形式：{target_form}。"
+        "請讓稱讚與延伸問句貼近此語言形式的難度。"
+    )
+
+
+def format_directive_for_prompt(
+    cd: dict | None, level_state: dict | None = None
+) -> str | None:
+    """把 companion_directive dict 壓成注入 prompt 的短中文區塊；None → None。
+
+    level_state（可選，B3 接法 A）：若含 target_form，則在策略區塊後追加一段
+    CEFR 難度句，讓 B3 的等級/語言形式真正影響陪聊；None 或缺欄 → 行為不變。
+    帶讀護欄句永遠是最後一句。
+    """
     if not cd:
         return None
     qs = " / ".join(cd.get("example_questions") or [])
@@ -419,6 +447,7 @@ def format_directive_for_prompt(cd: dict | None) -> str | None:
         f"目標：{cd.get('next_goal', '')}；話題：{cd.get('topic', '')}；"
         f"難度：{diff_zh}；可用引導問句：{qs}；"
         f"困惑時：{cd.get('fallback_hint', '')}。"
+        f"{_format_cefr_clause(level_state)}"
         "請在稱讚後自然帶入此話題與問句；"
         "但「跟我說一遍：」後面仍必須逐字使用目標英文句，不可改寫。"
     )
