@@ -45,14 +45,18 @@ export class WakeController {
     this._state = WakeState.ACTIVE;
     this.onWakeEvent(source);
     this.onState(WakeState.ACTIVE);
-    if (this.engine && this.engine.available()) {
-      // 先發動釋放麥（順序保留，關鍵）；不 await 以保證 recordTurn 於同步階段接手，
-      // onWake 於 ACTIVE 即解析，該輪在背景進行（見下方 recordTurn().then）。
-      Promise.resolve(this.engine.stop()).catch(function () {});
-    }
-    this._turnTimer = this._setTimeout(() => { this._safeStopTurn(); }, this.turnTimeoutMs);
-    // 該輪於背景進行；錄音停止(或失敗)後結束該輪、退回待命（degrade-safe）。
-    this.micRouter.recordTurn().then(
+    // I4：真 Porcupine 的 stop() 是 async unsubscribe（釋放喚醒引擎持有的麥）。
+    // 必須等它「完成」才由 MicRouter 取得麥克風，否則兩個 mic 消費者重疊。
+    // 但 onWake 仍於 ACTIVE 即解析、該輪在背景進行（保留 Task 3 已核可取捨）：
+    // stop→recordTurn 的循序改用 .then 鏈接，不 await 阻塞 onWake。
+    const stopped = (this.engine && this.engine.available())
+      ? Promise.resolve(this.engine.stop()).catch(function () {})   // stop 失敗不擋該輪
+      : Promise.resolve();
+    stopped.then(() => {
+      // 麥已釋放，才開始錄音該輪；逾時計時器與錄音同時起算。
+      this._turnTimer = this._setTimeout(() => { this._safeStopTurn(); }, this.turnTimeoutMs);
+      return this.micRouter.recordTurn();
+    }).then(
       () => { this._endTurn(); },
       () => { this._endTurn(); }
     );

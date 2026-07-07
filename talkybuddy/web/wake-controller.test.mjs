@@ -44,10 +44,35 @@ test("喚醒 → ACTIVE：先停引擎再錄音（循序）", async () => {
   const c = new WakeController({ engine, micRouter, setTimeout: t.setTimeout, clearTimeout: t.clearTimeout });
   await c.arm();
   await c.onWake("wakeword");
+  await new Promise((r) => setImmediate(r));   // 等 stop→recordTurn 微任務鏈排空（dispatch 已改為 stop 完成後）
   assert.equal(c.state, WakeState.ACTIVE);
   const stopIdx = calls.indexOf("engine.stop");
   const recIdx = calls.indexOf("mic.recordTurn");
   assert.ok(stopIdx >= 0 && recIdx > stopIdx, "engine.stop 必須在 mic.recordTurn 之前");
+});
+
+test("喚醒 → ACTIVE：engine.stop 完成後才開始 recordTurn（I4 真模型循序釋放麥）", async () => {
+  const t = manualTimers();
+  const order = [];
+  let stopResolve;
+  const engine = {
+    available() { return true; },
+    async start() {},
+    stop() { order.push("stop:start"); return new Promise((r) => { stopResolve = () => { order.push("stop:done"); r(); }; }); },
+  };
+  const micRouter = {
+    recordTurn() { order.push("recordTurn:start"); return new Promise(() => {}); },
+    stopTurn() {},
+  };
+  const c = new WakeController({ engine, micRouter, setTimeout: t.setTimeout, clearTimeout: t.clearTimeout });
+  await c.arm();
+  c.onWake("wakeword");
+  await new Promise((r) => setImmediate(r));
+  // engine.stop 尚未 resolve → 麥克風未釋放 → 不得開始 recordTurn（否則兩消費者重疊）
+  assert.deepEqual(order, ["stop:start"], "engine.stop 未完成前不得呼叫 recordTurn");
+  stopResolve();
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(order, ["stop:start", "stop:done", "recordTurn:start"], "stop 完成後才 recordTurn");
 });
 
 test("ACTIVE 期間再收到喚醒 → 忽略（不重入）", async () => {
@@ -56,8 +81,10 @@ test("ACTIVE 期間再收到喚醒 → 忽略（不重入）", async () => {
   const c = new WakeController({ engine, micRouter, setTimeout: t.setTimeout, clearTimeout: t.clearTimeout });
   await c.arm();
   await c.onWake("wakeword");
+  await new Promise((r) => setImmediate(r));   // 排空第一輪 stop→recordTurn，再量基準
   const before = calls.length;
-  await c.onWake("wakeword");
+  await c.onWake("wakeword");                    // state ACTIVE → 早退
+  await new Promise((r) => setImmediate(r));
   assert.equal(calls.length, before, "重入喚醒不應再觸發任何呼叫");
 });
 
@@ -67,6 +94,7 @@ test("一輪結束 → COOLDOWN → 去抖後回 ARMED 並重新 arm", async () 
   const c = new WakeController({ engine, micRouter, setTimeout: t.setTimeout, clearTimeout: t.clearTimeout });
   await c.arm();
   const wake = c.onWake("wakeword");
+  await new Promise((r) => setImmediate(r));   // 等 stop 完成、recordTurn 起始（_resolve 就緒）
   micRouter.stopTurn();           // 觸發 recordTurn resolve
   await wake;
   await new Promise((r) => setImmediate(r));   // 等背景該輪 recordTurn().then(_endTurn) 微任務排空（onWake 已於 ACTIVE 解析）
@@ -105,8 +133,10 @@ test("錄音逾時：turnTimeout 到期自動停止該輪", async () => {
   const c = new WakeController({ engine, micRouter, turnTimeoutMs: 15000, setTimeout: t.setTimeout, clearTimeout: t.clearTimeout });
   await c.arm();
   const wake = c.onWake("wakeword");
+  await new Promise((r) => setImmediate(r));   // 等 stop 完成、turnTimer 起算（現於 recordTurn 起始時設定）
   t.flushAll();                   // turn timer 到期 → stopTurn
   await wake;
+  await new Promise((r) => setImmediate(r));
   assert.ok(calls.includes("mic.stopTurn"));
 });
 
