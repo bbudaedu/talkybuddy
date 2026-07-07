@@ -144,6 +144,36 @@ async def test_refresh_directive_updates_cache(monkeypatch):
     assert "升級句型" in vp._directive
 
 
+async def test_refresh_directive_folds_level_state_cefr(monkeypatch):
+    """診斷含 level_state（target_form）→ 快取 directive 帶 CEFR 難度區塊（B3 接法 A）。"""
+    fake_diag = {
+        "date": "2026-07-08",
+        "scores": {"pronunciation": 60, "fluency": 60, "vocabulary": 60, "grammar": 60},
+        "strengths": ["s"],
+        "weaknesses": ["w"],
+        "emotional_status": "穩定",
+        "instructions": {"classroom": "c", "device": "d", "peer": "p"},
+        "companion_directive": {
+            "level": "L3", "difficulty": "hold", "next_goal": "鞏固",
+            "topic": "動物", "example_questions": ["What is it?"],
+            "fallback_hint": "退回二選一",
+        },
+        "level_state": {
+            "level": "3-2", "cefr": "A2",
+            "target_form": "完整句＋冠詞/複數/形容詞（I see a big dog.）",
+            "prompt_strength": "maintain",
+        },
+    }
+    monkeypatch.setattr(diagnose, "generate_diagnosis", lambda recent, prev: fake_diag)
+
+    vp = VoicePipeline(asr=None, llm=CapturingLLM(), tts=StubTTS())
+    await vp._refresh_directive()
+
+    assert vp._directive is not None
+    assert "【CEFR 難度】" in vp._directive
+    assert fake_diag["level_state"]["target_form"] in vp._directive
+
+
 async def test_refresh_directive_reentrancy_guard(monkeypatch):
     """_directive_refreshing=True 時直接返回，不重複產診斷。"""
     called: list[int] = []

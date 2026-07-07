@@ -273,7 +273,9 @@ class VoicePipeline:
                 prev = diagnoses[-1] if diagnoses else None
                 diag = diagnose.generate_diagnosis(recent, prev)
                 store.add_diagnosis(diag)  # 持久化（含 companion_directive）
-                return diagnose.format_directive_for_prompt(diag.get("companion_directive"))
+                # B3 接法 A：帶 level_state，CEFR 難度/語言形式折進注入字串
+                return diagnose.format_directive_for_prompt(
+                    diag.get("companion_directive"), diag.get("level_state"))
 
             self._directive = await asyncio.to_thread(_work)
         except Exception:

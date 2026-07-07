@@ -167,8 +167,9 @@ async def api_network_mode(body: NetworkModeBody):
         new_diag = diagnose.generate_diagnosis(recent, prev)
         store.add_diagnosis(new_diag)
         # B1：把新診斷的 companion_directive 推進 pipeline 快取，即時路徑下輪即採用
+        # B3 接法 A：一併帶 level_state，讓 CEFR 難度/語言形式折進注入字串
         pipeline._directive = diagnose.format_directive_for_prompt(
-            new_diag.get("companion_directive"))
+            new_diag.get("companion_directive"), new_diag.get("level_state"))
         # B2：同異步時機更新長期 profile（全量重算；失敗不影響同步）
         all_inter = store.list_interactions(limit=500)
         prof = profile.build_profile(all_inter, store.list_diagnoses(), store.get_profile())

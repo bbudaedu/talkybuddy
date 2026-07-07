@@ -20,6 +20,8 @@ def test_switch_cloud_populates_pipeline_directive(monkeypatch):
     # 診斷一定含 companion_directive → 格式化後推進快取
     assert app_mod.pipeline._directive is not None
     assert "【本輪教學策略】" in app_mod.pipeline._directive
+    # B3 接法 A：診斷含 level_state → 推進的 directive 也帶 CEFR 難度區塊
+    assert "【CEFR 難度】" in app_mod.pipeline._directive
 
 
 def test_switch_edge_does_not_touch_directive(monkeypatch):

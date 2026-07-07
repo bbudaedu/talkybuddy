@@ -173,6 +173,48 @@ def test_format_directive_contains_strategy_block():
 
 
 # ---------------------------------------------------------------------------
+# 5b. B3 接法 A：把 level_state 的 CEFR 語言形式折進 directive 文字
+# ---------------------------------------------------------------------------
+
+def _level_state(target_form="完整句＋冠詞/複數/形容詞（I see a big dog.）",
+                 cefr="A2", level="3-2"):
+    """組出 curriculum.compute_level_state 形狀（僅取 format 需要的欄位）。"""
+    return {"level": level, "cefr": cefr, "target_form": target_form,
+            "prompt_strength": "maintain"}
+
+
+def test_format_directive_appends_cefr_form_from_level_state():
+    """給 level_state → 追加 CEFR 難度句，含目標語言形式與程度標籤。"""
+    cd = diagnose._build_companion_directive(_flags(article=True), _scores(60), None)
+    ls = _level_state()
+    s = diagnose.format_directive_for_prompt(cd, ls)
+    assert s is not None
+    assert "【本輪教學策略】" in s           # 原策略區塊仍在
+    assert "【CEFR 難度】" in s              # 新增 CEFR 難度區塊
+    assert ls["target_form"] in s           # 帶入本輪語言形式
+    assert ls["cefr"] in s                  # 帶入 CEFR 程度標籤
+    assert ls["level"] in s                 # 帶入 band-step
+    # 護欄提醒仍為最後一句、不可改寫
+    assert "跟我說一遍" in s
+    assert s.rstrip().endswith("不可改寫。")
+
+
+def test_format_directive_level_state_none_is_backward_compatible():
+    """level_state=None → 輸出與不傳完全一致（向後相容）。"""
+    cd = diagnose._build_companion_directive(_flags(short=True), _scores(55), None)
+    assert diagnose.format_directive_for_prompt(cd, None) == \
+        diagnose.format_directive_for_prompt(cd)
+
+
+def test_format_directive_level_state_without_target_form_no_append():
+    """level_state 缺 target_form → 不追加 CEFR 句（等同無 level_state）。"""
+    cd = diagnose._build_companion_directive(_flags(), _scores(60), None)
+    empty_ls = {"level": "1-1", "cefr": "pre-A1"}  # 無 target_form
+    assert diagnose.format_directive_for_prompt(cd, empty_ls) == \
+        diagnose.format_directive_for_prompt(cd)
+
+
+# ---------------------------------------------------------------------------
 # 6. 掛進主流程 + generate_diagnosis 收斂保底
 # ---------------------------------------------------------------------------
 
