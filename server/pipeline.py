@@ -57,6 +57,15 @@ def _webm_to_wav(webm_bytes: bytes) -> str | None:
     以 subprocess 呼叫 ffmpeg（-loglevel error，timeout=10s），
     失敗（ffmpeg 不存在 / 轉檔錯誤 / 逾時）回 None，由呼叫端走兜底路徑。
     此函式為同步阻塞，呼叫端應以 asyncio.to_thread 執行。
+
+    PLAN.md 要求捨棄 ffmpeg、改用 Python soundfile 記憶體內解碼。
+    已實測（.venv）：soundfile 0.14.0 綁定的 libsndfile 1.2.2
+    `available_formats()` 不含 WEBM/Opus（無此容器解碼器），
+    瀏覽器 MediaRecorder 錄出的 audio/webm;codecs=opus 無法直接餵給
+    soundfile，故 PC 原型仍保留 ffmpeg subprocess 轉檔以維持可運行。
+    Genio 520 移植階段改用 ALSA 直接錄 16kHz mono wav（跳過瀏覽器
+    MediaRecorder/webm），屆時輸入本就是 wav，可直接用 soundfile
+    讀取、完全省去本函式與 ffmpeg 依賴。
     """
     webm_path = None
     wav_path = None

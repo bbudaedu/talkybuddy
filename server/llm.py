@@ -87,6 +87,8 @@ class EdgeLLM:
                     return None
                 EdgeLLM._model = Llama(
                     model_path=str(gguf),
+                    # PC 原型記憶體充足，維持 1024；PLAN.md 要求 Genio 520 板上
+                    # 移植時應降為 512 tokens，避免 CPU 端 LLM context 過大導致 OOM 崩潰。
                     n_ctx=1024,
                     n_threads=4,
                     verbose=False,
