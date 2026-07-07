@@ -114,6 +114,24 @@ async def api_status():
     }
 
 
+@app.get("/api/wake-config")
+async def api_wake_config():
+    """下發 Porcupine Web 喚醒設定給瀏覽器。
+
+    AccessKey 存在 server 環境變數（不進 repo）。enabled=False（未設 key）時
+    client 略過語音喚醒、只用 push；行為明確可預期。
+    """
+    return {
+        "enabled": bool(config.PICOVOICE_ACCESS_KEY),
+        "access_key": config.PICOVOICE_ACCESS_KEY,
+        "keyword_builtin": config.WAKE_KEYWORD_BUILTIN,
+        "keyword_label": config.WAKE_KEYWORD_LABEL,
+        "keyword_public_path": config.WAKE_KEYWORD_PUBLIC_PATH,
+        "model_public_path": config.WAKE_MODEL_PUBLIC_PATH,
+        "sensitivity": config.WAKE_SENSITIVITY,
+    }
+
+
 class NetworkModeBody(BaseModel):
     """POST /api/network_mode 的 body。"""
 
