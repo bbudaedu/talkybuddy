@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -35,6 +36,8 @@ WEB_DIR: Path = config.BASE_DIR / "web"
 # 單獨 binary（無 audio_end）時的 debounce 秒數：等這麼久沒等到 audio_end
 # 就把緩衝整包送進 pipeline。
 AUDIO_DEBOUNCE_S: float = 0.35
+
+logger = logging.getLogger("talkybuddy.wake")
 
 # ---------------------------------------------------------------------------
 # 全域單例：引擎與 VoicePipeline
@@ -309,6 +312,10 @@ async def ws_talk(websocket: WebSocket):
             if mtype == "audio_end":
                 cancel_flush()
                 await process_audio_buffer()
+            elif mtype == "wake":
+                # A1 喚醒事件：純記錄（source = "wakeword" | "push"），不改變一輪對話行為。
+                source = str(payload.get("source", "") or "unknown")
+                logger.info("wake event: source=%s", source)
             elif mtype == "text_input":
                 text = str(payload.get("text", "") or "")
                 try:
