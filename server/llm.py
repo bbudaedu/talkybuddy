@@ -17,6 +17,8 @@ import logging
 import threading
 import time
 
+from server import guardrails
+
 _log = logging.getLogger(__name__)
 
 # LLM 生成逾時上限（秒），超過即放棄並回 None
@@ -49,7 +51,7 @@ class EdgeLLM:
         "英文句必須逐字使用我提供的目標句，不可改寫。"
         "三、全部回覆總長不超過60個字。"
         "四、禁止使用 markdown 符號、emoji 表情、以及英文以外的其他外語。"
-    )
+    ) + guardrails.CHILD_SAFETY_CLAUSE
 
     def available(self) -> bool:
         """llama_cpp 可匯入且模型檔存在時回 True；任何失敗回 False。"""
@@ -146,13 +148,8 @@ class EdgeLLM:
             if not text:
                 return None
 
-            # 輸出仍須通過安全檢查（lazy import，避免循環依賴）
-            try:
-                from server import scaffold as scaffold_mod
-                if scaffold_mod.safety_check(text):
-                    return None
-            except Exception:
-                # 安全模組不可用時保守起見放棄 LLM 輸出
+            # 輸出仍須通過安全護欄（edge/雲端共用 helper；不安全→降級回 scaffold）
+            if not guardrails.passes_guardrail(text):
                 return None
 
             # 確保目標英文句一定出現在回覆中（帶讀不可漏句）

@@ -31,6 +31,8 @@ import re
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
+from server import guardrails
+
 # Asia/Taipei 固定 UTC+8（無日光節約，直接用 timedelta 最穩）
 _TAIPEI_TZ = timezone(timedelta(hours=8))
 
@@ -524,7 +526,7 @@ def _call_anthropic_api(interactions: list[dict], prev: dict | None, api_key: st
     # 只帶必要欄位，控制 prompt 長度
     brief = [
         {
-            "student_text": str(it.get("student_text", ""))[:200],
+            "student_text": guardrails.deidentify(str(it.get("student_text", ""))[:200]),
             "ai_response_text": str(it.get("ai_response_text", ""))[:200],
             "asr_confidence": it.get("asr_confidence"),
             "scores": it.get("scores"),
