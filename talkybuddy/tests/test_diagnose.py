@@ -1,0 +1,200 @@
+# -*- coding: utf-8 -*-
+"""test_diagnose.py — B1 雙 Agent 閉環：companion_directive 產生與正規化。
+
+涵蓋 research/b_axis/B1_雙Agent閉環.md §2：
+- 規則式產生 directive（difficulty 由趨勢決定、goal/topic 由旗標決定）
+- 軟性正規化（合法→dict、不合法→None）
+- dict→prompt 文字化
+- generate_diagnosis 收斂保底（不論路徑，最終一定有合法 directive）
+"""
+
+from __future__ import annotations
+
+from server import diagnose
+
+
+def _flags(article=False, chinese=False, short=False):
+    """組出 _detect_patterns 形狀的旗標 dict。"""
+    return {
+        "article_correction": article,
+        "high_chinese_ratio": chinese,
+        "short_sentences": short,
+        "article_hits": 1 if article else 0,
+    }
+
+
+def _scores(v: int) -> dict:
+    """四維同分的 scores dict。"""
+    return {"pronunciation": v, "fluency": v, "vocabulary": v, "grammar": v}
+
+
+# ---------------------------------------------------------------------------
+# 1. difficulty 由趨勢 delta 決定（重用 _build_emotional_status 邏輯）
+# ---------------------------------------------------------------------------
+
+def test_directive_difficulty_up_on_rising_trend():
+    """avg 較 prev 上升 >= 1.5 且 avg >= 60 → difficulty=up。"""
+    prev = {"scores": _scores(60)}
+    cd = diagnose._build_companion_directive(_flags(), _scores(70), prev)
+    assert cd["difficulty"] == "up"
+
+
+def test_directive_difficulty_down_on_falling_trend():
+    """avg 較 prev 下滑 <= -1.5 → difficulty=down。"""
+    prev = {"scores": _scores(70)}
+    cd = diagnose._build_companion_directive(_flags(), _scores(50), prev)
+    assert cd["difficulty"] == "down"
+
+
+def test_directive_difficulty_hold_when_flat():
+    """趨勢平穩（|delta| < 1.5）→ difficulty=hold。"""
+    prev = {"scores": _scores(60)}
+    cd = diagnose._build_companion_directive(_flags(), _scores(61), prev)
+    assert cd["difficulty"] == "hold"
+
+
+def test_directive_difficulty_hold_when_no_prev():
+    """無 prev（冷啟動）→ delta=0 → hold。"""
+    cd = diagnose._build_companion_directive(_flags(), _scores(70), None)
+    assert cd["difficulty"] == "hold"
+
+
+# ---------------------------------------------------------------------------
+# 2. goal/topic/questions 由最高優先旗標決定
+# ---------------------------------------------------------------------------
+
+def test_directive_article_flag_drives_topic():
+    """article_correction 命中 → 目標鎖定冠詞、話題為食物。"""
+    cd = diagnose._build_companion_directive(_flags(article=True), _scores(60), None)
+    assert "冠詞" in cd["next_goal"]
+    assert "食物" in cd["topic"]
+
+
+def test_directive_chinese_flag_drives_topic():
+    """high_chinese_ratio 命中 → 目標鎖定整句英文輸出。"""
+    cd = diagnose._build_companion_directive(_flags(chinese=True), _scores(60), None)
+    assert "英文" in cd["next_goal"]
+
+
+def test_directive_article_flag_wins_over_chinese():
+    """優先序：article_correction > high_chinese_ratio。"""
+    cd = diagnose._build_companion_directive(
+        _flags(article=True, chinese=True), _scores(60), None
+    )
+    assert "冠詞" in cd["next_goal"]
+
+
+# ---------------------------------------------------------------------------
+# 3. schema 完整性
+# ---------------------------------------------------------------------------
+
+def test_directive_has_all_fields():
+    """directive 六欄齊備、型別正確、example_questions 為 1-3 句字串。"""
+    cd = diagnose._build_companion_directive(_flags(short=True), _scores(55), None)
+    assert set(cd.keys()) == {
+        "level", "difficulty", "next_goal", "topic",
+        "example_questions", "fallback_hint",
+    }
+    assert cd["difficulty"] in ("up", "hold", "down")
+    assert isinstance(cd["example_questions"], list)
+    assert 1 <= len(cd["example_questions"]) <= 3
+    assert all(isinstance(q, str) and q for q in cd["example_questions"])
+    assert cd["next_goal"] and cd["topic"] and cd["fallback_hint"]
+
+
+# ---------------------------------------------------------------------------
+# 4. _normalize_directive 軟性正規化
+# ---------------------------------------------------------------------------
+
+def test_normalize_directive_valid_passes_through():
+    """合法 directive → 正規化後保留內容。"""
+    raw = {
+        "level": "L2",
+        "difficulty": "up",
+        "next_goal": "升級句型",
+        "topic": "農場動物",
+        "example_questions": ["What color is the pig?", "Do you see a cat?"],
+        "fallback_hint": "退回二選一",
+    }
+    out = diagnose._normalize_directive(raw)
+    assert out is not None
+    assert out["difficulty"] == "up"
+    assert out["next_goal"] == "升級句型"
+    assert out["example_questions"] == ["What color is the pig?", "Do you see a cat?"]
+
+
+def test_normalize_directive_non_dict_returns_none():
+    """非 dict → None（呼叫端補規則式）。"""
+    assert diagnose._normalize_directive("nope") is None
+    assert diagnose._normalize_directive(None) is None
+
+
+def test_normalize_directive_missing_goal_or_topic_returns_none():
+    """缺 next_goal 或 topic → None。"""
+    assert diagnose._normalize_directive({"difficulty": "up"}) is None
+    assert diagnose._normalize_directive(
+        {"next_goal": "x", "topic": ""}
+    ) is None
+
+
+def test_normalize_directive_bad_difficulty_defaults_hold():
+    """difficulty 非法值 → 收斂為 hold；example_questions 過長截到 3 句。"""
+    raw = {
+        "difficulty": "sideways",
+        "next_goal": "goal",
+        "topic": "topic",
+        "example_questions": ["a", "b", "c", "d", "e"],
+    }
+    out = diagnose._normalize_directive(raw)
+    assert out is not None
+    assert out["difficulty"] == "hold"
+    assert len(out["example_questions"]) == 3
+
+
+# ---------------------------------------------------------------------------
+# 5. format_directive_for_prompt 文字化
+# ---------------------------------------------------------------------------
+
+def test_format_directive_none_returns_none():
+    """None → None（冷啟動時 prompt 不注入）。"""
+    assert diagnose.format_directive_for_prompt(None) is None
+
+
+def test_format_directive_contains_strategy_block():
+    """輸出含策略區塊標題、目標與話題內容。"""
+    cd = diagnose._build_companion_directive(_flags(article=True), _scores(60), None)
+    s = diagnose.format_directive_for_prompt(cd)
+    assert s is not None
+    assert "【本輪教學策略】" in s
+    assert cd["next_goal"] in s
+    assert cd["topic"] in s
+    # 護欄提醒：帶讀句不可改寫
+    assert "跟我說一遍" in s
+
+
+# ---------------------------------------------------------------------------
+# 6. 掛進主流程 + generate_diagnosis 收斂保底
+# ---------------------------------------------------------------------------
+
+def test_rule_based_diagnosis_includes_directive():
+    """_rule_based_diagnosis 回傳含合法 companion_directive。"""
+    interactions = [
+        {
+            "student_text": "我想要 apple",
+            "asr_confidence": 0.8,
+            "ai_response_text": "很棒！記得母音開頭用 an：I want an apple.",
+            "scores": {"fluency": 55, "vocabulary": 60, "grammar": 50},
+        }
+    ]
+    d = diagnose._rule_based_diagnosis(interactions, None)
+    cd = d["companion_directive"]
+    assert cd["difficulty"] in ("up", "hold", "down")
+    assert cd["next_goal"] and cd["topic"]
+
+
+def test_generate_diagnosis_always_has_directive(monkeypatch):
+    """無 API key → 規則式路徑，最終一定有合法 directive（含空互動極端情況）。"""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    d = diagnose.generate_diagnosis([], None)
+    assert d.get("companion_directive")
+    assert d["companion_directive"]["difficulty"] in ("up", "hold", "down")

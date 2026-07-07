@@ -29,6 +29,9 @@ LLM_TIMEOUT_S: float = 8.0
 # ffmpeg 轉檔逾時秒數
 FFMPEG_TIMEOUT_S: float = 10.0
 
+# 每 N 個「成功回合」觸發一次背景導師更新（回寫 companion_directive）
+DIRECTIVE_REFRESH_EVERY: int = 5
+
 
 @dataclass
 class TurnResult:
@@ -119,6 +122,12 @@ class VoicePipeline:
         self._lock = asyncio.Lock()
         # 兜底話術輪替器
         self._fallback_cycle = itertools.cycle(scaffold.FALLBACK_LINES)
+        # B1 雙 Agent 閉環：已格式化的陪聊策略字串（即時路徑只讀這個，零 DB/網路）
+        self._directive: str | None = None
+        # 累計「成功回合」數，用於每 N 輪觸發背景導師更新
+        self._turn_count: int = 0
+        # 背景刷新防重入旗標
+        self._directive_refreshing: bool = False
 
     # ---------- 對外入口 ----------
 
@@ -203,7 +212,9 @@ class VoicePipeline:
         try:
             if self.llm is not None and self.llm.available():
                 llm_text = await asyncio.wait_for(
-                    asyncio.to_thread(self.llm.generate, result.asr_text, sc),
+                    asyncio.to_thread(
+                        self.llm.generate, result.asr_text, sc, self._directive
+                    ),
                     timeout=LLM_TIMEOUT_S,
                 )
         except Exception:
@@ -237,8 +248,38 @@ class VoicePipeline:
             # DB 寫入失敗不阻斷回覆（demo 韌性優先）
             result.seq = 0
 
+        # B1：每 N 個成功回合，背景（不 await）觸發導師更新 companion_directive
+        self._turn_count += 1
+        if DIRECTIVE_REFRESH_EVERY > 0 and self._turn_count % DIRECTIVE_REFRESH_EVERY == 0:
+            asyncio.create_task(self._refresh_directive())
+
         await self._emit_state(emit, result, "idle")
         return result
+
+    async def _refresh_directive(self) -> None:
+        """背景更新 directive：讀 DB→產診斷→存 DB→更新記憶體快取。
+
+        全程在 asyncio.to_thread 執行，導師絕不進即時路徑；失敗維持舊 directive。
+        """
+        if self._directive_refreshing:
+            return
+        self._directive_refreshing = True
+        try:
+            from server import diagnose
+
+            def _work():
+                recent = store.list_interactions(limit=10)
+                diagnoses = store.list_diagnoses()
+                prev = diagnoses[-1] if diagnoses else None
+                diag = diagnose.generate_diagnosis(recent, prev)
+                store.add_diagnosis(diag)  # 持久化（含 companion_directive）
+                return diagnose.format_directive_for_prompt(diag.get("companion_directive"))
+
+            self._directive = await asyncio.to_thread(_work)
+        except Exception:
+            pass  # 更新失敗維持舊 directive（或 None），即時路徑不受影響
+        finally:
+            self._directive_refreshing = False
 
     async def _synth_tts(self, result: TurnResult, emit, segments: list[tuple[str, str]]) -> None:
         """階段：TTS 合成（to_thread；不可用/失敗 → tts_wav=None，前端降級）。"""

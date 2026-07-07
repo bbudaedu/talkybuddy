@@ -99,8 +99,18 @@ class EdgeLLM:
                 EdgeLLM._model_failed = True
                 return None
 
-    def generate(self, student_text: str, scaffold: "ScaffoldResult") -> str | None:  # noqa: F821
-        """依 scaffold 結果生成加值回覆；任何失敗、逾時或安全命中回 None。"""
+    def generate(
+        self,
+        student_text: str,
+        scaffold: "ScaffoldResult",  # noqa: F821
+        directive: str | None = None,
+    ) -> str | None:
+        """依 scaffold 結果生成加值回覆；任何失敗、逾時或安全命中回 None。
+
+        directive（可選）：已格式化的「本輪教學策略」中文區塊，由 pipeline 端
+        提供。None 或空白 → 完全不注入，行為與現況一致。護欄：target 帶讀句
+        仍由 scaffold 決定，directive 只影響稱讚語與延伸問句。
+        """
         start = time.monotonic()
         try:
             target = getattr(scaffold, "target_sentence", None)
@@ -111,9 +121,13 @@ class EdgeLLM:
             if time.monotonic() - start > _GENERATE_TIMEOUT_S:
                 return None
 
+            directive_block = (
+                f"\n{directive.strip()}\n" if directive and directive.strip() else ""
+            )
             user_prompt = (
                 f"學生剛剛說：「{student_text}」\n"
                 f"目標英文句：{target or ''}\n"
+                f"{directive_block}"
                 "請照規則回覆：先一句繁體中文稱讚鼓勵，"
                 "再用「跟我說一遍：<英文句>」帶讀目標英文句。"
             )
