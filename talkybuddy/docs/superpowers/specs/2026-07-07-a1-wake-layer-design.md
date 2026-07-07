@@ -36,9 +36,9 @@
 ```
 
 - server 端 `run_turn_audio` 呼叫路徑、frame 協定**完全不動**。
-- **可選**新增一個純記錄用的上行事件 `{"type":"wake","source":"wakeword"|"push"}`：
-  喚醒瞬間送出，server 端可忽略或記 log（供日後統計誤觸/使用）。server 不需為 A1 改行為，
-  此事件為 nice-to-have，實作時若徒增複雜度可延後。
+- **（定案：一併做）**新增一個純記錄用的上行事件 `{"type":"wake","source":"wakeword"|"push"}`：
+  喚醒瞬間由 client 送出，server 端 `/ws/talk` 收到後記 log（供日後統計誤觸/使用），不改變一輪對話行為。
+  A1 一併實作此事件的 client 發送與 server 記錄兩端。
 
 ## 狀態機
 
@@ -90,8 +90,9 @@ Controller 只依賴此介面。Porcupine 與未來 openWakeWord/中文詞各自
   或改在 `web/` 引一個 `<script type="module">` 側掛。實作時先驗證 CDN ESM 路徑與 WASM/worker
   資產能在 `localhost` 正常載入；若 CDN 方案受阻，退而把套件 vendored 到 `web/vendor/`。
   **此為 A1 唯一較不確定的工程點，實作首步先打通最小 PoC。**
-- **AccessKey**：Picovoice Console 免費申請（有用量上限；產品化需授權方案）。放 client 設定
-  （原型階段可硬編或由 `/api/status` 之類下發；勿 commit 進 repo，走環境變數/本地設定檔）。
+- **AccessKey（定案：由 server 下發）**：Picovoice Console 免費申請（有用量上限；產品化需授權方案）。
+  key 存在 **server 端環境變數/本地未追蹤設定檔**，經 **`/api/status`（或新增 `/api/wake-config`）下發**給 client，
+  **不 commit 進 repo、不硬編在 `web/index.html`**。client 啟動喚醒引擎前先取回 key。
 - **喚醒詞 `.ppn`**：於 Picovoice Console 產（Web target，自訂關鍵詞免訓練資料）。
   先做英文「Hey Penguin」/「Hey Buddy」。`.ppn` 檔放 `web/assets/` 或 CDN base64 載入。
 - **隱私**：Porcupine 全程在 WASM 內比對，喚醒前**不建立 WS 音訊上傳**（由 MicRouter 保證）；
