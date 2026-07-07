@@ -119,3 +119,16 @@ test("canWake=false 時忽略喚醒（半雙工鎖）", async () => {
   assert.equal(c.state, WakeState.ARMED);
   assert.ok(!calls.includes("mic.recordTurn"));
 });
+
+test("degrade-safe：engine.start 失敗時 arm 不拋出、仍回到 ARMED（可用）", async () => {
+  const { micRouter } = makeStubs();
+  const t = manualTimers();
+  const engine = {
+    available() { return true; },
+    async start() { throw new Error("engine.start 模擬失敗"); },
+    async stop() {},
+  };
+  const c = new WakeController({ engine, micRouter, setTimeout: t.setTimeout, clearTimeout: t.clearTimeout });
+  await assert.doesNotReject(c.arm());
+  assert.equal(c.state, WakeState.ARMED);
+});
