@@ -111,11 +111,16 @@ def _webm_to_wav(webm_bytes: bytes) -> str | None:
 class VoicePipeline:
     """單一 session 的語音對話狀態機（半雙工）。"""
 
-    def __init__(self, asr, llm, tts):
-        """依賴注入 ASR / LLM / TTS 引擎實例（測試可傳 stub）。"""
+    def __init__(self, asr, llm, tts, cloud_tts=None):
+        """依賴注入 ASR / LLM / TTS 引擎實例（測試可傳 stub）。
+
+        cloud_tts：選填的雲端 TTS（CloudTTS，同 available()/synth() 契約）；
+        None（預設）→ 只走邊緣 TTS，向後相容既有呼叫端與測試。
+        """
         self.asr = asr
         self.llm = llm
         self.tts = tts
+        self.cloud_tts = cloud_tts
         # "edge" | "cloud"，由 app.py 切換
         self.network_mode: str = "edge"
         # 半雙工鎖：同時只跑一輪
@@ -284,13 +289,24 @@ class VoicePipeline:
             self._directive_refreshing = False
 
     async def _synth_tts(self, result: TurnResult, emit, segments: list[tuple[str, str]]) -> None:
-        """階段：TTS 合成（to_thread；不可用/失敗 → tts_wav=None，前端降級）。"""
+        """階段：TTS 合成（to_thread；不可用/失敗 → tts_wav=None，前端降級）。
+
+        cloud 模式先試雲端 CloudTTS，回 None（逾時/斷網/錯誤）→ 靜默降級邊緣 TTSEngine；
+        edge 模式完全不碰雲端。任一失敗最終 tts_wav=None，維持既有前端降級行為。
+        """
         await self._emit_state(emit, result, "tts")
         t_tts = time.monotonic()
         wav: bytes | None = None
         try:
-            if self.tts is not None and self.tts.available() and segments:
-                wav = await asyncio.to_thread(self.tts.synth, segments)
+            if segments:
+                if (
+                    self.network_mode == "cloud"
+                    and self.cloud_tts is not None
+                    and self.cloud_tts.available()
+                ):
+                    wav = await asyncio.to_thread(self.cloud_tts.synth, segments)
+                if wav is None and self.tts is not None and self.tts.available():
+                    wav = await asyncio.to_thread(self.tts.synth, segments)
         except Exception:
             wav = None
         result.latency_ms["tts_first"] = int((time.monotonic() - t_tts) * 1000)
