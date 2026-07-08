@@ -58,3 +58,18 @@ WAKE_KEYWORD_PUBLIC_PATH: str = os.environ.get("WAKE_KEYWORD_PUBLIC_PATH", "")
 WAKE_MODEL_PUBLIC_PATH: str = os.environ.get("WAKE_MODEL_PUBLIC_PATH", "/static/assets/porcupine_params.pv")
 # 喚醒靈敏度 0~1（越高越易觸發、也越易誤觸）。
 WAKE_SENSITIVITY: float = float(os.environ.get("WAKE_SENSITIVITY", "0.6"))
+
+
+# ---------------------------------------------------------------------------
+# B4-5 家長同意 gate（consent；見 research/b_axis/B4_隱私與Guardrails.md §2.3）
+# demo 預設 True（正式版接學校/家長書面同意書，屬法遵層級，工程只留旗標）。
+# 未同意 → 強制 edge-only：不切雲端、不送任何資料上雲。可由環境變數覆寫。
+# ---------------------------------------------------------------------------
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in ("0", "false", "no", "off", "")
+
+
+CONSENT_GRANTED: bool = _env_bool("TALKYBUDDY_CONSENT_GRANTED", True)

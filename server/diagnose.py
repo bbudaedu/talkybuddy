@@ -608,7 +608,9 @@ def generate_diagnosis(interactions: list[dict], prev: dict | None,
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     result = None
-    if api_key:
+    # B4-5 consent gate：真正的雲端資料出境 chokepoint。未取得家長同意時，
+    # 即使有金鑰也不上雲，改走本地規則式（背景 _refresh_directive 亦涵蓋）。
+    if api_key and guardrails.consent_granted():
         try:
             result = _call_anthropic_api(interactions, prev, api_key)
         except Exception:
