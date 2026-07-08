@@ -25,3 +25,13 @@ talkybuddy/models/_sherpa_cache/
 # Large model binaries — LLM (qwen .gguf) and piper TTS voices (.onnx)
 talkybuddy/models/*.gguf
 talkybuddy/models/*.onnx
+# A1 wake assets — Porcupine params/keyword models (fetched at verify time, not committed)
+talkybuddy/web/assets/*.pv
+talkybuddy/web/assets/*.ppn
+.gstack/
+
+# Runtime SQLite DB — seeded fresh on boot via seed_demo(); never commit demo state
+talkybuddy/data/*.db
+# Runtime logs (server / verify / rehearsal); keep setup.log as install record
+talkybuddy/logs/*.log
+!talkybuddy/logs/setup.log
