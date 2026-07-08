@@ -80,9 +80,15 @@ class CloudTTS:
             try:
                 with urllib.request.urlopen(req, timeout=CLOUD_TTS_TIMEOUT_S) as resp:
                     raw = resp.read()
+                    content_type = resp.headers.get("Content-Type", "")
             except Exception:
                 return None
             if not raw:
+                return None
+            # 黑名單（非白名單）：只擋「明顯不是音訊」的型別，避免真實 raw PCM
+            # （Content-Type 可能是 audio/*、application/octet-stream 或空字串）被誤殺。
+            ct = (content_type or "").strip().lower()
+            if ct.startswith("text/") or ct.startswith("application/json"):
                 return None
             return _pcm_to_wav(raw)
         except Exception:
@@ -94,6 +100,9 @@ def _pcm_to_wav(raw: bytes) -> bytes | None:
     """raw 16-bit LE mono PCM(22050Hz) → WAV bytes；已是 RIFF 則原樣回傳；失敗回 None。"""
     if raw[:4] == b"RIFF":
         return raw
+    if len(raw) % 2 != 0:
+        # 16-bit LE mono PCM 必為偶數 bytes；奇數長度代表 body 不是合法 raw PCM。
+        return None
     try:
         buf = io.BytesIO()
         with wave.open(buf, "wb") as wf:
