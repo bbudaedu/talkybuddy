@@ -140,3 +140,8 @@ def test_synth_none_without_key(monkeypatch):
     monkeypatch.setattr(config, "ELEVENLABS_API_KEY", "")
     monkeypatch.setattr(config, "ELEVENLABS_VOICE_ID", "")
     assert CloudTTS().synth([("zh", "你好")]) is None
+
+
+def test_synth_none_on_malformed_segment(keyed):
+    # 1-element tuple → unpacking would raise; must degrade to None, never raise
+    assert CloudTTS().synth([("zh",)]) is None
