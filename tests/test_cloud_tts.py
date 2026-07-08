@@ -17,10 +17,11 @@ from server.cloud_tts import CloudTTS
 
 
 class _FakeResp:
-    """假 urlopen 回應：支援 context manager 與 read()。"""
+    """假 urlopen 回應：支援 context manager、read() 與 headers。"""
 
-    def __init__(self, data: bytes):
+    def __init__(self, data: bytes, content_type: str = "audio/mpeg"):
         self._data = data
+        self.headers = {"Content-Type": content_type}
 
     def read(self) -> bytes:
         return self._data
@@ -145,3 +146,23 @@ def test_synth_none_without_key(monkeypatch):
 def test_synth_none_on_malformed_segment(keyed):
     # 1-element tuple → unpacking would raise; must degrade to None, never raise
     assert CloudTTS().synth([("zh",)]) is None
+
+
+def test_synth_none_on_html_200(keyed, monkeypatch):
+    # HTTP 200 但 body 是反向代理/錯誤頁注入的 HTML → 視為假成功，須降級回 None
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda req, timeout=None: _FakeResp(
+            b"<html>error</html>", content_type="text/html; charset=utf-8"
+        ),
+    )
+    assert CloudTTS().synth([("zh", "你好")]) is None
+
+
+def test_synth_none_on_odd_length_pcm(keyed, monkeypatch):
+    # 非 RIFF 且長度為奇數 → 不可能是合法 16-bit LE mono PCM，須降級回 None
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda req, timeout=None: _FakeResp(b"\x01\x02\x03", content_type="audio/pcm"),
+    )
+    assert CloudTTS().synth([("zh", "你好")]) is None
