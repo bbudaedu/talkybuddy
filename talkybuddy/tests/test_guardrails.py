@@ -95,3 +95,29 @@ def test_llm_system_prompt_embeds_safety_clause():
     """EdgeLLM._SYSTEM_PROMPT 尾端含 CHILD_SAFETY_CLAUSE（edge 側護欄）。"""
     from server.llm import EdgeLLM
     assert guardrails.CHILD_SAFETY_CLAUSE in EdgeLLM._SYSTEM_PROMPT
+
+
+# ---------------------------------------------------------------------------
+# 5. B4-5：家長同意 gate（consent）—— 啟用雲端路徑前的單一守門
+# ---------------------------------------------------------------------------
+
+def test_consent_granted_default_true():
+    """demo 預設同意 → True（正式版接學校/家長書面同意書）。"""
+    from server import config
+    assert config.CONSENT_GRANTED is True
+    assert guardrails.consent_granted() is True
+
+
+def test_consent_granted_respects_config_false(monkeypatch):
+    """config.CONSENT_GRANTED=False → 守門回 False（強制 edge-only）。"""
+    from server import config
+    monkeypatch.setattr(config, "CONSENT_GRANTED", False)
+    assert guardrails.consent_granted() is False
+
+
+def test_consent_granted_returns_bool(monkeypatch):
+    """回傳一定是純 bool（非 truthy 值），與旗標型別脫鉤。"""
+    from server import config
+    monkeypatch.setattr(config, "CONSENT_GRANTED", 1)
+    r = guardrails.consent_granted()
+    assert r is True and isinstance(r, bool)

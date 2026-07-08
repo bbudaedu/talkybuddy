@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from server import config, diagnose, profile, store
+from server import config, diagnose, guardrails, profile, store
 from server.asr import ASREngine
 from server.llm import EdgeLLM
 from server.pipeline import VoicePipeline
@@ -152,6 +152,17 @@ async def api_network_mode(body: NetworkModeBody):
     mode = body.mode
     if mode not in ("edge", "cloud"):
         raise HTTPException(status_code=400, detail="mode 必須是 'edge' 或 'cloud'")
+
+    # B4-5 consent gate：切雲端前先驗家長同意；未同意 → 強制 edge-only，
+    # 不同步、不產雲端診斷、不動 directive 快取（資料不出境）。
+    if mode == "cloud" and not guardrails.consent_granted():
+        pipeline.network_mode = "edge"
+        return {
+            "network_mode": "edge",
+            "synced": 0,
+            "new_diagnosis": None,
+            "consent_required": True,
+        }
 
     pipeline.network_mode = mode
     if mode == "edge":
