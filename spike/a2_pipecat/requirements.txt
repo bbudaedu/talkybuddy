@@ -3,3 +3,4 @@ pipecat-ai[funasr]
 sherpa-onnx
 numpy
 pytest
+pytest-asyncio
