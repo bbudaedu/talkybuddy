@@ -45,45 +45,48 @@ class CloudTTS:
         """
         if not segments:
             return None
-        text = " ".join(
-            (t or "").strip() for _lang, t in segments if (t or "").strip()
-        )
-        if not text:
-            return None
-
         try:
-            from server.config import (
-                CLOUD_TTS_TIMEOUT_S,
-                ELEVENLABS_API_KEY,
-                ELEVENLABS_MODEL,
-                ELEVENLABS_VOICE_ID,
+            text = " ".join(
+                (t or "").strip() for _lang, t in segments if (t or "").strip()
             )
-        except Exception:
-            return None
-        if not ELEVENLABS_API_KEY or not ELEVENLABS_VOICE_ID:
-            return None
+            if not text:
+                return None
 
-        url = f"{_API_BASE}/{ELEVENLABS_VOICE_ID}?output_format=pcm_22050"
-        body = json.dumps(
-            {"text": text, "model_id": ELEVENLABS_MODEL}
-        ).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=body,
-            headers={
-                "Content-Type": "application/json",
-                "xi-api-key": ELEVENLABS_API_KEY,
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=CLOUD_TTS_TIMEOUT_S) as resp:
-                raw = resp.read()
+            try:
+                from server.config import (
+                    CLOUD_TTS_TIMEOUT_S,
+                    ELEVENLABS_API_KEY,
+                    ELEVENLABS_MODEL,
+                    ELEVENLABS_VOICE_ID,
+                )
+            except Exception:
+                return None
+            if not ELEVENLABS_API_KEY or not ELEVENLABS_VOICE_ID:
+                return None
+
+            url = f"{_API_BASE}/{ELEVENLABS_VOICE_ID}?output_format=pcm_22050"
+            body = json.dumps(
+                {"text": text, "model_id": ELEVENLABS_MODEL}
+            ).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "xi-api-key": ELEVENLABS_API_KEY,
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=CLOUD_TTS_TIMEOUT_S) as resp:
+                    raw = resp.read()
+            except Exception:
+                return None
+            if not raw:
+                return None
+            return _pcm_to_wav(raw)
         except Exception:
             return None
-        if not raw:
-            return None
-        return _pcm_to_wav(raw)
 
 
 # ----------------------------------------------------------------------
