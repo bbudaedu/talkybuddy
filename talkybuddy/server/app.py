@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from server import config, diagnose, guardrails, profile, store
 from server.asr import ASREngine
 from server.llm import EdgeLLM
+from server.cloud_tts import CloudTTS
 from server.pipeline import VoicePipeline
 from server.tts import TTSEngine
 
@@ -46,7 +47,8 @@ logger = logging.getLogger("talkybuddy.wake")
 asr_engine = ASREngine()
 llm_engine = EdgeLLM()
 tts_engine = TTSEngine()
-pipeline = VoicePipeline(asr_engine, llm_engine, tts_engine)
+cloud_tts_engine = CloudTTS()
+pipeline = VoicePipeline(asr_engine, llm_engine, tts_engine, cloud_tts=cloud_tts_engine)
 
 
 def _prewarm_engines() -> None:
@@ -112,6 +114,7 @@ async def api_status():
         "asr": bool(asr_engine.available()),
         "llm": bool(llm_engine.available()),
         "tts": bool(tts_engine.available()),
+        "cloud_tts": bool(cloud_tts_engine.available()),
         "network_mode": pipeline.network_mode,
         "pending": store.pending_count(),
     }
