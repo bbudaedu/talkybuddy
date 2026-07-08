@@ -5,8 +5,10 @@
  #3 stub 多句回覆被 sherpa 逐句合成（OutputSink 有音訊 frame）；
  #4 SPIKE_INTERRUPT=1 時第 1 句播放中注入 InterruptionFrame → 後續句不再合成（frames 明顯變少）。
 
-未知 #3 實測：FunASRSTTService＝SegmentedSTTService，用 UserStartedSpeaking→audio→
-UserStoppedSpeaking 框一整段。
+未知 #3 實測（更正）：FunASRSTTService＝SegmentedSTTService，段落轉錄**只**由
+VAD 前綴 frame 觸發：VADUserStartedSpeakingFrame→audio→VADUserStoppedSpeakingFrame。
+非 VAD 版 UserStartedSpeaking/UserStoppedSpeaking 不會啟動 run_stt（buffer 被裁到 1s），
+故 spike 用 VAD 前綴 frame 模擬真實 VAD 段界。
 """
 from __future__ import annotations
 
@@ -21,8 +23,8 @@ from pipecat.pipeline.runner import PipelineRunner
 from pipecat.services.funasr.stt import FunASRSTTService
 from pipecat.frames.frames import (
     InputAudioRawFrame,
-    UserStartedSpeakingFrame,
-    UserStoppedSpeakingFrame,
+    VADUserStartedSpeakingFrame,
+    VADUserStoppedSpeakingFrame,
     TranscriptionFrame,
     EndFrame,
 )
@@ -60,10 +62,11 @@ async def main(interrupt: bool = False, no_stt: bool = False):
                 TranscriptionFrame(text="測試一句", user_id="u", timestamp="0")
             )
         else:
-            await task.queue_frame(UserStartedSpeakingFrame())
+            # SegmentedSTTService 只認 VAD 前綴 frame 才框段落並觸發 run_stt。
+            await task.queue_frame(VADUserStartedSpeakingFrame(start_secs=0.2))
             for f in _load_wav_frames():
                 await task.queue_frame(f)
-            await task.queue_frame(UserStoppedSpeakingFrame())
+            await task.queue_frame(VADUserStoppedSpeakingFrame(stop_secs=0.5))
         await asyncio.sleep(12)  # 等 STT→LLM→TTS 走完
         await task.queue_frame(EndFrame())
 
