@@ -36,8 +36,12 @@ class StreamingTurnManager(FrameProcessor):
         await super().process_frame(frame, direction)
 
         if isinstance(frame, TranscriptionFrame):
-            # 一輪開始：記 asr_text，啟動逐句回覆 task（不轉發轉錄，避免 TTS 合成轉錄文字）
+            # 一輪開始：記 asr_text，啟動逐句回覆 task（不轉發轉錄，避免 TTS 合成轉錄文字）。
+            # _bot_speaking 於此設 True 並維持，直到 barge-in 才設 False：manager 會瞬間 push
+            # 完所有 TTSSpeakFrame（實際播放節奏在下游 TTS），若在 _stream_reply 結束即重置，
+            # 稍後回注的 barge-in VAD frame 到達時 guard 已為 False、barge-in 失效。
             self.result.asr_text = getattr(frame, "text", "") or ""
+            self._bot_speaking = True
             self._reply_task = asyncio.create_task(self._stream_reply())
             return
 
@@ -55,8 +59,11 @@ class StreamingTurnManager(FrameProcessor):
         await self.push_frame(frame, direction)
 
     async def _stream_reply(self):
-        """逐句從 ReplySource 取回覆，push TTSSpeakFrame；被 cancel 時保留已合成部分句。"""
-        self._bot_speaking = True
+        """逐句從 ReplySource 取回覆，push TTSSpeakFrame；被 cancel 時保留已合成部分句。
+
+        注意：不在此重置 _bot_speaking（見 TranscriptionFrame 分支說明）——本 task 只負責
+        把句子排入下游，播放節奏與「說話中」語意由 barge-in 分支收斂。
+        """
         try:
             async for sentence in self._reply_source.stream(self.result.asr_text, self._ctx):
                 await self.push_frame(TTSSpeakFrame(text=sentence), FrameDirection.DOWNSTREAM)
@@ -64,5 +71,3 @@ class StreamingTurnManager(FrameProcessor):
         except asyncio.CancelledError:
             # barge-in 中斷：reply_text 已含中斷前的部分句，直接收斂
             raise
-        finally:
-            self._bot_speaking = False
