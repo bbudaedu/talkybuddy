@@ -73,3 +73,17 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 CONSENT_GRANTED: bool = _env_bool("TALKYBUDDY_CONSENT_GRANTED", True)
+
+
+# ---------------------------------------------------------------------------
+# 雲端情緒 TTS（ElevenLabs；見 docs/superpowers/specs/2026-07-08-cloud-emotional-tts-design.md）
+# 全走環境變數、絕不 commit。network_mode=="cloud" 時 pipeline 才會嘗試雲端，
+# 失敗/逾時/斷網 → 靜默降級回邊緣 Piper。
+# ---------------------------------------------------------------------------
+ELEVENLABS_API_KEY: str = os.environ.get("ELEVENLABS_API_KEY", "")
+# 合成用 voice_id（先用內建溫柔中文女聲；克隆自選人聲後僅換此值，架構不動）。空=不啟用雲端。
+ELEVENLABS_VOICE_ID: str = os.environ.get("ELEVENLABS_VOICE_ID", "")
+# 合成模型：eleven_flash_v2_5 低延遲預設；可切 eleven_v3 情緒更強。
+ELEVENLABS_MODEL: str = os.environ.get("ELEVENLABS_MODEL", "eleven_flash_v2_5")
+# 雲端合成逾時（秒）；逾時即降級回邊緣。
+CLOUD_TTS_TIMEOUT_S: float = float(os.environ.get("CLOUD_TTS_TIMEOUT_S", "6.0"))
