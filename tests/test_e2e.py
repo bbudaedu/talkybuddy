@@ -56,10 +56,11 @@ async def test_get_api_status_shape():
         resp = await client.get("/api/status")
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body.keys()) == {"asr", "llm", "tts", "network_mode", "pending"}
+    assert set(body.keys()) == {"asr", "llm", "tts", "cloud_tts", "network_mode", "pending"}
     assert isinstance(body["asr"], bool)
     assert isinstance(body["llm"], bool)
     assert isinstance(body["tts"], bool)
+    assert isinstance(body["cloud_tts"], bool)
     assert body["network_mode"] == "edge"
     assert isinstance(body["pending"], int)
 
