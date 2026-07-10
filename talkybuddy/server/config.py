@@ -61,6 +61,18 @@ WAKE_SENSITIVITY: float = float(os.environ.get("WAKE_SENSITIVITY", "0.6"))
 
 
 # ---------------------------------------------------------------------------
+# 雲端 LLM 大腦（子專案 A）：network_mode=cloud 時，陪聊/導師改經 Bedrock Converse。
+# provider ∈ {"bedrock","anthropic","off"}；憑證走 boto3 credential chain，不寫進 repo。
+# ---------------------------------------------------------------------------
+LLM_CLOUD_PROVIDER: str = os.environ.get("LLM_CLOUD_PROVIDER", "bedrock")
+BEDROCK_REGION: str = os.environ.get("BEDROCK_REGION", "us-east-1")
+# 陪聊模型（便宜快的 Nova Lite 起步；換 Claude Haiku 僅需改此值或環境變數）。
+COMPANION_MODEL_ID: str = os.environ.get("COMPANION_MODEL_ID", "amazon.nova-lite-v1:0")
+# 導師模型（結構化診斷；量小、每 5 輪一次，可用較強模型）。
+TUTOR_MODEL_ID: str = os.environ.get("TUTOR_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+
+
+# ---------------------------------------------------------------------------
 # B4-5 家長同意 gate（consent；見 research/b_axis/B4_隱私與Guardrails.md §2.3）
 # demo 預設 True（正式版接學校/家長書面同意書，屬法遵層級，工程只留旗標）。
 # 未同意 → 強制 edge-only：不切雲端、不送任何資料上雲。可由環境變數覆寫。
