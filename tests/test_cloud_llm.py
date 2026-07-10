@@ -83,3 +83,30 @@ def test_available_false_when_no_client(monkeypatch):
 def test_available_true_when_bedrock_and_client(monkeypatch):
     monkeypatch.setattr(cloud_llm, "_get_client", lambda: object())
     assert cloud_llm.CloudLLM().available() is True
+
+
+def _fake_tool_response(tool_input):
+    return {"output": {"message": {"content": [{"toolUse": {"name": "diagnose", "input": tool_input}}]}}}
+
+
+_VALID_DIAG = {
+    "scores": {"pronunciation": 60, "fluency": 55, "vocabulary": 62, "grammar": 50},
+    "strengths": ["願意開口"],
+    "weaknesses": ["冠詞 a/an 誤用"],
+    "emotional_status": "平穩",
+    "instructions": {"classroom": "分組朗讀", "device": "顏色主題", "peer": "兩兩配對"},
+}
+
+
+def test_diagnose_via_bedrock_parses_tooluse(monkeypatch):
+    fake = _FakeClient(_fake_tool_response(_VALID_DIAG))
+    monkeypatch.setattr(cloud_llm, "_get_client", lambda: fake)
+    out = cloud_llm.diagnose_via_bedrock([{"student_text": "cat"}], None)
+    assert out["scores"]["pronunciation"] == 60
+    assert out["instructions"]["classroom"] == "分組朗讀"
+
+
+def test_diagnose_via_bedrock_none_on_bad_schema(monkeypatch):
+    fake = _FakeClient(_fake_tool_response({"scores": {}}))  # 缺欄位
+    monkeypatch.setattr(cloud_llm, "_get_client", lambda: fake)
+    assert cloud_llm.diagnose_via_bedrock([{"student_text": "cat"}], None) is None
