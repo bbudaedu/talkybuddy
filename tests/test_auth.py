@@ -25,6 +25,34 @@ def test_jwt_tampered_rejected():
         auth.verify_token(tok + "x")
 
 
+def test_jwt_wrong_segment_count_rejected():
+    with pytest.raises(auth.InvalidToken):
+        auth.verify_token("not-a-jwt")
+
+
+def test_jwt_invalid_base64_rejected():
+    with pytest.raises(auth.InvalidToken):
+        auth.verify_token("a.b.c")
+
+
+def test_jwt_non_json_payload_rejected():
+    # valid signature over a non-JSON payload must still map to InvalidToken
+    import base64
+    import hashlib
+    import hmac
+
+    def b64url(b: bytes) -> str:
+        return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+    seg_h = b64url(b'{"alg":"HS256","typ":"JWT"}')
+    seg_p = b64url(b"not-json")
+    seg = f"{seg_h}.{seg_p}"
+    sig = hmac.new(auth.SECRET.encode(), seg.encode(), hashlib.sha256).digest()
+    tok = seg + "." + b64url(sig)
+    with pytest.raises(auth.InvalidToken):
+        auth.verify_token(tok)
+
+
 def test_seed_and_authenticate():
     auth.ensure_accounts()
     ok = auth.authenticate("aming@demo", "demo1234")

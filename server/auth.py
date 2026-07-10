@@ -62,9 +62,14 @@ def verify_token(token: str) -> dict:
         raise InvalidToken("malformed")
     signing_input = f"{seg_h}.{seg_p}"
     expected = hmac.new(SECRET.encode(), signing_input.encode(), hashlib.sha256).digest()
-    if not hmac.compare_digest(expected, _b64url_decode(seg_s)):
-        raise InvalidToken("bad signature")
-    payload = json.loads(_b64url_decode(seg_p))
+    try:
+        if not hmac.compare_digest(expected, _b64url_decode(seg_s)):
+            raise InvalidToken("bad signature")
+        payload = json.loads(_b64url_decode(seg_p))
+    except (ValueError, TypeError) as e:
+        raise InvalidToken("malformed") from e
+    if not isinstance(payload, dict):
+        raise InvalidToken("malformed payload")
     if int(payload.get("exp", 0)) < int(time.time()):
         raise InvalidToken("expired")
     return payload
