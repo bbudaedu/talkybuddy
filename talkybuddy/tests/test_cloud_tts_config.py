@@ -24,3 +24,6 @@ def test_cloud_tts_defaults_present():
     assert config.ELEVENLABS_STYLE == 0.2
     assert isinstance(config.ELEVENLABS_USE_SPEAKER_BOOST, bool)
     assert config.ELEVENLABS_USE_SPEAKER_BOOST is True
+    # 放慢語速：v3 忽略 speed → 合成後 WSOLA 變速；預設 0.90（比原聲再慢一點點）。
+    assert isinstance(config.CLOUD_TTS_SPEED, float)
+    assert config.CLOUD_TTS_SPEED == 0.90

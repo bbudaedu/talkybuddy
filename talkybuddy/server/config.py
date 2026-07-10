@@ -99,3 +99,7 @@ ELEVENLABS_STYLE: float = float(os.environ.get("ELEVENLABS_STYLE", "0.2"))
 ELEVENLABS_USE_SPEAKER_BOOST: bool = os.environ.get(
     "ELEVENLABS_USE_SPEAKER_BOOST", "true"
 ).strip().lower() in ("1", "true", "yes", "on")
+# 放慢雲端 v3 語音的播放速度。eleven_v3 忽略 API speed → 改在合成後對 raw PCM 做
+# 保持音高的時間伸縮（WSOLA，見 server/timestretch.py）。<1 放慢、1.0 不處理。
+# 預設 0.90＝比原聲再慢一點點，讓國小雙語帶讀更清楚；env 可微調（0.85 更慢等）。
+CLOUD_TTS_SPEED: float = float(os.environ.get("CLOUD_TTS_SPEED", "0.90"))
