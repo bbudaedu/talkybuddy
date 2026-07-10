@@ -30,3 +30,18 @@ async def test_bargein_at_second_sentence_stops_clean():
     # criterion #4：barge-in 輪 state_events 含 barge_in；有回覆內容產出
     assert "barge_in" in manager.result.state_events
     assert manager.result.reply_text != ""
+
+
+from pipecat.frames.frames import VADUserStartedSpeakingFrame
+
+
+@pytest.mark.asyncio
+async def test_transport_vad_frame_no_longer_triggers_bargein():
+    # 判準 D：舊耦合已移除——bot 說話中收 transport VADUserStartedSpeakingFrame → 不 barge-in
+    sink, manager = await run_once(
+        StubReplySource(_FOUR),
+        barge_in=True,
+        inject_frame_factory=lambda: VADUserStartedSpeakingFrame(start_secs=0.2),
+    )
+    assert sink.frame_count >= len(_FOUR)  # 4 句全合成
+    assert "barge_in" not in manager.result.state_events

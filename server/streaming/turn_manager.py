@@ -1,8 +1,8 @@
 """StreamingTurnManager：串流全雙工一輪的編排 + barge-in 取消。
 
 資料流：TranscriptionFrame → ReplySource.stream() 逐句 → 逐句 push TTSSpeakFrame
-（下游 SherpaInterruptibleTTSService 逐句合成）。回覆進行中收到新的
-VADUserStartedSpeakingFrame ＝ barge-in → 先 push InterruptionFrame（TTS 句界停）、
+（下游 SherpaInterruptibleTTSService 逐句合成）。回覆進行中收到
+BargeInDetectedFrame ＝ barge-in → 先 push InterruptionFrame（TTS 句界停）、
 後 cancel reply task（停止上游餵句）。產出 TurnResult。
 
 只 import server.pipeline.TurnResult（dataclass），不碰 _process_text/run_turn_audio 熱路徑。
@@ -15,12 +15,12 @@ from pipecat.frames.frames import (
     TranscriptionFrame,
     TTSSpeakFrame,
     InterruptionFrame,
-    VADUserStartedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 
 from server.pipeline import TurnResult
 from server.streaming.reply_source import ReplyContext, ReplySource
+from server.streaming.barge_in_gate import BargeInDetectedFrame
 
 
 class StreamingTurnManager(FrameProcessor):
@@ -45,8 +45,9 @@ class StreamingTurnManager(FrameProcessor):
             self._reply_task = asyncio.create_task(self._stream_reply())
             return
 
-        if isinstance(frame, VADUserStartedSpeakingFrame) and self._bot_speaking:
-            # barge-in：先中止合成（句界停），後取消上游餵句 task
+        if isinstance(frame, BargeInDetectedFrame) and self._bot_speaking:
+            # barge-in：由 BargeInGate 的 BargeInDetectedFrame 觸發（獨立門檻）
+            # 先中止合成（句界停），後取消上游餵句 task
             await self.push_frame(InterruptionFrame(), FrameDirection.DOWNSTREAM)
             if self._reply_task is not None and not self._reply_task.done():
                 self._reply_task.cancel()
@@ -55,7 +56,7 @@ class StreamingTurnManager(FrameProcessor):
             self._bot_speaking = False
             return
 
-        # 其餘 frame（含首個 VADUserStartedSpeakingFrame、音訊、EndFrame 等）照常轉發
+        # 其餘 frame（含 transport VAD/音訊/EndFrame 等）照常轉發
         await self.push_frame(frame, direction)
 
     async def _stream_reply(self):

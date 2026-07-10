@@ -25,6 +25,7 @@ from pipecat.frames.frames import (
 
 from server.streaming.turn_manager import StreamingTurnManager
 from server.streaming.interruptible_tts import SherpaInterruptibleTTSService
+from server.streaming.barge_in_gate import BargeInDetectedFrame
 
 _TB_ROOT = Path(__file__).resolve().parents[2]
 _WAV = _TB_ROOT / "models" / "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17" / "test_wavs" / "zh.wav"
@@ -46,18 +47,18 @@ class OutputSink(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
-class BargeInDriver(FrameProcessor):
-    """看到第 N 個 TTSSpeakFrame（bot 已開講到第 N 句）後回注 VADUserStartedSpeakingFrame。
+class InjectAtSentenceDriver(FrameProcessor):
+    """看到第 N 個 TTSSpeakFrame（bot 已開講到第 N 句）後回注 frame_factory() 到 UPSTREAM。
 
-    注入點釘在第 2 句（at_sentence=2）→ 淨判：sink 合成句數 ≤ 2。
-
-    plumbing 校正（A2-2 執行期）：TTSSpeakFrame 由 manager 往 DOWNSTREAM push，故本 driver
-    須排在 manager **之後**才看得到；回注的 VAD 開口需往 **UPSTREAM** 才回得到 manager
-    （manager 的 process_frame 不分方向都會判 VADUserStartedSpeakingFrame）。
+    plumbing（A2-2 執行期定案）：TTSSpeakFrame 由 manager 往 DOWNSTREAM push，本 driver 須排
+    manager **之後**才看得到；回注的 frame 往 **UPSTREAM** 才回得到 manager（其 process_frame
+    不分方向判斷 barge-in frame）。frame_factory 決定注入哪種 frame（BargeInDetectedFrame＝
+    真 barge-in；VADUserStartedSpeakingFrame＝驗舊耦合已移除）。
     """
 
-    def __init__(self, at_sentence: int = 2, **kwargs):
+    def __init__(self, frame_factory, at_sentence: int = 2, **kwargs):
         super().__init__(**kwargs)
+        self._make = frame_factory
         self._at = at_sentence
         self._seen = 0
         self._fired = False
@@ -68,9 +69,7 @@ class BargeInDriver(FrameProcessor):
             self._seen += 1
             if not self._fired and self._seen >= self._at:
                 self._fired = True
-                await self.push_frame(
-                    VADUserStartedSpeakingFrame(start_secs=0.2), FrameDirection.UPSTREAM
-                )
+                await self.push_frame(self._make(), FrameDirection.UPSTREAM)
         await self.push_frame(frame, direction)
 
 
@@ -83,8 +82,11 @@ def _load_wav_frames(chunk_ms: int = 200):
         yield InputAudioRawFrame(audio=pcm[i:i + step], sample_rate=rate, num_channels=ch)
 
 
-async def run_once(reply_source, *, barge_in: bool, no_stt: bool = True):
-    """跑一輪，回 (OutputSink, StreamingTurnManager)。"""
+async def run_once(reply_source, *, barge_in: bool, no_stt: bool = True, inject_frame_factory=None):
+    """跑一輪，回 (OutputSink, StreamingTurnManager)。
+
+    barge_in=True 時於第 2 個 TTSSpeakFrame 回注 inject_frame_factory()（預設 BargeInDetectedFrame）。
+    """
     sink = OutputSink()
     manager = StreamingTurnManager(reply_source)
 
@@ -92,10 +94,10 @@ async def run_once(reply_source, *, barge_in: bool, no_stt: bool = True):
     if not no_stt:
         from pipecat.services.funasr.stt import FunASRSTTService
         procs.append(FunASRSTTService())
-    # barge-in driver 須置於 manager 之後才看得到下行 TTSSpeakFrame；回注 VAD 走 UPSTREAM 回 manager
+    # barge-in driver 須置於 manager 之後才看得到下行 TTSSpeakFrame；回注 frame 走 UPSTREAM 回 manager
     procs.append(manager)
     if barge_in:
-        procs.append(BargeInDriver(at_sentence=2))
+        procs.append(InjectAtSentenceDriver(inject_frame_factory or BargeInDetectedFrame, at_sentence=2))
     procs += [SherpaInterruptibleTTSService(), sink]
     task = PipelineTask(Pipeline(procs))
 
