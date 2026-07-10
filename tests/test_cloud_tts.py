@@ -40,6 +40,7 @@ def keyed(monkeypatch):
     monkeypatch.setattr(config, "ELEVENLABS_VOICE_ID", "test-voice")
     monkeypatch.setattr(config, "ELEVENLABS_MODEL", "eleven_flash_v2_5")
     monkeypatch.setattr(config, "CLOUD_TTS_TIMEOUT_S", 6.0)
+    monkeypatch.setattr(config, "ELEVENLABS_SPEED", 0.8)
 
 
 # --- available() ---------------------------------------------------------
@@ -99,6 +100,8 @@ def test_synth_builds_correct_request(keyed, monkeypatch):
     assert captured["body"]["model_id"] == "eleven_flash_v2_5"
     # 中英兩段併成單一字串（原生中英混讀）
     assert captured["body"]["text"] == "你好 hi there"
+    # 語速取自 config.ELEVENLABS_SPEED（keyed fixture 設 0.8）→ 證明讀 config 非寫死
+    assert captured["body"]["voice_settings"]["speed"] == 0.8
     assert captured["timeout"] == 6.0
 
 

@@ -13,3 +13,5 @@ def test_cloud_tts_defaults_present():
     assert config.ELEVENLABS_MODEL == "eleven_flash_v2_5"
     assert isinstance(config.CLOUD_TTS_TIMEOUT_S, float)
     assert config.CLOUD_TTS_TIMEOUT_S == 6.0
+    assert isinstance(config.ELEVENLABS_SPEED, float)
+    assert config.ELEVENLABS_SPEED == 0.75
