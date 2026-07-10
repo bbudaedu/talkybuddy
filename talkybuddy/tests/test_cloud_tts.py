@@ -38,9 +38,13 @@ def keyed(monkeypatch):
     """設好金鑰與 voice_id 的環境。"""
     monkeypatch.setattr(config, "ELEVENLABS_API_KEY", "test-key")
     monkeypatch.setattr(config, "ELEVENLABS_VOICE_ID", "test-voice")
-    monkeypatch.setattr(config, "ELEVENLABS_MODEL", "eleven_flash_v2_5")
+    monkeypatch.setattr(config, "ELEVENLABS_MODEL", "eleven_v3")
     monkeypatch.setattr(config, "CLOUD_TTS_TIMEOUT_S", 6.0)
-    monkeypatch.setattr(config, "ELEVENLABS_SPEED", 0.8)
+    # 情緒參數用非預設值 → 證明 body 讀 config、非寫死。
+    monkeypatch.setattr(config, "ELEVENLABS_STABILITY", 0.4)
+    monkeypatch.setattr(config, "ELEVENLABS_SIMILARITY_BOOST", 0.7)
+    monkeypatch.setattr(config, "ELEVENLABS_STYLE", 0.3)
+    monkeypatch.setattr(config, "ELEVENLABS_USE_SPEAKER_BOOST", False)
 
 
 # --- available() ---------------------------------------------------------
@@ -97,11 +101,16 @@ def test_synth_builds_correct_request(keyed, monkeypatch):
     assert captured["method"] == "POST"
     assert captured["headers"]["xi-api-key"] == "test-key"
     assert captured["headers"]["content-type"] == "application/json"
-    assert captured["body"]["model_id"] == "eleven_flash_v2_5"
+    assert captured["body"]["model_id"] == "eleven_v3"
     # 中英兩段併成單一字串（原生中英混讀）
     assert captured["body"]["text"] == "你好 hi there"
-    # 語速取自 config.ELEVENLABS_SPEED（keyed fixture 設 0.8）→ 證明讀 config 非寫死
-    assert captured["body"]["voice_settings"]["speed"] == 0.8
+    # v3 情緒參數取自 config（keyed fixture 設非預設值）→ 證明讀 config 非寫死；不含無效的 speed
+    vs = captured["body"]["voice_settings"]
+    assert vs["stability"] == 0.4
+    assert vs["similarity_boost"] == 0.7
+    assert vs["style"] == 0.3
+    assert vs["use_speaker_boost"] is False
+    assert "speed" not in vs
     assert captured["timeout"] == 6.0
 
 

@@ -57,7 +57,10 @@ class CloudTTS:
                     CLOUD_TTS_TIMEOUT_S,
                     ELEVENLABS_API_KEY,
                     ELEVENLABS_MODEL,
-                    ELEVENLABS_SPEED,
+                    ELEVENLABS_SIMILARITY_BOOST,
+                    ELEVENLABS_STABILITY,
+                    ELEVENLABS_STYLE,
+                    ELEVENLABS_USE_SPEAKER_BOOST,
                     ELEVENLABS_VOICE_ID,
                 )
             except Exception:
@@ -66,12 +69,18 @@ class CloudTTS:
                 return None
 
             url = f"{_API_BASE}/{ELEVENLABS_VOICE_ID}?output_format=pcm_22050"
-            # voice_settings.speed 放慢語速（見 config.ELEVENLABS_SPEED）；較適合兒童聆聽。
+            # v3 情緒參數（見 config）：真 API 驗證確認 eleven_v3 忽略 speed，改以
+            # stability/style 控制情緒起伏、similarity_boost 貼近原聲。不送 speed（無效）。
             body = json.dumps(
                 {
                     "text": text,
                     "model_id": ELEVENLABS_MODEL,
-                    "voice_settings": {"speed": ELEVENLABS_SPEED},
+                    "voice_settings": {
+                        "stability": ELEVENLABS_STABILITY,
+                        "similarity_boost": ELEVENLABS_SIMILARITY_BOOST,
+                        "style": ELEVENLABS_STYLE,
+                        "use_speaker_boost": ELEVENLABS_USE_SPEAKER_BOOST,
+                    },
                 }
             ).encode("utf-8")
             req = urllib.request.Request(
