@@ -29,6 +29,7 @@ from server import config, diagnose, guardrails, profile, store
 from server.asr import ASREngine
 from server.llm import EdgeLLM
 from server.cloud_tts import CloudTTS
+from server.cloud_llm import CloudLLM
 from server.pipeline import VoicePipeline
 from server.tts import TTSEngine
 
@@ -48,7 +49,11 @@ asr_engine = ASREngine()
 llm_engine = EdgeLLM()
 tts_engine = TTSEngine()
 cloud_tts_engine = CloudTTS()
-pipeline = VoicePipeline(asr_engine, llm_engine, tts_engine, cloud_tts=cloud_tts_engine)
+cloud_llm_engine = CloudLLM()
+pipeline = VoicePipeline(
+    asr_engine, llm_engine, tts_engine,
+    cloud_tts=cloud_tts_engine, cloud_llm=cloud_llm_engine,
+)
 
 
 def _prewarm_engines() -> None:
