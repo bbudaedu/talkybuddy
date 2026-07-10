@@ -57,6 +57,7 @@ class CloudTTS:
                     CLOUD_TTS_TIMEOUT_S,
                     ELEVENLABS_API_KEY,
                     ELEVENLABS_MODEL,
+                    ELEVENLABS_SPEED,
                     ELEVENLABS_VOICE_ID,
                 )
             except Exception:
@@ -65,8 +66,13 @@ class CloudTTS:
                 return None
 
             url = f"{_API_BASE}/{ELEVENLABS_VOICE_ID}?output_format=pcm_22050"
+            # voice_settings.speed 放慢語速（見 config.ELEVENLABS_SPEED）；較適合兒童聆聽。
             body = json.dumps(
-                {"text": text, "model_id": ELEVENLABS_MODEL}
+                {
+                    "text": text,
+                    "model_id": ELEVENLABS_MODEL,
+                    "voice_settings": {"speed": ELEVENLABS_SPEED},
+                }
             ).encode("utf-8")
             req = urllib.request.Request(
                 url,

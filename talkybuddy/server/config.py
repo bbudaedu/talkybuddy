@@ -87,3 +87,6 @@ ELEVENLABS_VOICE_ID: str = os.environ.get("ELEVENLABS_VOICE_ID", "")
 ELEVENLABS_MODEL: str = os.environ.get("ELEVENLABS_MODEL", "eleven_flash_v2_5")
 # 雲端合成逾時（秒）；逾時即降級回邊緣。
 CLOUD_TTS_TIMEOUT_S: float = float(os.environ.get("CLOUD_TTS_TIMEOUT_S", "6.0"))
+# 語速（ElevenLabs voice_settings.speed，範圍 0.7–1.2；<1 放慢）。預設 0.75 依人工聽感放慢、
+# 較適合兒童聆聽；可用 env 調整。
+ELEVENLABS_SPEED: float = float(os.environ.get("ELEVENLABS_SPEED", "0.75"))
