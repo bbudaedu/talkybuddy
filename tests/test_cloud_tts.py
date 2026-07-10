@@ -114,6 +114,47 @@ def test_synth_builds_correct_request(keyed, monkeypatch):
     assert captured["timeout"] == 6.0
 
 
+def _sine_pcm(freq=440, seconds=0.2, rate=22050, amp=12000):
+    """產生單聲道 16-bit LE 正弦波 PCM bytes（供放慢測試，長度 > 一個 WSOLA frame）。"""
+    import math
+    import struct
+
+    n = int(seconds * rate)
+    return b"".join(
+        struct.pack("<h", int(amp * math.sin(2 * math.pi * freq * i / rate)))
+        for i in range(n)
+    )
+
+
+def test_synth_slows_down_by_default(keyed, monkeypatch):
+    # 預設 CLOUD_TTS_SPEED=0.90 < 1 → 合成後 WSOLA 放慢，輸出樣本數應變多。
+    monkeypatch.setattr(config, "CLOUD_TTS_SPEED", 0.8)
+    raw_pcm = _sine_pcm(seconds=0.2)     # 4410 樣本，足以觸發變速
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda req, timeout=None: _FakeResp(raw_pcm),
+    )
+    wav = CloudTTS().synth([("zh", "你好")])
+    assert wav is not None
+    with wave.open(io.BytesIO(wav), "rb") as wf:
+        assert wf.getframerate() == 22050          # 取樣率不變（放慢＝樣本變多、非改 rate）
+        assert wf.getnframes() > len(raw_pcm) // 2  # 放慢 → 樣本數變多
+
+
+def test_synth_no_change_when_speed_one(keyed, monkeypatch):
+    # CLOUD_TTS_SPEED=1.0 → 不做變速，raw PCM 原樣包成 WAV。
+    monkeypatch.setattr(config, "CLOUD_TTS_SPEED", 1.0)
+    raw_pcm = _sine_pcm(seconds=0.2)
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda req, timeout=None: _FakeResp(raw_pcm),
+    )
+    wav = CloudTTS().synth([("zh", "你好")])
+    assert wav is not None
+    with wave.open(io.BytesIO(wav), "rb") as wf:
+        assert wf.readframes(wf.getnframes()) == raw_pcm
+
+
 def test_synth_passthrough_when_body_already_riff(keyed, monkeypatch):
     riff = b"RIFF" + b"\x00" * 40  # 假裝已是 WAV 容器
     monkeypatch.setattr(

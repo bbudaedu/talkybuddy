@@ -21,6 +21,8 @@ import json
 import urllib.request
 import wave
 
+from server.timestretch import stretch_pcm16
+
 TARGET_RATE = 22050  # 輸出取樣率（與 server/tts.py 一致）
 _API_BASE = "https://api.elevenlabs.io/v1/text-to-speech"
 
@@ -54,6 +56,7 @@ class CloudTTS:
 
             try:
                 from server.config import (
+                    CLOUD_TTS_SPEED,
                     CLOUD_TTS_TIMEOUT_S,
                     ELEVENLABS_API_KEY,
                     ELEVENLABS_MODEL,
@@ -105,6 +108,12 @@ class CloudTTS:
             ct = (content_type or "").strip().lower()
             if ct.startswith("text/") or ct.startswith("application/json"):
                 return None
+            # v3 忽略 speed → 在此對 raw PCM 做保持音高的放慢（WSOLA）。
+            # 僅處理 raw PCM（非 RIFF 容器）；放慢失敗（None/空）則沿用原音訊。
+            if raw[:4] != b"RIFF":
+                slowed = stretch_pcm16(raw, CLOUD_TTS_SPEED, TARGET_RATE)
+                if slowed:
+                    raw = slowed
             return _pcm_to_wav(raw)
         except Exception:
             return None
