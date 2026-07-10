@@ -18,6 +18,10 @@ echo "=== [2/4] 安裝 ASR / TTS ==="
 .venv/bin/pip install piper-tts 2>&1 | tail -2
 # ASR 主力：sherpa-onnx + SenseVoice-Small（int8）；OpenCC 做簡轉繁（s2twp）
 .venv/bin/pip install opencc 2>&1 | tail -2
+# A2 全雙工 barge-in（server/streaming）：pipecat-ai 串流編排 + pytest-asyncio。
+# 版本釘住 A2-1 spike 已驗證組合；pipecat 的 numba 相依會把 numpy 降到 <2.5、
+# onnxruntime 降到 1.24.x（皆與 sherpa/faster-whisper 相容，spike venv 已實證）。
+.venv/bin/pip install 'pipecat-ai==1.5.0' 'pytest-asyncio==1.4.0' 2>&1 | tail -2
 
 echo "=== [3/4] 下載模型（Qwen2.5-1.5B GGUF / whisper small / piper 聲音）==="
 .venv/bin/python - <<'PY'

@@ -21,6 +21,8 @@ import json
 import urllib.request
 import wave
 
+from server.timestretch import stretch_pcm16
+
 TARGET_RATE = 22050  # 輸出取樣率（與 server/tts.py 一致）
 _API_BASE = "https://api.elevenlabs.io/v1/text-to-speech"
 
@@ -54,10 +56,14 @@ class CloudTTS:
 
             try:
                 from server.config import (
+                    CLOUD_TTS_SPEED,
                     CLOUD_TTS_TIMEOUT_S,
                     ELEVENLABS_API_KEY,
                     ELEVENLABS_MODEL,
-                    ELEVENLABS_SPEED,
+                    ELEVENLABS_SIMILARITY_BOOST,
+                    ELEVENLABS_STABILITY,
+                    ELEVENLABS_STYLE,
+                    ELEVENLABS_USE_SPEAKER_BOOST,
                     ELEVENLABS_VOICE_ID,
                 )
             except Exception:
@@ -66,12 +72,18 @@ class CloudTTS:
                 return None
 
             url = f"{_API_BASE}/{ELEVENLABS_VOICE_ID}?output_format=pcm_22050"
-            # voice_settings.speed 放慢語速（見 config.ELEVENLABS_SPEED）；較適合兒童聆聽。
+            # v3 情緒參數（見 config）：真 API 驗證確認 eleven_v3 忽略 speed，改以
+            # stability/style 控制情緒起伏、similarity_boost 貼近原聲。不送 speed（無效）。
             body = json.dumps(
                 {
                     "text": text,
                     "model_id": ELEVENLABS_MODEL,
-                    "voice_settings": {"speed": ELEVENLABS_SPEED},
+                    "voice_settings": {
+                        "stability": ELEVENLABS_STABILITY,
+                        "similarity_boost": ELEVENLABS_SIMILARITY_BOOST,
+                        "style": ELEVENLABS_STYLE,
+                        "use_speaker_boost": ELEVENLABS_USE_SPEAKER_BOOST,
+                    },
                 }
             ).encode("utf-8")
             req = urllib.request.Request(
@@ -96,6 +108,12 @@ class CloudTTS:
             ct = (content_type or "").strip().lower()
             if ct.startswith("text/") or ct.startswith("application/json"):
                 return None
+            # v3 忽略 speed → 在此對 raw PCM 做保持音高的放慢（WSOLA）。
+            # 僅處理 raw PCM（非 RIFF 容器）；放慢失敗（None/空）則沿用原音訊。
+            if raw[:4] != b"RIFF":
+                slowed = stretch_pcm16(raw, CLOUD_TTS_SPEED, TARGET_RATE)
+                if slowed:
+                    raw = slowed
             return _pcm_to_wav(raw)
         except Exception:
             return None

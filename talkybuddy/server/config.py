@@ -81,12 +81,25 @@ CONSENT_GRANTED: bool = _env_bool("TALKYBUDDY_CONSENT_GRANTED", True)
 # 失敗/逾時/斷網 → 靜默降級回邊緣 Piper。
 # ---------------------------------------------------------------------------
 ELEVENLABS_API_KEY: str = os.environ.get("ELEVENLABS_API_KEY", "")
-# 合成用 voice_id（先用內建溫柔中文女聲；克隆自選人聲後僅換此值，架構不動）。空=不啟用雲端。
-ELEVENLABS_VOICE_ID: str = os.environ.get("ELEVENLABS_VOICE_ID", "")
-# 合成模型：eleven_flash_v2_5 低延遲預設；可切 eleven_v3 情緒更強。
-ELEVENLABS_MODEL: str = os.environ.get("ELEVENLABS_MODEL", "eleven_flash_v2_5")
+# 合成用 voice_id。預設 Alice（Xb7hH8MSUJpSbSDYk0k2）：英語母語 voice 讀中文帶外國腔，
+# 正好契合「外國企鵝來跟小朋友學中文」的角色設定（免費 tier，繞過付費台灣腔）。
+# 克隆/換聲僅覆蓋此 env，架構不動。空=不啟用雲端。
+ELEVENLABS_VOICE_ID: str = os.environ.get("ELEVENLABS_VOICE_ID", "Xb7hH8MSUJpSbSDYk0k2")
+# 合成模型：eleven_v3 情緒表現最強（真 API 驗證確認 v3 忽略 speed，改用下列情緒參數）。
+ELEVENLABS_MODEL: str = os.environ.get("ELEVENLABS_MODEL", "eleven_v3")
 # 雲端合成逾時（秒）；逾時即降級回邊緣。
 CLOUD_TTS_TIMEOUT_S: float = float(os.environ.get("CLOUD_TTS_TIMEOUT_S", "6.0"))
-# 語速（ElevenLabs voice_settings.speed，範圍 0.7–1.2；<1 放慢）。預設 0.75 依人工聽感放慢、
-# 較適合兒童聆聽；可用 env 調整。
-ELEVENLABS_SPEED: float = float(os.environ.get("ELEVENLABS_SPEED", "0.75"))
+# v3 voice_settings 情緒參數（取代無效的 speed；預設值＝真 API 手測聽感選定，可用 env 調）：
+# stability 低→情緒起伏大、高→平穩；style 誇張說話特色；similarity_boost 貼近原聲。
+ELEVENLABS_STABILITY: float = float(os.environ.get("ELEVENLABS_STABILITY", "0.5"))
+ELEVENLABS_SIMILARITY_BOOST: float = float(
+    os.environ.get("ELEVENLABS_SIMILARITY_BOOST", "0.8")
+)
+ELEVENLABS_STYLE: float = float(os.environ.get("ELEVENLABS_STYLE", "0.2"))
+ELEVENLABS_USE_SPEAKER_BOOST: bool = os.environ.get(
+    "ELEVENLABS_USE_SPEAKER_BOOST", "true"
+).strip().lower() in ("1", "true", "yes", "on")
+# 放慢雲端 v3 語音的播放速度。eleven_v3 忽略 API speed → 改在合成後對 raw PCM 做
+# 保持音高的時間伸縮（WSOLA，見 server/timestretch.py）。<1 放慢、1.0 不處理。
+# 預設 0.90＝比原聲再慢一點點，讓國小雙語帶讀更清楚；env 可微調（0.85 更慢等）。
+CLOUD_TTS_SPEED: float = float(os.environ.get("CLOUD_TTS_SPEED", "0.90"))
