@@ -113,13 +113,10 @@ async def test_post_network_mode_cloud_returns_new_diagnosis():
     assert diag["companion_directive"]["difficulty"] in ("up", "hold", "down")
     assert set(diag["scores"].keys()) == {"pronunciation", "fluency", "vocabulary", "grammar"}
 
-    # 該診斷應已寫入 DB
-    # 注意：診斷紀錄目前不帶 student_id（diagnose.generate_diagnosis 尚未打
-    # 標，屬既有設計缺口、非本任務範圍），故這裡刻意不帶 token 走 401 分支，
-    # 只驗證「該端點仍會回應且已寫入 DB」這件事的既有斷言不被破壞。
-    async with await _client() as client:
-        resp2 = await client.get("/api/diagnoses")
-    assert len(resp2.json()) == 1
+    # 該診斷應已寫入 DB：改用 store 直接驗證持久化，而非現已被 token 保護的
+    # HTTP 端點（無 token 會 401、且 401 body {"detail":...} 的 len 恰為 1，
+    # 會讓斷言假通過、不再驗證任何東西）。
+    assert len(store.list_diagnoses()) == 1
 
 
 async def test_post_network_mode_cloud_marks_pending_interactions_synced():
