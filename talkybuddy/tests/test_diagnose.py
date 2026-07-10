@@ -240,3 +240,36 @@ def test_generate_diagnosis_always_has_directive(monkeypatch):
     d = diagnose.generate_diagnosis([], None)
     assert d.get("companion_directive")
     assert d["companion_directive"]["difficulty"] in ("up", "hold", "down")
+
+
+def test_generate_diagnosis_routes_to_bedrock(monkeypatch):
+    from server import diagnose, cloud_llm, config, guardrails
+    monkeypatch.setattr(config, "LLM_CLOUD_PROVIDER", "bedrock", raising=False)
+    monkeypatch.setattr(guardrails, "consent_granted", lambda: True)
+    called = {"n": 0}
+
+    def _fake_bedrock(interactions, prev):
+        called["n"] += 1
+        return {
+            "date": diagnose._today(),
+            "scores": {"pronunciation": 61, "fluency": 57, "vocabulary": 63, "grammar": 52},
+            "strengths": ["願意開口"], "weaknesses": ["句長偏短"],
+            "emotional_status": "平穩",
+            "instructions": {"classroom": "a", "device": "b", "peer": "c"},
+            "companion_directive": None,
+        }
+
+    monkeypatch.setattr(cloud_llm, "diagnose_via_bedrock", _fake_bedrock)
+    out = diagnose.generate_diagnosis([{"student_text": "cat", "scores": {}}], None)
+    assert called["n"] == 1
+    assert out["scores"]["pronunciation"] == 61
+    assert out.get("companion_directive")  # 收斂保底一定補上
+
+
+def test_generate_diagnosis_bedrock_fail_falls_back_to_mock(monkeypatch):
+    from server import diagnose, cloud_llm, config, guardrails
+    monkeypatch.setattr(config, "LLM_CLOUD_PROVIDER", "bedrock", raising=False)
+    monkeypatch.setattr(guardrails, "consent_granted", lambda: True)
+    monkeypatch.setattr(cloud_llm, "diagnose_via_bedrock", lambda i, p: None)
+    out = diagnose.generate_diagnosis([{"student_text": "貓", "scores": {}}], None)
+    assert "scores" in out and out.get("companion_directive")  # mock 兜底

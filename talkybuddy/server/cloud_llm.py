@@ -99,3 +99,47 @@ class CloudLLM:
         except Exception:
             _log.exception("CloudLLM.generate 失敗，降級回 scaffold/本地")
             return None
+
+
+def _extract_tool_input(resp, tool_name):
+    """從 Converse 回應取指定 tool 的 input dict；找不到回 None。"""
+    try:
+        for block in resp["output"]["message"]["content"]:
+            tu = block.get("toolUse")
+            if tu and tu.get("name") == tool_name:
+                return tu.get("input")
+    except Exception:
+        pass
+    return None
+
+
+def diagnose_via_bedrock(interactions, prev):
+    """導師：Bedrock Converse + toolChoice 強制診斷 JSON；失敗回 None。"""
+    from server import diagnose
+    try:
+        client = _get_client()
+        if client is None:
+            return None
+        cfg = _cfg()
+        prompt = diagnose._build_diagnosis_prompt(interactions, prev)
+        resp = client.converse(
+            modelId=cfg.TUTOR_MODEL_ID,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            toolConfig={
+                "tools": [{
+                    "toolSpec": {
+                        "name": "diagnose",
+                        "description": "輸出學生今日學習診斷結構化 JSON",
+                        "inputSchema": {"json": diagnose._DIAGNOSIS_SCHEMA},
+                    }
+                }],
+                "toolChoice": {"tool": {"name": "diagnose"}},
+            },
+        )
+        tool_input = _extract_tool_input(resp, "diagnose")
+        if tool_input is None:
+            return None
+        return diagnose._validate_diagnosis(tool_input)
+    except Exception:
+        _log.exception("diagnose_via_bedrock 失敗，呼叫端 fallback mock")
+        return None

@@ -78,9 +78,10 @@ def test_generate_diagnosis_skips_cloud_without_consent(monkeypatch):
 
 
 def test_generate_diagnosis_attempts_cloud_with_consent(monkeypatch):
-    """已同意 + 有 API key → 會嘗試雲端（失敗再靜默 fallback 本地）。"""
+    """已同意 + 有 API key + provider=anthropic → 會嘗試雲端（失敗再靜默 fallback 本地）。"""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr(config, "CONSENT_GRANTED", True)
+    monkeypatch.setattr(config, "LLM_CLOUD_PROVIDER", "anthropic", raising=False)
     called = {"n": 0}
 
     def _fake_cloud(interactions, prev, api_key):

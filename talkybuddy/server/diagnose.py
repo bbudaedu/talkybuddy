@@ -517,13 +517,30 @@ def _validate_diagnosis(d: dict) -> dict:
     }
 
 
-def _call_anthropic_api(interactions: list[dict], prev: dict | None, api_key: str) -> dict:
-    """以 urllib 直呼 Anthropic Messages API，要求輸出診斷 JSON。
+# JSON schema（Bedrock toolChoice 用）：對齊 _validate_diagnosis 的必填欄位
+_DIAGNOSIS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "scores": {
+            "type": "object",
+            "properties": {k: {"type": "integer"} for k in _DIM_KEYS},
+            "required": list(_DIM_KEYS),
+        },
+        "strengths": {"type": "array", "items": {"type": "string"}},
+        "weaknesses": {"type": "array", "items": {"type": "string"}},
+        "emotional_status": {"type": "string"},
+        "instructions": {
+            "type": "object",
+            "properties": {k: {"type": "string"} for k in ("classroom", "device", "peer")},
+            "required": ["classroom", "device", "peer"],
+        },
+    },
+    "required": ["scores", "strengths", "weaknesses", "emotional_status", "instructions"],
+}
 
-    失敗（HTTP 錯誤、逾時、JSON 解析失敗、schema 不符）皆丟例外，
-    由呼叫端 fallback 到規則式 mock。
-    """
-    # 只帶必要欄位，控制 prompt 長度
+
+def _build_diagnosis_prompt(interactions: list[dict], prev: dict | None) -> str:
+    """組診斷 prompt（anthropic/bedrock 共用；student_text 已去識別化）。"""
     brief = [
         {
             "student_text": guardrails.deidentify(str(it.get("student_text", ""))[:200]),
@@ -549,7 +566,7 @@ def _call_anthropic_api(interactions: list[dict], prev: dict | None, api_key: st
             "fallback_hint": "學生沉默或困惑時的降級指引",
         },
     }
-    prompt = (
+    return (
         "你是台灣國小英語學習診斷專家。以下是一位學生近期的口說互動紀錄"
         "（student_text 為學生原話、ai_response_text 為 AI 學伴回應、"
         "asr_confidence 為語音辨識信心 0-1、scores 為單次互動三維評分 0-100）：\n"
@@ -564,6 +581,15 @@ def _call_anthropic_api(interactions: list[dict], prev: dict | None, api_key: st
         "companion_directive 是給即時陪聊玩偶的下一輪策略（difficulty 依趨勢、"
         "next_goal/topic/example_questions 具體可帶入對話），example_questions 用英文、其餘用繁體中文。"
     )
+
+
+def _call_anthropic_api(interactions: list[dict], prev: dict | None, api_key: str) -> dict:
+    """以 urllib 直呼 Anthropic Messages API，要求輸出診斷 JSON。
+
+    失敗（HTTP 錯誤、逾時、JSON 解析失敗、schema 不符）皆丟例外，
+    由呼叫端 fallback 到規則式 mock。
+    """
+    prompt = _build_diagnosis_prompt(interactions, prev)
     body = json.dumps(
         {
             "model": _API_MODEL,
@@ -606,13 +632,19 @@ def generate_diagnosis(interactions: list[dict], prev: dict | None,
     有 ANTHROPIC_API_KEY 時先嘗試真 API（claude-sonnet-5），
     任何失敗即靜默 fallback 到規則式 mock —— mock 是 demo 主線。
     """
+    from server import config
+    provider = getattr(config, "LLM_CLOUD_PROVIDER", "off")
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     result = None
     # B4-5 consent gate：真正的雲端資料出境 chokepoint。未取得家長同意時，
-    # 即使有金鑰也不上雲，改走本地規則式（背景 _refresh_directive 亦涵蓋）。
-    if api_key and guardrails.consent_granted():
+    # 即使 provider 開著也不上雲，改走本地規則式（背景 _refresh_directive 亦涵蓋）。
+    if guardrails.consent_granted():
         try:
-            result = _call_anthropic_api(interactions, prev, api_key)
+            if provider == "bedrock":
+                from server import cloud_llm
+                result = cloud_llm.diagnose_via_bedrock(interactions, prev)
+            elif provider == "anthropic" and api_key:
+                result = _call_anthropic_api(interactions, prev, api_key)
         except Exception:
             # 雲端層失敗：不拋錯、不阻塞，改用邊緣端規則式診斷
             result = None
