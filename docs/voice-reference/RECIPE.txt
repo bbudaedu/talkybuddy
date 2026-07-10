@@ -1,0 +1,1 @@
+配方: voice=Xb7hH8MSUJpSbSDYk0k2 model=eleven_v3 stability=0.5 similarity_boost=0.8 style=0.2 use_speaker_boost=true
