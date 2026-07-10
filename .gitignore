@@ -19,9 +19,13 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# Model artifacts (fetched at install time by scripts/setup_env.sh; not committed)
-talkybuddy/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/
-talkybuddy/models/_sherpa_cache/
+# Model artifacts (fetched at install time by scripts/setup_env.sh; not committed).
+# No trailing slash: in git worktrees these may be symlinks to a shared checkout,
+# and a dir-only pattern (trailing /) would not match a symlink.
+talkybuddy/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
+talkybuddy/models/_sherpa_cache
+# Streaming venv (A2 real-wiring; built from requirements-streaming.txt)
+talkybuddy/.venv-streaming/
 # Large model binaries — LLM (qwen .gguf) and piper TTS voices (.onnx)
 talkybuddy/models/*.gguf
 talkybuddy/models/*.onnx
