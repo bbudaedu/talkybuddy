@@ -111,16 +111,21 @@ def _webm_to_wav(webm_bytes: bytes) -> str | None:
 class VoicePipeline:
     """單一 session 的語音對話狀態機（半雙工）。"""
 
-    def __init__(self, asr, llm, tts, cloud_tts=None):
+    def __init__(self, asr, llm, tts, cloud_tts=None, cloud_llm=None):
         """依賴注入 ASR / LLM / TTS 引擎實例（測試可傳 stub）。
 
         cloud_tts：選填的雲端 TTS（CloudTTS，同 available()/synth() 契約）；
         None（預設）→ 只走邊緣 TTS，向後相容既有呼叫端與測試。
+
+        cloud_llm：選填的雲端 LLM provider（CloudLLM，同 available()/generate()
+        契約）；network_mode=cloud 時優先於本地 llm，None（預設）→ 純本地，
+        行為與現況一致（向後相容）。
         """
         self.asr = asr
         self.llm = llm
         self.tts = tts
         self.cloud_tts = cloud_tts
+        self.cloud_llm = cloud_llm
         # "edge" | "cloud"，由 app.py 切換
         self.network_mode: str = "edge"
         # 半雙工鎖：同時只跑一輪
@@ -211,11 +216,23 @@ class VoicePipeline:
         result.scores = dict(sc.scores)
         segments = list(sc.tts_segments)
 
-        # LLM 加值：available 時以 thread 生成，逾時/例外/None 一律降級回 scaffold
+        # LLM 加值：cloud 模式先試雲端 provider，None/逾時降級回本地 llm，
+        # 再 None 由後續 scaffold 兜底。逾時/例外一律不拋、不阻塞即時路徑。
         t_llm = time.monotonic()
         llm_text: str | None = None
         try:
-            if self.llm is not None and self.llm.available():
+            if (
+                self.network_mode == "cloud"
+                and self.cloud_llm is not None
+                and self.cloud_llm.available()
+            ):
+                llm_text = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.cloud_llm.generate, result.asr_text, sc, self._directive
+                    ),
+                    timeout=LLM_TIMEOUT_S,
+                )
+            if llm_text is None and self.llm is not None and self.llm.available():
                 llm_text = await asyncio.wait_for(
                     asyncio.to_thread(
                         self.llm.generate, result.asr_text, sc, self._directive
