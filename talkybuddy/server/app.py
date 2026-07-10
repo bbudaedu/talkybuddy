@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from server import config, diagnose, guardrails, profile, store
+from server import auth, config, diagnose, guardrails, profile, store
 from server.asr import ASREngine
 from server.llm import EdgeLLM
 from server.cloud_tts import CloudTTS
@@ -138,10 +138,24 @@ async def api_wake_config():
     }
 
 
+class LoginBody(BaseModel):
+    email: str
+    password: str
+
+
 class NetworkModeBody(BaseModel):
     """POST /api/network_mode 的 body。"""
 
     mode: str
+
+
+@app.post("/api/login")
+async def api_login(body: LoginBody):
+    ident = auth.authenticate(body.email, body.password)
+    if ident is None:
+        raise HTTPException(status_code=401, detail="帳號或密碼錯誤")
+    token = auth.issue_token(ident["sub"], ident["role"])
+    return {"token": token, "role": ident["role"], "sub": ident["sub"]}
 
 
 @app.post("/api/network_mode")
