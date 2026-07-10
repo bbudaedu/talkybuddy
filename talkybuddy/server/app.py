@@ -20,7 +20,7 @@ import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -212,16 +212,42 @@ async def api_network_mode(body: NetworkModeBody):
     }
 
 
+def identity_from_header(authorization: str | None) -> dict:
+    """從 Authorization header 解出 JWT claims；缺/壞格式/過期都 401。"""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="缺少或格式錯誤的 token")
+    try:
+        return auth.verify_token(authorization[len("Bearer "):])
+    except auth.InvalidToken:
+        raise HTTPException(status_code=401, detail="token 無效或過期")
+
+
+def _resolve_student(claims: dict, student_query: str | None) -> str:
+    """依角色決定要查哪個學生：student 只能查自己；tutor/device 需帶 ?student=。"""
+    if claims["role"] == "student":
+        return claims["sub"]
+    # tutor / device：需明確指定學生
+    if not student_query:
+        raise HTTPException(status_code=400, detail="tutor 需帶 ?student=<id>")
+    return student_query
+
+
 @app.get("/api/interactions")
-async def api_interactions(limit: int = 50):
-    """最近互動紀錄（新→舊）。"""
-    return store.list_interactions(limit=limit)
+async def api_interactions(limit: int = 50, student: str | None = None,
+                           authorization: str | None = Header(default=None)):
+    """最近互動紀錄（新→舊）；student 讀自己，tutor/device 需帶 ?student=。"""
+    claims = identity_from_header(authorization)
+    sid = _resolve_student(claims, student)
+    return store.list_interactions(limit=limit, student_id=sid)
 
 
 @app.get("/api/diagnoses")
-async def api_diagnoses():
-    """全部診斷（date 升冪）。"""
-    return store.list_diagnoses()
+async def api_diagnoses(student: str | None = None,
+                        authorization: str | None = Header(default=None)):
+    """全部診斷（date 升冪）；student 讀自己，tutor/device 需帶 ?student=。"""
+    claims = identity_from_header(authorization)
+    sid = _resolve_student(claims, student)
+    return store.list_diagnoses(student_id=sid)
 
 
 @app.post("/api/seed_reset")
