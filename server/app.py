@@ -49,6 +49,8 @@ llm_engine = EdgeLLM()
 tts_engine = TTSEngine()
 cloud_tts_engine = CloudTTS()
 pipeline = VoicePipeline(asr_engine, llm_engine, tts_engine, cloud_tts=cloud_tts_engine)
+# 承接佈署 profile 預設：cloud profile → 全語音走雲端管線；edge → 邊緣本地。
+pipeline.network_mode = config.default_network_mode()
 
 
 def _prewarm_engines() -> None:
