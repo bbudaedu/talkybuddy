@@ -9,7 +9,15 @@
 
 ```bash
 cd talkybuddy
-python scripts/fetch_sherpa_wasm.py
+.venv/bin/python scripts/fetch_sherpa_wasm.py
+```
+
+腳本會依序試 Huggingface Space → ModelScope 官方鏡像（給無法連 HF 的網路），
+每個檔下載後做完整性驗證（擋掉登入頁/WAF 挑戰頁被當成資產寫入）。若兩者都不通，
+可到 k2-fsa 的 KWS wasm space/studio Files 頁核對 resolve 連結後自訂來源：
+
+```bash
+.venv/bin/python scripts/fetch_sherpa_wasm.py --base <你的鏡像/…/resolve/main/>
 ```
 
 完成後 `web/vendor/sherpa-kws/` 應有：
