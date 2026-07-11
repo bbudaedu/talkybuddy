@@ -25,7 +25,7 @@ from pipecat.frames.frames import (
 
 from server.streaming.turn_manager import StreamingTurnManager
 from server.streaming.interruptible_tts import SherpaInterruptibleTTSService
-from server.streaming.barge_in_gate import BargeInDetectedFrame
+from server.streaming.barge_in_gate import BargeInDetectedFrame, BargeInGate
 
 _TB_ROOT = Path(__file__).resolve().parents[2]
 _WAV = _TB_ROOT / "models" / "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17" / "test_wavs" / "zh.wav"
@@ -71,6 +71,61 @@ class InjectAtSentenceDriver(FrameProcessor):
                 self._fired = True
                 await self.push_frame(self._make(), FrameDirection.UPSTREAM)
         await self.push_frame(frame, direction)
+
+
+def _speech_burst(dur_ms: int = 1500) -> InputAudioRawFrame:
+    """自 canned zh.wav 取一段真語音，包成單一 InputAudioRawFrame（供 gate 觸發 started）。
+
+    zh.wav 前 ~1s 為暖場低音量（實測 800ms 不觸發、1200ms 起才 started），取 1500ms
+    確保跨過 start_secs 門檻穩定觸發。
+    """
+    with wave.open(str(_WAV), "rb") as wf:
+        rate, ch = wf.getframerate(), wf.getnchannels()
+        pcm = wf.readframes(wf.getnframes())
+    n = int(rate * dur_ms / 1000) * 2 * ch
+    return InputAudioRawFrame(audio=pcm[:n], sample_rate=rate, num_channels=ch)
+
+
+class AudioAtSentenceDriver(FrameProcessor):
+    """看到第 N 個 TTSSpeakFrame 後回注真語音 InputAudioRawFrame 到 UPSTREAM，
+
+    使其上行穿過 manager（照常轉發）抵達上游 BargeInGate → SpeechGate 偵測 started →
+    BargeInGate 往 downstream 發 BargeInDetectedFrame → manager barge-in。
+    """
+
+    def __init__(self, at_sentence: int = 2, **kwargs):
+        super().__init__(**kwargs)
+        self._at = at_sentence
+        self._seen = 0
+        self._fired = False
+
+    async def process_frame(self, frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, TTSSpeakFrame):
+            self._seen += 1
+            if not self._fired and self._seen >= self._at:
+                self._fired = True
+                await self.push_frame(_speech_burst(), FrameDirection.UPSTREAM)
+        await self.push_frame(frame, direction)
+
+
+async def run_gate(reply_source, *, barge_in: bool, gate_params: dict | None = None):
+    """真音訊經 BargeInGate 的端到端一輪，回 (OutputSink, StreamingTurnManager)。"""
+    sink = OutputSink()
+    manager = StreamingTurnManager(reply_source)
+    procs = [BargeInGate(gate_params=gate_params), manager]
+    if barge_in:
+        procs.append(AudioAtSentenceDriver(at_sentence=2))
+    procs += [SherpaInterruptibleTTSService(), sink]
+    task = PipelineTask(Pipeline(procs))
+
+    async def feed():
+        await task.queue_frame(TranscriptionFrame(text="測試一句", user_id="u", timestamp="0"))
+        await asyncio.sleep(12)
+        await task.queue_frame(EndFrame())
+
+    await asyncio.gather(PipelineRunner().run(task), feed())
+    return sink, manager
 
 
 def _load_wav_frames(chunk_ms: int = 200):

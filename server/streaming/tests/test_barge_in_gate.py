@@ -67,3 +67,25 @@ async def test_silence_emits_nothing():
     silence = [InputAudioRawFrame(audio=b"\x00" * 640, sample_rate=16000, num_channels=1) for _ in range(30)]
     sink = await _run(silence)
     assert sink.detected == 0
+
+
+from server.streaming.harness import run_gate
+from server.streaming.reply_source import StubReplySource
+
+_FOUR = ["你好呀，我是企鵝。", "今天天氣真好。", "我們一起來玩遊戲吧。", "你想先做什麼呢？"]
+
+
+@pytest.mark.asyncio
+async def test_gate_bargein_stops_clean():
+    # 判準 E：真語音經 BargeInGate → manager barge-in → sink 合成句數 ≤2（句界乾淨停）
+    sink, manager = await run_gate(StubReplySource(_FOUR), barge_in=True)
+    assert sink.frame_count <= 2
+    assert "barge_in" in manager.result.state_events
+
+
+@pytest.mark.asyncio
+async def test_gate_no_bargein_all_sentences():
+    # 對照：無插話 → gate 不發 frame → 4 句全合成
+    sink, manager = await run_gate(StubReplySource(_FOUR), barge_in=False)
+    assert sink.frame_count >= len(_FOUR)
+    assert "barge_in" not in manager.result.state_events
