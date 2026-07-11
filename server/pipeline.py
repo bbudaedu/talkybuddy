@@ -111,16 +111,20 @@ def _webm_to_wav(webm_bytes: bytes) -> str | None:
 class VoicePipeline:
     """單一 session 的語音對話狀態機（半雙工）。"""
 
-    def __init__(self, asr, llm, tts, cloud_tts=None):
+    def __init__(self, asr, llm, tts, cloud_tts=None, student_id=None):
         """依賴注入 ASR / LLM / TTS 引擎實例（測試可傳 stub）。
 
         cloud_tts：選填的雲端 TTS（CloudTTS，同 available()/synth() 契約）；
         None（預設）→ 只走邊緣 TTS，向後相容既有呼叫端與測試。
+        student_id：本連線綁定的學生身份；None（預設）→ 寫互動時退回
+        config.STUDENT_ID（邊緣單機相容）。
         """
         self.asr = asr
         self.llm = llm
         self.tts = tts
         self.cloud_tts = cloud_tts
+        # 本連線身份（每連線一個 pipeline 實例，解單例污染）
+        self.student_id = student_id
         # "edge" | "cloud"，由 app.py 切換
         self.network_mode: str = "edge"
         # 半雙工鎖：同時只跑一輪
@@ -238,7 +242,7 @@ class VoicePipeline:
             result.seq = store.add_interaction(
                 {
                     "device_id": config.DEVICE_ID,
-                    "student_id": config.STUDENT_ID,
+                    "student_id": self.student_id or config.STUDENT_ID,
                     "ts": _now_iso_taipei(),
                     "network_mode": self.network_mode,
                     "student_text": result.asr_text,

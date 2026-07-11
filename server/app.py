@@ -277,6 +277,23 @@ async def ws_talk(websocket: WebSocket):
     """
     await websocket.accept()
 
+    # 解析 query ?token=，綁定本連線身份；缺/壞 token → policy close(1008)。
+    token = websocket.query_params.get("token")
+    try:
+        claims = auth.verify_token(token) if token else None
+    except auth.InvalidToken:
+        claims = None
+    if claims is None:
+        await websocket.close(code=1008)  # policy violation
+        return
+    sid = claims["sub"]
+    # 每連線一個獨立 VoicePipeline（共用引擎、綁 student_id），解單例污染
+    conn_pipe = VoicePipeline(
+        asr_engine, llm_engine, tts_engine,
+        cloud_tts=cloud_tts_engine, student_id=sid,
+    )
+    conn_pipe.network_mode = pipeline.network_mode  # 承接目前模式
+
     send_lock = asyncio.Lock()
 
     async def emit(payload: dict) -> None:
@@ -323,7 +340,7 @@ async def ws_talk(websocket: WebSocket):
         data = bytes(audio_buffer)
         audio_buffer.clear()
         try:
-            result = await pipeline.run_turn_audio(data, emit)
+            result = await conn_pipe.run_turn_audio(data, emit)
             await send_turn_result(result, include_asr=True)
         except Exception:
             # 單輪失敗不斷線：回 idle 讓前端解除等待
@@ -381,7 +398,7 @@ async def ws_talk(websocket: WebSocket):
             elif mtype == "text_input":
                 text = str(payload.get("text", "") or "")
                 try:
-                    result = await pipeline.run_turn_text(text, emit)
+                    result = await conn_pipe.run_turn_text(text, emit)
                     await send_turn_result(result, include_asr=False)
                 except Exception:
                     await emit({"type": "state", "state": "idle"})
