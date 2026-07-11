@@ -158,6 +158,21 @@
 </style>
 </head>
 <body>
+
+<!-- 登入遮罩：導師登入後才載入學生資料 -->
+<div id="loginOverlay" style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(20,20,19,.82);backdrop-filter:blur(4px);">
+  <form id="loginForm" style="background:#1a1a19;border:1px solid #2c2c2a;border-radius:18px;padding:28px 26px;width:min(88vw,340px);box-shadow:0 12px 40px rgba(0,0,0,.5);color:#fff;font-family:inherit;">
+    <div style="font-size:20px;font-weight:800;margin-bottom:4px;">教師儀表板 登入</div>
+    <div style="font-size:13px;color:#898781;margin-bottom:16px;">請用導師帳號登入查看學生資料</div>
+    <label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;color:#c3c2b7;">帳號 (email)</label>
+    <input id="loginEmail" type="text" autocomplete="username" value="tutor@demo" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #383835;border-radius:10px;margin-bottom:12px;font-size:15px;background:#111;color:#fff;">
+    <label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;color:#c3c2b7;">密碼</label>
+    <input id="loginPassword" type="password" autocomplete="current-password" value="demo1234" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #383835;border-radius:10px;margin-bottom:8px;font-size:15px;background:#111;color:#fff;">
+    <div id="loginError" style="min-height:18px;font-size:12px;color:#e57373;font-weight:700;margin-bottom:8px;"></div>
+    <button id="loginBtn" type="submit" style="width:100%;padding:12px;border:0;border-radius:12px;background:#3987e5;color:#fff;font-size:16px;font-weight:800;cursor:pointer;">登入</button>
+  </form>
+</div>
+
 <div class="wrap" id="app">
   <header class="topbar">
     <div>
@@ -230,6 +245,16 @@
  * 資料來源：GET /api/diagnoses、GET /api/interactions?limit=20
  * 純函式（build*）不觸碰 DOM，可在 node 環境單獨驗證。
  * ===================================================================== */
+
+/* ---------- 身份 token（跨平台雲端登入） ---------- */
+var authToken = (typeof localStorage !== 'undefined' && localStorage.getItem('tb_token')) || '';
+/* demo：導師查看阿明的資料（tutor 角色需帶 ?student=） */
+var STUDENT_QUERY = 'STUDENT-AMING-004';
+function authHeaders(extra) {
+  var h = extra || {};
+  if (authToken) { h['Authorization'] = 'Bearer ' + authToken; }
+  return h;
+}
 
 /* ---------- 常數：四維定義（順序固定，色彩不循環） ---------- */
 var DIMS = [
@@ -580,9 +605,10 @@ function bindTrendPointer(box) {
 
 /* ---------- 資料抓取與輪詢 ---------- */
 function refresh() {
+  var q = encodeURIComponent(STUDENT_QUERY);
   return Promise.all([
-    fetch('/api/diagnoses').then(function (r) { return r.json(); }),
-    fetch('/api/interactions?limit=20').then(function (r) { return r.json(); })
+    fetch('/api/diagnoses?student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); }),
+    fetch('/api/interactions?limit=20&student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); })
   ]).then(function (res) {
     state.diagnoses = Array.isArray(res[0]) ? res[0] : [];
     state.interactions = Array.isArray(res[1]) ? res[1] : [];
@@ -597,7 +623,7 @@ function init() {
   document.getElementById('btnRefresh').addEventListener('click', refresh);
   document.getElementById('btnReset').addEventListener('click', function () {
     if (!confirm('確定要重置示範資料嗎？現有互動與診斷將全部清空並重新灌入示範資料。')) return;
-    fetch('/api/seed_reset', { method: 'POST' })
+    fetch('/api/seed_reset', { method: 'POST', headers: authHeaders() })
       .then(function () { return refresh(); })
       .catch(function () { document.getElementById('offline').classList.add('show'); });
   });
@@ -605,8 +631,49 @@ function init() {
   setInterval(refresh, 5000); /* 每 5 秒輪詢重繪 */
 }
 
+/* ---------- 登入流程 ---------- */
+function wireLogin() {
+  var loginOverlay = document.getElementById('loginOverlay');
+  var loginForm = document.getElementById('loginForm');
+  var loginError = document.getElementById('loginError');
+  var loginBtn = document.getElementById('loginBtn');
+
+  function hideAndInit() {
+    if (loginOverlay) { loginOverlay.style.display = 'none'; }
+    init();
+  }
+
+  loginForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    loginError.textContent = '';
+    loginBtn.disabled = true;
+    var email = document.getElementById('loginEmail').value.trim();
+    var password = document.getElementById('loginPassword').value;
+    fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, password: password })
+    }).then(function (r) {
+      if (!r.ok) { throw new Error('登入失敗'); }
+      return r.json();
+    }).then(function (res) {
+      authToken = res.token;
+      localStorage.setItem('tb_token', res.token);
+      localStorage.setItem('tb_role', res.role);
+      localStorage.setItem('tb_sub', res.sub);
+      hideAndInit();
+    }).catch(function () {
+      loginError.textContent = '帳號或密碼錯誤，請重試';
+    }).finally(function () {
+      loginBtn.disabled = false;
+    });
+  });
+
+  if (authToken) { hideAndInit(); }
+}
+
 /* node 驗證環境無 document，僅瀏覽器才接線 */
-if (typeof document !== 'undefined' && document.getElementById('app')) init();
+if (typeof document !== 'undefined' && document.getElementById('app')) wireLogin();
 </script>
 </body>
 </html>
