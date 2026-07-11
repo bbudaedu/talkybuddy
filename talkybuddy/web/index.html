@@ -740,12 +740,14 @@ function initWakeLayer() {
   Promise.all([
     import("/static/wake-controller.js"),
     import("/static/mic-router.js"),
-    import("/static/porcupine-engine.js")
+    import("/static/sherpa-loader.js"),
+    import("/static/sherpa-engine.js")
   ]).then(function (mods) {
     var WakeController = mods[0].WakeController;
     var WakeState = mods[0].WakeState;
     var MicRouter = mods[1].MicRouter;
-    var createPorcupineEngine = mods[2].createPorcupineEngine;
+    var loadSherpaModule = mods[2].loadSherpaModule;
+    var createSherpaEngine = mods[3].createSherpaEngine;
 
     // I2 半雙工鎖：這輪是否真的送出音訊。有送→busy 交給 server 的 state:"idle"/ttsDone 清；
     // 沒送（誤觸/太短未達 minBytes／斷線，server 不會回覆）→靠去抖 re-arm 的 timer 清，避免永卡。
@@ -800,20 +802,22 @@ function initWakeLayer() {
     window._wakeController = pushController;
     pushController.arm();
 
-    /* 2) 事後嘗試升級為喚醒詞引擎；此鏈失敗也不動 window._wakeController（push 仍可用）。 */
+    /* 2) 事後嘗試升級為 sherpa KWS 引擎；此鏈失敗也不動 window._wakeController（push 仍可用）。 */
     fetch("/api/wake-config").then(function (r) { return r.json(); }).then(function (cfg) {
-      if (!cfg || !cfg.enabled) { return; }
-      return createPorcupineEngine({
-        accessKey: cfg.access_key, keywordBuiltin: cfg.keyword_builtin,
-        keywordLabel: cfg.keyword_label, keywordPublicPath: cfg.keyword_public_path,
-        modelPublicPath: cfg.model_public_path, sensitivity: cfg.sensitivity
-      }).then(function (engine) {
+      var sh = cfg && cfg.sherpa;
+      if (!sh || !sh.enabled) { return; }
+      return loadSherpaModule(sh.base_url).then(function (Module) {
+        var engine = createSherpaEngine({
+          keywords: sh.keywords,
+          keywordsThreshold: sh.keywords_threshold,
+          keywordsScore: sh.keywords_score
+        }, { Module: Module });
         var wakeController = buildController(engine);
         window._wakeController = wakeController;
         return wakeController.arm();
       });
     }).catch(function () {
-      /* wake-config 讀取或 Porcupine 引擎建置失敗：維持既有 noopEngine controller，push 仍可用。 */
+      /* wake-config 讀取或 sherpa WASM 建置失敗：維持既有 noopEngine controller，push 仍可用。 */
       showToast("語音喚醒詞暫不可用，仍可點企鵝或用下方快速語句");
     });
   }).catch(function () {
