@@ -137,6 +137,13 @@ async def api_wake_config():
         "keyword_public_path": config.WAKE_KEYWORD_PUBLIC_PATH,
         "model_public_path": config.WAKE_MODEL_PUBLIC_PATH,
         "sensitivity": config.WAKE_SENSITIVITY,
+        "sherpa": {
+            "enabled": bool(config.WAKE_SHERPA_ENABLED),
+            "base_url": config.WAKE_SHERPA_BASE_URL,
+            "keywords": config.WAKE_SHERPA_KEYWORDS,
+            "keywords_threshold": config.WAKE_SHERPA_THRESHOLD,
+            "keywords_score": config.WAKE_SHERPA_SCORE,
+        },
     }
 
 
