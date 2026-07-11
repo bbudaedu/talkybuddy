@@ -89,3 +89,14 @@ test("未 available：start 為 no-op（不取麥、不建 kws）", async () => 
   await eng.start(() => {});
   assert.equal(gum, 0);
 });
+
+test("start/stop/start：AudioContext 只建一次（不洩漏）", async () => {
+  const { kws } = fakeKws([]);
+  const a = fakeAudio();
+  let ctxN = 0;
+  const eng = createSherpaEngine(baseCfg, { Module: {}, createKws: () => kws, getUserMedia: async () => a.micStream, createAudioContext: () => { ctxN += 1; return a.ctx; } });
+  await eng.start(() => {});
+  await eng.stop();
+  await eng.start(() => {});
+  assert.equal(ctxN, 1);
+});

@@ -68,7 +68,7 @@ export function createSherpaEngine(cfg, deps) {
       if (!Module || typeof createKws !== "function") { return; }   // no-op（未 available）
       if (started) { return; }
       micStream = await getUserMedia();
-      audioCtx = createAudioContext();
+      if (!audioCtx) { audioCtx = createAudioContext(); }   // 重用單一 AudioContext，避免每輪 start 洩漏
       if (!kws) { kws = createKws(Module, kwsConfig); }             // 只建一次
       if (!stream) { stream = kws.createStream(); }
       source = audioCtx.createMediaStreamSource(micStream);
