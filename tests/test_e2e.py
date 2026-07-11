@@ -14,8 +14,10 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from server import store
+from server import auth, store
 from server.app import app, pipeline
+
+_STUDENT_AUTH = {"Authorization": f"Bearer {auth.issue_token('STUDENT-AMING-004', 'student')}"}
 
 pytestmark = pytest.mark.anyio
 
@@ -68,7 +70,7 @@ async def test_get_api_status_shape():
 async def test_get_api_diagnoses_empty_when_no_data():
     """空 DB（tmp_db fixture 只 init_db 未 seed）時 /api/diagnoses 回空陣列。"""
     async with await _client() as client:
-        resp = await client.get("/api/diagnoses")
+        resp = await client.get("/api/diagnoses", headers=_STUDENT_AUTH)
     assert resp.status_code == 200
     assert resp.json() == []
 
@@ -76,7 +78,7 @@ async def test_get_api_diagnoses_empty_when_no_data():
 async def test_get_api_interactions_empty_when_no_data():
     """空 DB 時 /api/interactions 回空陣列。"""
     async with await _client() as client:
-        resp = await client.get("/api/interactions")
+        resp = await client.get("/api/interactions", headers=_STUDENT_AUTH)
     assert resp.status_code == 200
     assert resp.json() == []
 
@@ -111,10 +113,10 @@ async def test_post_network_mode_cloud_returns_new_diagnosis():
     assert diag["companion_directive"]["difficulty"] in ("up", "hold", "down")
     assert set(diag["scores"].keys()) == {"pronunciation", "fluency", "vocabulary", "grammar"}
 
-    # 該診斷應已寫入 DB
-    async with await _client() as client:
-        resp2 = await client.get("/api/diagnoses")
-    assert len(resp2.json()) == 1
+    # 該診斷應已寫入 DB：改用 store 直接驗證持久化，而非現已被 token 保護的
+    # HTTP 端點（無 token 會 401、且 401 body {"detail":...} 的 len 恰為 1，
+    # 會讓斷言假通過、不再驗證任何東西）。
+    assert len(store.list_diagnoses()) == 1
 
 
 async def test_post_network_mode_cloud_marks_pending_interactions_synced():
@@ -163,8 +165,9 @@ def test_ws_talk_text_input_full_flow(monkeypatch):
     monkeypatch.setattr(app_module.tts_engine, "available", lambda: False)
     monkeypatch.setattr(app_module.asr_engine, "available", lambda: False)
 
+    tok = auth.issue_token("STUDENT-AMING-004", "student")
     with TestClient(app) as client:
-        with client.websocket_connect("/ws/talk") as ws:
+        with client.websocket_connect(f"/ws/talk?token={tok}") as ws:
             ws.send_json({"type": "text_input", "text": "我要一個蘋果"})
 
             msg_types = []

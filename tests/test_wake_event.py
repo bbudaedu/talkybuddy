@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from starlette.testclient import TestClient
 
-from server import app as app_module
+from server import app as app_module, auth
 from server.app import app
 
 
@@ -14,8 +14,9 @@ def test_ws_wake_event_logged_and_non_disruptive(monkeypatch, caplog):
     monkeypatch.setattr(app_module.asr_engine, "available", lambda: False)
 
     with caplog.at_level("INFO", logger="talkybuddy.wake"):
+        tok = auth.issue_token("STUDENT-AMING-004", "student")
         with TestClient(app) as client:
-            with client.websocket_connect("/ws/talk") as ws:
+            with client.websocket_connect(f"/ws/talk?token={tok}") as ws:
                 ws.send_json({"type": "wake", "source": "wakeword"})
                 # wake 不回訊息；接著送文字仍能正常對話
                 ws.send_json({"type": "text_input", "text": "嗨"})

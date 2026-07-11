@@ -153,15 +153,31 @@ def _row_to_interaction(seq: int, payload: str, synced: int) -> dict:
     return d
 
 
-def list_interactions(limit: int = 50) -> list[dict]:
-    """列出最近的互動紀錄（新→舊），最多 limit 筆。"""
+def list_interactions(limit: int = 50, student_id: str | None = None) -> list[dict]:
+    """列出最近的互動紀錄（新→舊），最多 limit 筆。
+
+    student_id 省略時回全部（舊行為）；指定時只回該生。
+    """
     with _lock:
         conn = _get_conn()
         rows = conn.execute(
-            "SELECT seq, payload, synced FROM interactions ORDER BY seq DESC LIMIT ?",
-            (int(limit),),
+            "SELECT seq, payload, synced FROM interactions ORDER BY seq DESC"
         ).fetchall()
-    return [_row_to_interaction(*row) for row in rows]
+    items = [_row_to_interaction(seq, payload, synced) for seq, payload, synced in rows]
+    if student_id is not None:
+        items = [it for it in items if it.get("student_id") == student_id]
+    return items[:limit]
+
+
+def interaction_exists(student_id: str, device_id: str, client_ts: str) -> bool:
+    """該生是否已存在同一 device_id + client_ts 的互動（玩偶上行去重用）。
+
+    demo 資料量小，Python 端線性掃描即可（YAGNI；正式版可加 DB 索引欄）。
+    """
+    for it in list_interactions(limit=100000, student_id=student_id):
+        if it.get("device_id") == device_id and it.get("client_ts") == client_ts:
+            return True
+    return False
 
 
 def pending_count() -> int:
@@ -202,14 +218,18 @@ def add_diagnosis(d: dict) -> None:
         conn.commit()
 
 
-def list_diagnoses() -> list[dict]:
-    """列出所有診斷，依 date 升冪。"""
+def list_diagnoses(student_id: str | None = None) -> list[dict]:
+    """列出所有診斷，依 date 升冪。
+
+    student_id 省略時回全部（舊行為）；指定時只回該生。
+    """
     with _lock:
         conn = _get_conn()
-        rows = conn.execute(
-            "SELECT payload FROM diagnoses ORDER BY date ASC"
-        ).fetchall()
-    return [json.loads(p) for (p,) in rows]
+        rows = conn.execute("SELECT payload FROM diagnoses ORDER BY date ASC").fetchall()
+    items = [json.loads(p) for (p,) in rows]
+    if student_id is not None:
+        items = [d for d in items if d.get("student_id") == student_id]
+    return items
 
 
 def get_profile(student_id: str | None = None) -> dict | None:
