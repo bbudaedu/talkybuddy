@@ -165,8 +165,9 @@ def test_ws_talk_text_input_full_flow(monkeypatch):
     monkeypatch.setattr(app_module.tts_engine, "available", lambda: False)
     monkeypatch.setattr(app_module.asr_engine, "available", lambda: False)
 
+    tok = auth.issue_token("STUDENT-AMING-004", "student")
     with TestClient(app) as client:
-        with client.websocket_connect("/ws/talk") as ws:
+        with client.websocket_connect(f"/ws/talk?token={tok}") as ws:
             ws.send_json({"type": "text_input", "text": "我要一個蘋果"})
 
             msg_types = []
