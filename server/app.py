@@ -195,9 +195,9 @@ async def api_network_mode(body: NetworkModeBody):
         diagnoses = store.list_diagnoses()  # date 升冪 → 最後一筆是最新
         prev = diagnoses[-1] if diagnoses else None
         new_diag = diagnose.generate_diagnosis(recent, prev)
-        # 帶上 student_id 供 /api/diagnoses 依學生過濾（Task 1/4）
-        new_diag["student_id"] = store._student_id()
-        store.add_diagnosis(new_diag)
+        # 持久化那份帶上 student_id 供 /api/diagnoses 依學生過濾（Task 1/4）；
+        # 回應的 new_diagnosis 維持既有契約 key 集合，故存副本、不動 new_diag。
+        store.add_diagnosis({**new_diag, "student_id": store._student_id()})
         # B1：把新診斷的 companion_directive 推進 pipeline 快取，即時路徑下輪即採用
         # B3 接法 A：一併帶 level_state，讓 CEFR 難度/語言形式折進注入字串
         pipeline._directive = diagnose.format_directive_for_prompt(
