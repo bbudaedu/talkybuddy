@@ -103,3 +103,13 @@ ELEVENLABS_USE_SPEAKER_BOOST: bool = os.environ.get(
 # 保持音高的時間伸縮（WSOLA，見 server/timestretch.py）。<1 放慢、1.0 不處理。
 # 預設 0.90＝比原聲再慢一點點，讓國小雙語帶讀更清楚；env 可微調（0.85 更慢等）。
 CLOUD_TTS_SPEED: float = float(os.environ.get("CLOUD_TTS_SPEED", "0.90"))
+
+# ---------------------------------------------------------------------------
+# 佈署 profile：edge（玩偶本地）/ cloud（瀏覽器終端，AI 在雲端）
+# ---------------------------------------------------------------------------
+PIPELINE_PROFILE: str = os.environ.get("TALKYBUDDY_PIPELINE_PROFILE", "edge")
+
+
+def default_network_mode() -> str:
+    """cloud profile 預設走雲端管線（ElevenLabs TTS 等）；否則邊緣。"""
+    return "cloud" if PIPELINE_PROFILE == "cloud" else "edge"

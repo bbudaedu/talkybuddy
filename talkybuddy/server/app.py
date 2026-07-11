@@ -20,12 +20,12 @@ import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from server import config, diagnose, guardrails, profile, store
+from server import auth, config, diagnose, guardrails, profile, store
 from server.asr import ASREngine
 from server.llm import EdgeLLM
 from server.cloud_tts import CloudTTS
@@ -49,6 +49,8 @@ llm_engine = EdgeLLM()
 tts_engine = TTSEngine()
 cloud_tts_engine = CloudTTS()
 pipeline = VoicePipeline(asr_engine, llm_engine, tts_engine, cloud_tts=cloud_tts_engine)
+# 承接佈署 profile 預設：cloud profile → 全語音走雲端管線；edge → 邊緣本地。
+pipeline.network_mode = config.default_network_mode()
 
 
 def _prewarm_engines() -> None:
@@ -138,10 +140,24 @@ async def api_wake_config():
     }
 
 
+class LoginBody(BaseModel):
+    email: str
+    password: str
+
+
 class NetworkModeBody(BaseModel):
     """POST /api/network_mode 的 body。"""
 
     mode: str
+
+
+@app.post("/api/login")
+async def api_login(body: LoginBody):
+    ident = auth.authenticate(body.email, body.password)
+    if ident is None:
+        raise HTTPException(status_code=401, detail="帳號或密碼錯誤")
+    token = auth.issue_token(ident["sub"], ident["role"])
+    return {"token": token, "role": ident["role"], "sub": ident["sub"]}
 
 
 @app.post("/api/network_mode")
@@ -179,7 +195,9 @@ async def api_network_mode(body: NetworkModeBody):
         diagnoses = store.list_diagnoses()  # date 升冪 → 最後一筆是最新
         prev = diagnoses[-1] if diagnoses else None
         new_diag = diagnose.generate_diagnosis(recent, prev)
-        store.add_diagnosis(new_diag)
+        # 持久化那份帶上 student_id 供 /api/diagnoses 依學生過濾（Task 1/4）；
+        # 回應的 new_diagnosis 維持既有契約 key 集合，故存副本、不動 new_diag。
+        store.add_diagnosis({**new_diag, "student_id": store._student_id()})
         # B1：把新診斷的 companion_directive 推進 pipeline 快取，即時路徑下輪即採用
         # B3 接法 A：一併帶 level_state，讓 CEFR 難度/語言形式折進注入字串
         pipeline._directive = diagnose.format_directive_for_prompt(
@@ -198,16 +216,69 @@ async def api_network_mode(body: NetworkModeBody):
     }
 
 
+def identity_from_header(authorization: str | None) -> dict:
+    """從 Authorization header 解出 JWT claims；缺/壞格式/過期都 401。"""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="缺少或格式錯誤的 token")
+    try:
+        return auth.verify_token(authorization[len("Bearer "):])
+    except auth.InvalidToken:
+        raise HTTPException(status_code=401, detail="token 無效或過期")
+
+
+def _resolve_student(claims: dict, student_query: str | None) -> str:
+    """依角色決定要查哪個學生：student 只能查自己；tutor/device 需帶 ?student=。"""
+    if claims["role"] == "student":
+        return claims["sub"]
+    # tutor / device：需明確指定學生
+    if not student_query:
+        raise HTTPException(status_code=400, detail="tutor 需帶 ?student=<id>")
+    return student_query
+
+
 @app.get("/api/interactions")
-async def api_interactions(limit: int = 50):
-    """最近互動紀錄（新→舊）。"""
-    return store.list_interactions(limit=limit)
+async def api_interactions(limit: int = 50, student: str | None = None,
+                           authorization: str | None = Header(default=None)):
+    """最近互動紀錄（新→舊）；student 讀自己，tutor/device 需帶 ?student=。"""
+    claims = identity_from_header(authorization)
+    sid = _resolve_student(claims, student)
+    return store.list_interactions(limit=limit, student_id=sid)
 
 
 @app.get("/api/diagnoses")
-async def api_diagnoses():
-    """全部診斷（date 升冪）。"""
-    return store.list_diagnoses()
+async def api_diagnoses(student: str | None = None,
+                        authorization: str | None = Header(default=None)):
+    """全部診斷（date 升冪）；student 讀自己，tutor/device 需帶 ?student=。"""
+    claims = identity_from_header(authorization)
+    sid = _resolve_student(claims, student)
+    return store.list_diagnoses(student_id=sid)
+
+
+class SyncBody(BaseModel):
+    interactions: list[dict]
+
+
+@app.post("/api/sync")
+async def api_sync(body: SyncBody, authorization: str | None = Header(default=None)):
+    """玩偶上行同步：device token 綁定的學生，批次寫入並去重。
+
+    去重鍵＝同 student_id + device_id + client_ts；重送同批全部跳過。
+    回 {"accepted": n, "skipped": m}。
+    """
+    claims = identity_from_header(authorization)
+    sid = claims["sub"]  # device token 綁定的 student
+    accepted = skipped = 0
+    for it in body.interactions:
+        rec = dict(it)
+        rec["student_id"] = sid
+        dev = str(rec.get("device_id", ""))
+        cts = str(rec.get("client_ts", ""))
+        if cts and store.interaction_exists(sid, dev, cts):
+            skipped += 1
+            continue
+        store.add_interaction(rec)
+        accepted += 1
+    return {"accepted": accepted, "skipped": skipped}
 
 
 @app.post("/api/seed_reset")
@@ -236,6 +307,23 @@ async def ws_talk(websocket: WebSocket):
     任何例外都 catch 住，不讓 server 掛掉。
     """
     await websocket.accept()
+
+    # 解析 query ?token=，綁定本連線身份；缺/壞 token → policy close(1008)。
+    token = websocket.query_params.get("token")
+    try:
+        claims = auth.verify_token(token) if token else None
+    except auth.InvalidToken:
+        claims = None
+    if claims is None:
+        await websocket.close(code=1008)  # policy violation
+        return
+    sid = claims["sub"]
+    # 每連線一個獨立 VoicePipeline（共用引擎、綁 student_id），解單例污染
+    conn_pipe = VoicePipeline(
+        asr_engine, llm_engine, tts_engine,
+        cloud_tts=cloud_tts_engine, student_id=sid,
+    )
+    conn_pipe.network_mode = pipeline.network_mode  # 承接目前模式
 
     send_lock = asyncio.Lock()
 
@@ -283,7 +371,7 @@ async def ws_talk(websocket: WebSocket):
         data = bytes(audio_buffer)
         audio_buffer.clear()
         try:
-            result = await pipeline.run_turn_audio(data, emit)
+            result = await conn_pipe.run_turn_audio(data, emit)
             await send_turn_result(result, include_asr=True)
         except Exception:
             # 單輪失敗不斷線：回 idle 讓前端解除等待
@@ -341,7 +429,7 @@ async def ws_talk(websocket: WebSocket):
             elif mtype == "text_input":
                 text = str(payload.get("text", "") or "")
                 try:
-                    result = await pipeline.run_turn_text(text, emit)
+                    result = await conn_pipe.run_turn_text(text, emit)
                     await send_turn_result(result, include_asr=False)
                 except Exception:
                     await emit({"type": "state", "state": "idle"})
