@@ -169,6 +169,17 @@ def list_interactions(limit: int = 50, student_id: str | None = None) -> list[di
     return items[:limit]
 
 
+def interaction_exists(student_id: str, device_id: str, client_ts: str) -> bool:
+    """該生是否已存在同一 device_id + client_ts 的互動（玩偶上行去重用）。
+
+    demo 資料量小，Python 端線性掃描即可（YAGNI；正式版可加 DB 索引欄）。
+    """
+    for it in list_interactions(limit=100000, student_id=student_id):
+        if it.get("device_id") == device_id and it.get("client_ts") == client_ts:
+            return True
+    return False
+
+
 def pending_count() -> int:
     """回傳尚未同步（synced=0）的互動筆數。"""
     with _lock:
