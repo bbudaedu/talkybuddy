@@ -195,6 +195,8 @@ async def api_network_mode(body: NetworkModeBody):
         diagnoses = store.list_diagnoses()  # date 升冪 → 最後一筆是最新
         prev = diagnoses[-1] if diagnoses else None
         new_diag = diagnose.generate_diagnosis(recent, prev)
+        # 帶上 student_id 供 /api/diagnoses 依學生過濾（Task 1/4）
+        new_diag["student_id"] = store._student_id()
         store.add_diagnosis(new_diag)
         # B1：把新診斷的 companion_directive 推進 pipeline 快取，即時路徑下輪即採用
         # B3 接法 A：一併帶 level_state，讓 CEFR 難度/語言形式折進注入字串
@@ -250,6 +252,33 @@ async def api_diagnoses(student: str | None = None,
     claims = identity_from_header(authorization)
     sid = _resolve_student(claims, student)
     return store.list_diagnoses(student_id=sid)
+
+
+class SyncBody(BaseModel):
+    interactions: list[dict]
+
+
+@app.post("/api/sync")
+async def api_sync(body: SyncBody, authorization: str | None = Header(default=None)):
+    """玩偶上行同步：device token 綁定的學生，批次寫入並去重。
+
+    去重鍵＝同 student_id + device_id + client_ts；重送同批全部跳過。
+    回 {"accepted": n, "skipped": m}。
+    """
+    claims = identity_from_header(authorization)
+    sid = claims["sub"]  # device token 綁定的 student
+    accepted = skipped = 0
+    for it in body.interactions:
+        rec = dict(it)
+        rec["student_id"] = sid
+        dev = str(rec.get("device_id", ""))
+        cts = str(rec.get("client_ts", ""))
+        if cts and store.interaction_exists(sid, dev, cts):
+            skipped += 1
+            continue
+        store.add_interaction(rec)
+        accepted += 1
+    return {"accepted": accepted, "skipped": skipped}
 
 
 @app.post("/api/seed_reset")
