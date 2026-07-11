@@ -21,7 +21,12 @@ echo "=== [2/4] 安裝 ASR / TTS ==="
 # A2 全雙工 barge-in（server/streaming）：pipecat-ai 串流編排 + pytest-asyncio。
 # 版本釘住 A2-1 spike 已驗證組合；pipecat 的 numba 相依會把 numpy 降到 <2.5、
 # onnxruntime 降到 1.24.x（皆與 sherpa/faster-whisper 相容，spike venv 已實證）。
-.venv/bin/pip install 'pipecat-ai==1.5.0' 'pytest-asyncio==1.4.0' 2>&1 | tail -2
+# real-wiring 驗收（test_realwire_synth.py USE_STT=True + run_realwire）走真 SenseVoice STT
+# ＝pipecat 的 FunASRSTTService → 需 funasr。先裝 CPU 版 torch（funasr 相依，避免預設拉
+# CUDA 大輪子），再帶 [funasr] extra。實證不動上述 numpy/onnxruntime pins（2026-07-11）；
+# 首跑 realwire 測試會經 modelscope 下載 SenseVoiceSmall（~900MB，之後快取）。
+.venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio 2>&1 | tail -2
+.venv/bin/pip install 'pipecat-ai[funasr]==1.5.0' 'pytest-asyncio==1.4.0' 2>&1 | tail -2
 
 echo "=== [3/4] 下載模型（Qwen2.5-1.5B GGUF / whisper small / piper 聲音）==="
 .venv/bin/python - <<'PY'
