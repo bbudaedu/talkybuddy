@@ -1,0 +1,6 @@
+# 拋棄式 spike 產物，不進版控
+.venv/
+piper_voices/
+samples/
+samples2/
+*.wav
