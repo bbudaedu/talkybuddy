@@ -13,8 +13,10 @@ export class WakeController {
     this.canWake = opts.canWake || function () { return true; };
     this.cooldownMs = opts.cooldownMs != null ? opts.cooldownMs : 1500;
     this.turnTimeoutMs = opts.turnTimeoutMs != null ? opts.turnTimeoutMs : 15000;
-    this._setTimeout = opts.setTimeout || setTimeout;
-    this._clearTimeout = opts.clearTimeout || clearTimeout;
+    // 未注入時 fallback 到原生計時器，但必須 bind globalThis：以 controller 為
+    // receiver 呼叫瀏覽器原生 setTimeout 會丟 Illegal invocation（node 注入假函式測不到）。
+    this._setTimeout = opts.setTimeout || setTimeout.bind(globalThis);
+    this._clearTimeout = opts.clearTimeout || clearTimeout.bind(globalThis);
     this._state = WakeState.ARMED;
     this._turnTimer = null;
     this._cooldownTimer = null;

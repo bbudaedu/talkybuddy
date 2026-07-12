@@ -150,6 +150,28 @@ test("canWake=false 時忽略喚醒（半雙工鎖）", async () => {
   assert.ok(!calls.includes("mic.recordTurn"));
 });
 
+test("未注入計時器時 fallback 綁定 globalThis（真瀏覽器不丟 Illegal invocation）", () => {
+  // 真瀏覽器沒注入 opts.setTimeout → 走 fallback。原生 setTimeout 以 controller
+  // 實例為 receiver 呼叫會丟 Illegal invocation；fallback 必須 bind globalThis。
+  // node 的 setTimeout 不在意 receiver，故改用 spy 記錄呼叫時的 this 來檢核機制。
+  const origSet = globalThis.setTimeout;
+  const origClear = globalThis.clearTimeout;
+  let setThis = "unset";
+  let clearThis = "unset";
+  globalThis.setTimeout = function () { setThis = this; return 1; };
+  globalThis.clearTimeout = function () { clearThis = this; };
+  try {
+    const c = new WakeController({ engine: {}, micRouter: {} });   // 不注入計時器
+    c._setTimeout(() => {}, 10);        // 模擬 this._setTimeout(...)（receiver=controller）
+    c._clearTimeout(1);
+    assert.equal(setThis, globalThis, "fallback setTimeout 須綁 globalThis，非 controller 實例");
+    assert.equal(clearThis, globalThis, "fallback clearTimeout 須綁 globalThis，非 controller 實例");
+  } finally {
+    globalThis.setTimeout = origSet;
+    globalThis.clearTimeout = origClear;
+  }
+});
+
 test("degrade-safe：engine.start 失敗時 arm 不拋出、仍回到 ARMED（可用）", async () => {
   const { micRouter } = makeStubs();
   const t = manualTimers();
