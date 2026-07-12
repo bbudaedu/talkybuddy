@@ -471,3 +471,36 @@ def respond(student_text: str) -> ScaffoldResult:
         safety_triggered=False,
         target_sentence=target,
     )
+
+
+# ---------------------------------------------------------------------------
+# 即時 S2S（Nova Sonic）鷹架 system prompt 組裝
+# 靜態框架寫死 + 動態今日目標句/directive 折入；重用 guardrails 兒童安全護欄。
+# ---------------------------------------------------------------------------
+
+_LIVE_STATIC_FRAME = (
+    "你是陪台灣國小學生練習說話的企鵝學伴「說說學伴」，溫暖、有耐心、像朋友。"
+    "一、主要用繁體中文（台灣用語）回覆，語氣自然、每次回覆不超過兩句話。"
+    "二、每一輪自然帶出一個簡單的英語單字或短句，鼓勵孩子跟著開口說一次（帶讀）。"
+    "三、用鷹架學習法：先示範再邀請、給比孩子程度略高一點的內容（i+1）、"
+    "孩子說對給具體正向回饋、說錯溫和重述不指責、循序漸進不催促。"
+    "四、不使用 markdown 符號或 emoji。"
+)
+
+
+def build_live_system_prompt(target_sentence, directive) -> str:
+    """組裝即時陪聊 system prompt。
+
+    - target_sentence：今日重點英文句（可 None）→ 提示學伴優先帶讀。
+    - directive：B 軸 companion_directive 注入字串（可 None，見
+      diagnose.format_directive_for_prompt）→ 折入本輪教學策略。
+    """
+    from server import guardrails
+
+    parts = [_LIVE_STATIC_FRAME, guardrails.CHILD_SAFETY_CLAUSE]
+    if target_sentence and str(target_sentence).strip():
+        parts.append(f"今日想邀請孩子開口說的英文句是：「{str(target_sentence).strip()}」，"
+                     "找機會自然帶讀，不必每句都用。")
+    if directive and str(directive).strip():
+        parts.append(str(directive).strip())
+    return "".join(parts)
