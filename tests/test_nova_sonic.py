@@ -107,3 +107,31 @@ async def test_start_sends_session_and_prompt_sequence(monkeypatch):
     aoc = ps["audioOutputConfiguration"]
     assert aoc["sampleRateHertz"] == 24000 and aoc["voiceId"] == "tiffany"
     await s.close()
+
+
+@pytest.mark.asyncio
+async def test_send_audio_opens_audio_content_once_then_end(monkeypatch):
+    fake_client = _FakeClient()
+    monkeypatch.setattr(nova_sonic.NovaSonicSession, "_build_client",
+                        lambda self: fake_client)
+    s = nova_sonic.NovaSonicSession("m", "tiffany", "us-east-1")
+    await s.start("sys")
+    base = len(s._stream.input_stream.sent)
+
+    await s.send_audio(b"\x01\x02" * 10)
+    await s.send_audio(b"\x03\x04" * 10)
+    await s.end_user_turn()
+
+    new_keys = [k for c in s._stream.input_stream.sent[base:]
+                for k in json.loads(c.value.bytes_)["event"].keys()]
+    # 首塊觸發一次 AUDIO contentStart，之後只有 audioInput，收尾一個 contentEnd
+    assert new_keys == ["contentStart", "audioInput", "audioInput", "contentEnd"]
+    # end_user_turn 不得送 promptEnd
+    assert "promptEnd" not in new_keys
+    # AUDIO contentStart 為 16kHz USER
+    cs = [json.loads(c.value.bytes_)["event"]["contentStart"]
+          for c in s._stream.input_stream.sent[base:]
+          if "contentStart" in json.loads(c.value.bytes_)["event"]][0]
+    assert cs["type"] == "AUDIO" and cs["role"] == "USER"
+    assert cs["audioInputConfiguration"]["sampleRateHertz"] == 16000
+    await s.close()

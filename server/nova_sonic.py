@@ -112,6 +112,29 @@ class NovaSonicSession:
         # 啟動背景 receive loop（Task 4 以完整多 completion 收斂版取代 _receive_loop）
         self._recv_task = asyncio.create_task(self._receive_loop())
 
+    async def send_audio(self, pcm16: bytes) -> None:
+        """送一塊 16kHz PCM16；首塊前自動開 AUDIO 內容區。"""
+        if self._audio_content is None:
+            self._audio_content = str(uuid.uuid4())
+            await self._send({"event": {"contentStart": {
+                "promptName": self._prompt_name, "contentName": self._audio_content,
+                "type": "AUDIO", "interactive": True, "role": "USER",
+                "audioInputConfiguration": {
+                    "mediaType": "audio/lpcm", "sampleRateHertz": 16000,
+                    "sampleSizeBits": 16, "channelCount": 1,
+                    "audioType": "SPEECH", "encoding": "base64"}}}})
+        b64 = base64.b64encode(pcm16).decode("ascii")
+        await self._send({"event": {"audioInput": {
+            "promptName": self._prompt_name, "contentName": self._audio_content,
+            "content": b64}}})
+
+    async def end_user_turn(self) -> None:
+        """結束本輪使用者音訊（送 contentEnd）；不送 promptEnd（協定踩雷）。"""
+        if self._audio_content is not None:
+            await self._send({"event": {"contentEnd": {
+                "promptName": self._prompt_name, "contentName": self._audio_content}}})
+            self._audio_content = None
+
     async def _receive_loop(self) -> None:
         """佔位版（Task 4 取代）：立即放入結束哨兵。"""
         await self._queue.put(None)
