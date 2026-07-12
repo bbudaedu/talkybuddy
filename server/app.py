@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from server import config, diagnose, guardrails, nova_sonic, profile, store
+from server import config, diagnose, guardrails, nova_sonic, profile, scaffold, store
 from server.asr import ASREngine
 from server.llm import EdgeLLM
 from server.cloud_tts import CloudTTS
@@ -54,6 +54,15 @@ pipeline = VoicePipeline(
     asr_engine, llm_engine, tts_engine,
     cloud_tts=cloud_tts_engine, cloud_llm=cloud_llm_engine,
 )
+
+
+def _make_live_session():
+    """建一場 NovaSonicSession（測試以 monkeypatch 換 fake）。"""
+    return nova_sonic.NovaSonicSession(
+        model_id=config.NOVA_SONIC_MODEL_ID,
+        voice=config.NOVA_SONIC_VOICE,
+        region=config.BEDROCK_REGION,
+    )
 
 
 def _prewarm_engines() -> None:
@@ -359,3 +368,119 @@ async def ws_talk(websocket: WebSocket):
         pass
     finally:
         cancel_flush()
+
+
+@app.websocket("/ws/live")
+async def ws_live(websocket: WebSocket):
+    """即時全雙工 S2S（Nova Sonic）：與 /ws/talk 並存。
+
+    連線先過 consent + available gate；之後上行 PCM16(16k) → send_audio，
+    下行 Nova Sonic audio(24k)/transcript 轉發；user_end → end_user_turn 後
+    迭代 events() 直到 turn_end；turn_end 把 USER/ASSISTANT transcript 落地。
+    """
+    await websocket.accept()
+
+    send_lock = asyncio.Lock()
+
+    async def emit(payload: dict) -> None:
+        try:
+            async with send_lock:
+                await websocket.send_json(payload)
+        except Exception:
+            pass
+
+    async def emit_bytes(data: bytes) -> None:
+        try:
+            async with send_lock:
+                await websocket.send_bytes(data)
+        except Exception:
+            pass
+
+    # gate：consent 優先（資料出境），再 available
+    if not guardrails.consent_granted():
+        await emit({"type": "live_error", "reason": "consent_required"})
+        await websocket.close()
+        return
+    if not (config.LIVE_S2S_ENABLED and nova_sonic.available()):
+        await emit({"type": "live_error", "reason": "unavailable"})
+        await websocket.close()
+        return
+
+    # 動態鷹架注入：沿用 pipeline 目前的 B 軸 directive（已是格式化字串或 None）
+    directive = getattr(pipeline, "_directive", None)
+    target = "How are you today?"  # Phase 1 起始目標句（詞庫通用引導句）
+    system_prompt = scaffold.build_live_system_prompt(target, directive)
+
+    session = _make_live_session()
+    turn_user, turn_asst = [], []
+
+    async def drain_events() -> None:
+        """迭代模型事件轉發前端；turn_end 落地 transcript。"""
+        async for ev in session.events():
+            if ev.kind == "audio":
+                await emit_bytes(ev.audio)
+            elif ev.kind == "transcript":
+                await emit({"type": "live_transcript", "role": ev.role, "text": ev.text})
+                if ev.role == "USER":
+                    turn_user.append(ev.text)
+                elif ev.role == "ASSISTANT":
+                    turn_asst.append(ev.text)
+            elif ev.kind == "turn_end":
+                _store_live_turn(turn_user, turn_asst)
+                turn_user.clear()
+                turn_asst.clear()
+                await emit({"type": "turn_end"})
+
+    try:
+        await session.start(system_prompt)
+        while True:
+            msg = await websocket.receive()
+            if msg.get("type") == "websocket.disconnect":
+                break
+            if msg.get("bytes") is not None:
+                if msg["bytes"]:
+                    await session.send_audio(msg["bytes"])
+                continue
+            raw = msg.get("text")
+            if not raw:
+                continue
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                continue
+            mtype = payload.get("type")
+            if mtype == "user_end":
+                await session.end_user_turn()
+                await drain_events()
+            elif mtype == "bye":
+                break
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        try:
+            await emit({"type": "live_error", "reason": "stream_error"})
+        except Exception:
+            pass
+    finally:
+        try:
+            await session.close()
+        except Exception:
+            pass
+
+
+def _store_live_turn(user_texts: list[str], asst_texts: list[str]) -> None:
+    """把一輪 live transcript 落地（scores 留空待 Phase 2）；失敗不影響串流。"""
+    asr_text = " ".join(t for t in user_texts if t).strip()
+    reply_text = " ".join(t for t in asst_texts if t).strip()
+    if not (asr_text or reply_text):
+        return
+    try:
+        store.add_interaction({
+            "asr_text": asr_text,
+            "asr_conf": 1.0,
+            "reply_text": reply_text,
+            "scores": {},
+            "source": "live_s2s",
+        })
+    except Exception:
+        logger.exception("live transcript 落地失敗")
