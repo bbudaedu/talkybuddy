@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from server import config, diagnose, guardrails, profile, store
+from server import config, diagnose, guardrails, nova_sonic, profile, store
 from server.asr import ASREngine
 from server.llm import EdgeLLM
 from server.cloud_tts import CloudTTS
@@ -122,6 +122,7 @@ async def api_status():
         "cloud_tts": bool(cloud_tts_engine.available()),
         "network_mode": pipeline.network_mode,
         "pending": store.pending_count(),
+        "live_s2s": bool(config.LIVE_S2S_ENABLED and nova_sonic.available()),
     }
 
 
