@@ -1,0 +1,5 @@
+*.tar.bz2
+sherpa-onnx-kws-*/
+samples/
+*.wav
+__pycache__/
