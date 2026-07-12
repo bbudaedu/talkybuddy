@@ -88,6 +88,17 @@ CONSENT_GRANTED: bool = _env_bool("TALKYBUDDY_CONSENT_GRANTED", True)
 
 
 # ---------------------------------------------------------------------------
+# Nova Sonic 即時 S2S 陪聊（Phase 1；見 docs/superpowers/specs/2026-07-11-nova-sonic-live-s2s-design.md）
+# bidi 只吃 SigV4：憑證走 env（AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY），不進 repo。
+# region 沿用 BEDROCK_REGION。實際可用性 = LIVE_S2S_ENABLED AND nova_sonic.available()。
+# （放在 _env_bool 定義之後，避免 NameError。）
+# ---------------------------------------------------------------------------
+NOVA_SONIC_MODEL_ID: str = os.environ.get("NOVA_SONIC_MODEL_ID", "amazon.nova-2-sonic-v1:0")
+NOVA_SONIC_VOICE: str = os.environ.get("NOVA_SONIC_VOICE", "tiffany")
+LIVE_S2S_ENABLED: bool = _env_bool("LIVE_S2S_ENABLED", True)
+
+
+# ---------------------------------------------------------------------------
 # 雲端情緒 TTS（ElevenLabs；見 docs/superpowers/specs/2026-07-08-cloud-emotional-tts-design.md）
 # 全走環境變數、絕不 commit。network_mode=="cloud" 時 pipeline 才會嘗試雲端，
 # 失敗/逾時/斷網 → 靜默降級回邊緣 Piper。
