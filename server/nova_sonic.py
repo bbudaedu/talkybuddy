@@ -136,12 +136,61 @@ class NovaSonicSession:
             self._audio_content = None
 
     async def _receive_loop(self) -> None:
-        """佔位版（Task 4 取代）：立即放入結束哨兵。"""
-        await self._queue.put(None)
+        """解析模型下行事件放進 queue；多 completion 收斂後 put turn_end + None。"""
+        got_assistant = False
+        try:
+            _, out_stream = await self._stream.await_output()
+            while True:
+                event = await out_stream.receive()
+                if event is None:
+                    break
+                raw = getattr(getattr(event, "value", None), "bytes_", None)
+                if raw is None:
+                    continue
+                try:
+                    ev = json.loads(raw).get("event", {})
+                except Exception:
+                    continue
+                if "textOutput" in ev:
+                    t = ev["textOutput"]
+                    role = t.get("role", "?")
+                    await self._queue.put(NovaEvent("transcript", role=role,
+                                                    text=t.get("content", "")))
+                    if role == "ASSISTANT":
+                        got_assistant = True
+                elif "audioOutput" in ev:
+                    try:
+                        pcm = base64.b64decode(ev["audioOutput"].get("content", ""))
+                    except Exception:
+                        pcm = b""
+                    if pcm:
+                        got_assistant = True
+                        await self._queue.put(NovaEvent("audio", audio=pcm))
+                elif "completionEnd" in ev:
+                    # 先 USER-ASR 段（未見 assistant）→ 不收尾；assistant 段 → turn_end
+                    if got_assistant:
+                        await self._queue.put(NovaEvent("turn_end"))
+                        got_assistant = False
+        except Exception:
+            _log.exception("nova_sonic receive loop 異常")
+        finally:
+            await self._queue.put(None)  # 串流結束哨兵
+
+    async def events(self):
+        """yield 本輪事件直到 turn_end（或串流結束）。"""
+        while True:
+            ev = await self._queue.get()
+            if ev is None:
+                return
+            yield ev
+            if ev.kind == "turn_end":
+                return
 
     async def close(self) -> None:
-        """最小收尾（Task 4 補送 promptEnd/sessionEnd）：關 input、取消 recv、關流。"""
+        """收尾：promptEnd + sessionEnd + 關 input + 取消 recv + 關流（每步吞例外）。"""
         try:
+            await self._send({"event": {"promptEnd": {"promptName": self._prompt_name}}})
+            await self._send({"event": {"sessionEnd": {}}})
             await self._stream.input_stream.close()
         except Exception:
             pass

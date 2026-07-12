@@ -2,6 +2,8 @@
 """NovaSonicSession + module available() 單元測試（全程 mock SDK，不真打雲端）。"""
 from __future__ import annotations
 
+import base64
+
 import pytest
 
 from server import nova_sonic
@@ -135,3 +137,49 @@ async def test_send_audio_opens_audio_content_once_then_end(monkeypatch):
     assert cs["type"] == "AUDIO" and cs["role"] == "USER"
     assert cs["audioInputConfiguration"]["sampleRateHertz"] == 16000
     await s.close()
+
+
+def _out_event(**ev):
+    return json.dumps({"event": ev}).encode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_events_converge_multi_completion(monkeypatch):
+    """先 USER-ASR completionEnd 不收尾，等 ASSISTANT 內容後才發 turn_end。"""
+    asst_audio = base64.b64encode(b"\x00\x00" * 5).decode("ascii")
+    out = [
+        _out_event(textOutput={"role": "USER", "content": "我想吃蘋果"}),
+        _out_event(completionEnd={}),  # user-ASR 段結束 → 不可收尾
+        _out_event(textOutput={"role": "ASSISTANT", "content": "好棒！apple。"}),
+        _out_event(audioOutput={"content": asst_audio}),
+        _out_event(completionEnd={}),  # assistant 段結束 → turn_end
+    ]
+    fake_client = _FakeClient(out_events=out)
+    monkeypatch.setattr(nova_sonic.NovaSonicSession, "_build_client",
+                        lambda self: fake_client)
+    s = nova_sonic.NovaSonicSession("m", "tiffany", "us-east-1")
+    await s.start("sys")
+
+    got = []
+    async for ev in s.events():
+        got.append((ev.kind, ev.role, ev.text, len(ev.audio)))
+
+    assert ("transcript", "USER", "我想吃蘋果", 0) in got
+    assert ("transcript", "ASSISTANT", "好棒！apple。", 0) in got
+    assert any(k == "audio" and n > 0 for (k, _, _, n) in got)
+    assert got[-1][0] == "turn_end"
+    await s.close()
+    assert s._stream.input_stream.closed is True
+
+
+@pytest.mark.asyncio
+async def test_close_sends_prompt_and_session_end(monkeypatch):
+    fake_client = _FakeClient()
+    monkeypatch.setattr(nova_sonic.NovaSonicSession, "_build_client",
+                        lambda self: fake_client)
+    s = nova_sonic.NovaSonicSession("m", "tiffany", "us-east-1")
+    await s.start("sys")
+    await s.close()
+    keys = [k for c in s._stream.input_stream.sent
+            for k in json.loads(c.value.bytes_)["event"].keys()]
+    assert "promptEnd" in keys and "sessionEnd" in keys
