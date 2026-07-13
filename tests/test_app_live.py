@@ -96,6 +96,41 @@ def test_ws_live_turn_stores_interaction(monkeypatch):
     assert seen.get("reply_text") == "好棒！apple。"
 
 
+class _FakeSessionContinuous(_FakeSession):
+    """連續模式 fake：events_continuous 吐一輪後結束（None 由迭代自然收）。"""
+    async def events_continuous(self):
+        from server.nova_sonic import NovaEvent
+        yield NovaEvent("transcript", role="USER", text="哈囉")
+        yield NovaEvent("transcript", role="ASSISTANT", text="嗨呀")
+        yield NovaEvent("audio", audio=b"\x00\x00" * 4)
+        yield NovaEvent("turn_end")
+
+
+def test_ws_live_continuous_forwards_and_ignores_user_end(monkeypatch):
+    monkeypatch.setattr(config, "LIVE_S2S_ENABLED", True)
+    monkeypatch.setattr(nova_sonic, "available", lambda: True)
+    fake = _FakeSessionContinuous()
+    monkeypatch.setattr(app_mod, "_make_live_session", lambda: fake)
+    monkeypatch.setattr(app_mod.guardrails, "consent_granted", lambda: True)
+    seen = {}
+    monkeypatch.setattr(app_mod.store, "add_interaction",
+                        lambda d: seen.update(d) or 1)
+    client = TestClient(app_mod.app)
+    with client.websocket_connect("/ws/live?mode=continuous") as ws:
+        ws.send_bytes(b"\x01\x02" * 8)
+        ws.send_text(json.dumps({"type": "user_end"}))  # 連續模式應被忽略、不觸發收尾
+        kinds = []
+        for _ in range(4):
+            m = ws.receive()
+            if m.get("text"):
+                kinds.append(json.loads(m["text"]).get("type"))
+            elif m.get("bytes"):
+                kinds.append("audio")
+    assert "live_transcript" in kinds and "audio" in kinds and "turn_end" in kinds
+    assert fake.ended is False          # user_end 未觸發 end_user_turn
+    assert seen.get("asr_text") == "哈囉" and seen.get("reply_text") == "嗨呀"
+
+
 def test_ws_live_denied_without_consent(monkeypatch):
     _wire_fake(monkeypatch)
     monkeypatch.setattr(app_mod.guardrails, "consent_granted", lambda: False)

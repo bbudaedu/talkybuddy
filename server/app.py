@@ -431,12 +431,14 @@ async def ws_live(websocket: WebSocket):
                 turn_asst.clear()
                 await emit({"type": "turn_end"})
 
-    try:
-        await session.start(system_prompt)
+    # hands-free 連續模式（?mode=continuous）：上下行雙 Task 常駐，turn 邊界交給 Nova VAD。
+    continuous = websocket.query_params.get("mode") == "continuous"
+
+    async def _uplink() -> None:
         while True:
             msg = await websocket.receive()
             if msg.get("type") == "websocket.disconnect":
-                break
+                return
             if msg.get("bytes") is not None:
                 if msg["bytes"]:
                     await session.send_audio(msg["bytes"])
@@ -448,12 +450,58 @@ async def ws_live(websocket: WebSocket):
                 payload = json.loads(raw)
             except Exception:
                 continue
-            mtype = payload.get("type")
-            if mtype == "user_end":
-                await session.end_user_turn()
-                await drain_events()
-            elif mtype == "bye":
-                break
+            if payload.get("type") == "bye":
+                return
+            # 連續模式：user_end 無意義（turn 邊界交給 Nova VAD），忽略
+
+    async def _downlink() -> None:
+        async for ev in session.events_continuous():
+            print("[live-raw]", ev.kind, getattr(ev, "role", ""), flush=True)  # spike，Task 9 移除
+            if ev.kind == "audio":
+                await emit_bytes(ev.audio)
+            elif ev.kind == "transcript":
+                await emit({"type": "live_transcript", "role": ev.role, "text": ev.text})
+                if ev.role == "USER":
+                    turn_user.append(ev.text)
+                elif ev.role == "ASSISTANT":
+                    turn_asst.append(ev.text)
+            elif ev.kind == "turn_end":
+                _store_live_turn(turn_user, turn_asst)
+                turn_user.clear()
+                turn_asst.clear()
+                await emit({"type": "turn_end"})
+
+    try:
+        await session.start(system_prompt)
+        if continuous:
+            up = asyncio.create_task(_uplink())
+            down = asyncio.create_task(_downlink())
+            _, pending = await asyncio.wait(
+                {up, down}, return_when=asyncio.FIRST_COMPLETED)
+            for t in pending:
+                t.cancel()
+        else:
+            while True:
+                msg = await websocket.receive()
+                if msg.get("type") == "websocket.disconnect":
+                    break
+                if msg.get("bytes") is not None:
+                    if msg["bytes"]:
+                        await session.send_audio(msg["bytes"])
+                    continue
+                raw = msg.get("text")
+                if not raw:
+                    continue
+                try:
+                    payload = json.loads(raw)
+                except Exception:
+                    continue
+                mtype = payload.get("type")
+                if mtype == "user_end":
+                    await session.end_user_turn()
+                    await drain_events()
+                elif mtype == "bye":
+                    break
     except WebSocketDisconnect:
         pass
     except Exception:
