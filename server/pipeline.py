@@ -21,7 +21,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 
-from server import config, scaffold, store
+from server import config, guardrails, scaffold, store
 
 # LLM 加值生成的逾時秒數（契約：>8s 即降級用 scaffold 結果；測試可 monkeypatch）
 LLM_TIMEOUT_S: float = 8.0
@@ -111,7 +111,7 @@ def _webm_to_wav(webm_bytes: bytes) -> str | None:
 class VoicePipeline:
     """單一 session 的語音對話狀態機（半雙工）。"""
 
-    def __init__(self, asr, llm, tts, cloud_tts=None, student_id=None):
+    def __init__(self, asr, llm, tts, cloud_tts=None, cloud_llm=None, student_id=None):
         """依賴注入 ASR / LLM / TTS 引擎實例（測試可傳 stub）。
 
         cloud_tts：選填的雲端 TTS（CloudTTS，同 available()/synth() 契約）；
@@ -123,6 +123,7 @@ class VoicePipeline:
         self.llm = llm
         self.tts = tts
         self.cloud_tts = cloud_tts
+        self.cloud_llm = cloud_llm
         # 本連線身份（每連線一個 pipeline 實例，解單例污染）
         self.student_id = student_id
         # "edge" | "cloud"，由 app.py 切換
@@ -215,21 +216,35 @@ class VoicePipeline:
         result.scores = dict(sc.scores)
         segments = list(sc.tts_segments)
 
-        # LLM 加值：available 時以 thread 生成，逾時/例外/None 一律降級回 scaffold
+        # LLM 加值：cloud → edge → scaffold 降級鏈；任一層逾時/例外/None 續試下一層。
+        # 雲端只在 network_mode=="cloud" 且取得家長同意時進入（資料出境 chokepoint）。
         t_llm = time.monotonic()
         llm_text: str | None = None
-        try:
-            if self.llm is not None and self.llm.available():
-                llm_text = await asyncio.wait_for(
+        engines = []
+        if (
+            self.network_mode == "cloud"
+            and self.cloud_llm is not None
+            and self.cloud_llm.available()
+            and guardrails.consent_granted()
+        ):
+            engines.append(self.cloud_llm)
+        if self.llm is not None and self.llm.available():
+            engines.append(self.llm)
+        for engine in engines:
+            try:
+                candidate = await asyncio.wait_for(
                     asyncio.to_thread(
-                        self.llm.generate, result.asr_text, sc, self._directive
+                        engine.generate, result.asr_text, sc, self._directive
                     ),
                     timeout=LLM_TIMEOUT_S,
                 )
-        except Exception:
-            llm_text = None
+            except Exception:
+                candidate = None
+            if candidate and isinstance(candidate, str) and candidate.strip():
+                llm_text = candidate
+                break
         result.latency_ms["llm"] = int((time.monotonic() - t_llm) * 1000)
-        if llm_text and isinstance(llm_text, str) and llm_text.strip():
+        if llm_text:
             result.reply_text = llm_text.strip()
             segments = scaffold.split_tts_segments(result.reply_text)
 

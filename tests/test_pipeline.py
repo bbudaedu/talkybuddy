@@ -267,3 +267,87 @@ async def test_concurrent_run_turn_text_second_call_gets_busy():
     assert {"type": "busy"} in events_b
     # 只有 first 那輪成功寫入 DB
     assert len(store.list_interactions()) == 1
+
+
+# ---------------------------------------------------------------------------
+# 雲端腦降級鏈：cloud → edge → scaffold（consent + cloud 雙閘）
+# ---------------------------------------------------------------------------
+
+async def test_cloud_mode_uses_cloud_reply_when_consent(monkeypatch):
+    """cloud 模式 + consent + cloud 有回覆 → reply 用雲端。"""
+    monkeypatch.setattr(config, "CONSENT_GRANTED", True)
+    events: list[dict] = []
+    emit = await _collecting_emit(events)
+    vp = VoicePipeline(
+        StubASR("hello", 0.9),
+        StubLLM(reply="EDGE 回覆"),
+        StubTTS(),
+        cloud_llm=StubLLM(reply="CLOUD 回覆：Hi there."),
+    )
+    vp.network_mode = "cloud"
+    result = await vp.run_turn_text("hello", emit)
+    assert result.reply_text == "CLOUD 回覆：Hi there."
+
+
+async def test_cloud_none_falls_back_to_edge(monkeypatch):
+    """cloud 回 None → 降級 edge。"""
+    monkeypatch.setattr(config, "CONSENT_GRANTED", True)
+    events: list[dict] = []
+    emit = await _collecting_emit(events)
+    vp = VoicePipeline(
+        StubASR("hello", 0.9),
+        StubLLM(reply="EDGE 回覆：Hi."),
+        StubTTS(),
+        cloud_llm=StubLLM(reply=None),
+    )
+    vp.network_mode = "cloud"
+    result = await vp.run_turn_text("hello", emit)
+    assert result.reply_text == "EDGE 回覆：Hi."
+
+
+async def test_no_consent_skips_cloud(monkeypatch):
+    """無 consent → 完全不呼叫雲端（即使 cloud 有回覆），走 edge。"""
+    monkeypatch.setattr(config, "CONSENT_GRANTED", False)
+    events: list[dict] = []
+    emit = await _collecting_emit(events)
+    called = {"cloud": False}
+
+    class _SpyCloud(StubLLM):
+        def generate(self, student_text, scaffold_result, directive=None):
+            called["cloud"] = True
+            return "CLOUD 不該被用"
+
+    vp = VoicePipeline(
+        StubASR("hello", 0.9),
+        StubLLM(reply="EDGE 回覆：Hi."),
+        StubTTS(),
+        cloud_llm=_SpyCloud(reply="x"),
+    )
+    vp.network_mode = "cloud"
+    result = await vp.run_turn_text("hello", emit)
+    assert called["cloud"] is False
+    assert result.reply_text == "EDGE 回覆：Hi."
+
+
+async def test_edge_mode_skips_cloud(monkeypatch):
+    """edge 模式 → 不呼叫雲端，即使有 cloud 引擎。"""
+    monkeypatch.setattr(config, "CONSENT_GRANTED", True)
+    events: list[dict] = []
+    emit = await _collecting_emit(events)
+    called = {"cloud": False}
+
+    class _SpyCloud(StubLLM):
+        def generate(self, student_text, scaffold_result, directive=None):
+            called["cloud"] = True
+            return "CLOUD 不該被用"
+
+    vp = VoicePipeline(
+        StubASR("hello", 0.9),
+        StubLLM(reply="EDGE 回覆：Hi."),
+        StubTTS(),
+        cloud_llm=_SpyCloud(reply="x"),
+    )
+    vp.network_mode = "edge"
+    result = await vp.run_turn_text("hello", emit)
+    assert called["cloud"] is False
+    assert result.reply_text == "EDGE 回覆：Hi."
