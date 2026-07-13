@@ -70,6 +70,23 @@ class EdgeLLM:
 ```
 llama-cpp-python 載 `LLM_GGUF`（n_ctx=1024, n_threads=4）。System prompt：台灣國小英語鷹架家教，回覆 ≤2 句繁中鼓勵＋1 句目標英文句（把 scaffold.target_sentence 塞進 prompt 要求圍繞它），輸出禁 markdown/emoji。逾時（>8s）或未載入回 None——**pipeline 以 scaffold.reply_text 為準，LLM 只是加值**。生成後仍過 `scaffold.safety_check`，命中回 None。
 
+## cloud_llm.py
+
+```python
+class CloudLLM:
+    def available(self) -> bool
+    def generate(self, student_text: str, scaffold: "ScaffoldResult", directive: str | None = None) -> str | None
+```
+
+雲端腦對話加值層（契約同 EdgeLLM）。端點/認證/model 由 `anthropic_relay.resolve_config()`
+（`ANTHROPIC_*` env，與 diagnose 共用）解析，支援官方金鑰或自架中轉（`ANTHROPIC_BASE_URL`）。
+`available()`＝憑證可解析；consent/network 由 pipeline 把關。`generate` 上雲前
+`guardrails.deidentify` 去識別化學生文字，輸出過 `passes_guardrail`，目標句缺漏自動補；
+任何失敗/逾時/護欄命中回 None。純 urllib、import 期不觸網。
+
+pipeline 加值降級鏈：`network_mode=="cloud"` 且 `consent_granted()` → CloudLLM →（None/逾時）
+EdgeLLM →（None）scaffold.reply_text。`/api/status` 多回 `"cloud_llm":bool`。
+
 ## tts.py
 
 ```python

@@ -29,6 +29,7 @@ from server import auth, config, diagnose, guardrails, profile, store
 from server.asr import ASREngine
 from server.llm import EdgeLLM
 from server.cloud_tts import CloudTTS
+from server.cloud_llm import CloudLLM
 from server.pipeline import VoicePipeline
 from server.tts import TTSEngine
 
@@ -48,7 +49,11 @@ asr_engine = ASREngine()
 llm_engine = EdgeLLM()
 tts_engine = TTSEngine()
 cloud_tts_engine = CloudTTS()
-pipeline = VoicePipeline(asr_engine, llm_engine, tts_engine, cloud_tts=cloud_tts_engine)
+cloud_llm_engine = CloudLLM()
+pipeline = VoicePipeline(
+    asr_engine, llm_engine, tts_engine,
+    cloud_tts=cloud_tts_engine, cloud_llm=cloud_llm_engine,
+)
 # 承接佈署 profile 預設：cloud profile → 全語音走雲端管線；edge → 邊緣本地。
 pipeline.network_mode = config.default_network_mode()
 
@@ -117,6 +122,7 @@ async def api_status():
         "llm": bool(llm_engine.available()),
         "tts": bool(tts_engine.available()),
         "cloud_tts": bool(cloud_tts_engine.available()),
+        "cloud_llm": bool(cloud_llm_engine.available()),
         "network_mode": pipeline.network_mode,
         "pending": store.pending_count(),
     }
@@ -328,7 +334,7 @@ async def ws_talk(websocket: WebSocket):
     # 每連線一個獨立 VoicePipeline（共用引擎、綁 student_id），解單例污染
     conn_pipe = VoicePipeline(
         asr_engine, llm_engine, tts_engine,
-        cloud_tts=cloud_tts_engine, student_id=sid,
+        cloud_tts=cloud_tts_engine, cloud_llm=cloud_llm_engine, student_id=sid,
     )
     conn_pipe.network_mode = pipeline.network_mode  # 承接目前模式
 
