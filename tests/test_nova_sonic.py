@@ -183,6 +183,30 @@ async def test_events_converge_multi_completion(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_events_continuous_yields_across_multiple_turns(monkeypatch):
+    """events_continuous 不因 turn_end return，跨多輪吐到 None 哨兵才止。"""
+    fake_client = _FakeClient()
+    monkeypatch.setattr(nova_sonic.NovaSonicSession, "_build_client",
+                        lambda self: fake_client)
+    s = nova_sonic.NovaSonicSession("m", "tiffany", "us-east-1")
+    await s.start("sys")
+    # 直接灌 queue 模擬兩輪（繞過真 receive_loop）
+    from server.nova_sonic import NovaEvent
+    s._recv_task.cancel()  # 停背景 loop，改手動灌
+    for ev in [NovaEvent("transcript", role="ASSISTANT", text="第一輪"),
+               NovaEvent("turn_end"),
+               NovaEvent("transcript", role="ASSISTANT", text="第二輪"),
+               NovaEvent("turn_end"),
+               None]:
+        s._queue.put_nowait(ev)
+    got = []
+    async for e in s.events_continuous():
+        got.append((e.kind, e.text))
+    assert got == [("transcript", "第一輪"), ("turn_end", ""),
+                   ("transcript", "第二輪"), ("turn_end", "")]
+
+
+@pytest.mark.asyncio
 async def test_close_sends_prompt_and_session_end(monkeypatch):
     fake_client = _FakeClient()
     monkeypatch.setattr(nova_sonic.NovaSonicSession, "_build_client",

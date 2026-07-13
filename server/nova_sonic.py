@@ -197,6 +197,15 @@ class NovaSonicSession:
             if ev.kind == "turn_end":
                 return
 
+    async def events_continuous(self):
+        """連續模式：跨多輪 yield 事件，只在串流結束（None 哨兵）才 return。
+        與 events() 差別＝不因 turn_end 中止（hands-free 一場對話多輪）。"""
+        while True:
+            ev = await self._queue.get()
+            if ev is None:
+                return
+            yield ev
+
     async def close(self) -> None:
         """收尾：promptEnd + sessionEnd + 關 input + 取消 recv + 關流（每步吞例外）。"""
         try:
