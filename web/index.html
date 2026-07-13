@@ -309,6 +309,9 @@ var busy = false;               // 一輪進行中（半雙工）
 var playingTTS = false;         // TTS 播放中鎖 push-to-talk
 var interimBubble = null;       // asr_result 即時上屏氣泡
 var networkMode = "edge";
+var liveMode = false;           // 即時 S2S（Nova Sonic）模式：true 時走 hold-to-talk，不建 /ws/talk
+var liveSession = null;         // LiveSession 實例（live 模式）
+var degrading = false;          // 降級中旗標：防重複 toast/reload
 
 /* ---------- 視覺狀態機 ---------- */
 /* 狀態 → body class：idle=青色慢呼吸 / listen=橘快閃 / think=紫 / talk=綠律動 */
@@ -644,10 +647,27 @@ function micDisabled() {
 penguinWrap.addEventListener("contextmenu", function (e) { e.preventDefault(); });
 penguinWrap.addEventListener("click", function (e) {
   e.preventDefault();
+  if (liveMode) { return; }   /* live 模式改用 hold-to-talk（pointerdown/up），不走 tap-to-toggle */
   if (!window._wakeController) { showToast("語音輸入暫不可用，請重新整理或用下方快速語句"); return; }
   if (!micAvailable) { showToast("麥克風不可用，請點下方快速語句"); return; }
   window._wakeController.triggerPush();
 });
+
+/* live 模式 hold-to-talk：按住 penguin 說話、放開送 user_end（pointer 事件涵蓋滑鼠/觸控/筆） */
+penguinWrap.addEventListener("pointerdown", function (e) {
+  if (!liveMode || !liveSession) { return; }
+  e.preventDefault();
+  penguinWrap.classList.add("pressing");
+  liveSession.pushToTalkStart();
+});
+function endPushToTalk() {
+  if (!liveMode || !liveSession) { return; }
+  penguinWrap.classList.remove("pressing");
+  liveSession.pushToTalkEnd();
+}
+penguinWrap.addEventListener("pointerup", endPushToTalk);
+penguinWrap.addEventListener("pointercancel", endPushToTalk);
+penguinWrap.addEventListener("pointerleave", endPushToTalk);
 
 /* ---------- /api/status 輪詢（每 5 秒） ---------- */
 function refreshStatus() {
@@ -800,12 +820,77 @@ function initWakeLayer() {
   });
 }
 
+/* ---------- 即時 S2S（Nova Sonic）live 模式 ---------- */
+/* live 為主 + 自動降級：進頁讀 /api/status，live_s2s 且無 forceHalfDuplex → enterLiveMode；
+ * 否則走既有半雙工（connectWS + 喚醒層）。兩模式互斥、init 一次決定、不熱切換。 */
+function initModes() {
+  var forceHalf = sessionStorage.getItem("forceHalfDuplex");
+  if (forceHalf) { sessionStorage.removeItem("forceHalfDuplex"); }   /* 一次性：清旗標防降級循環 */
+  fetch("/api/status").then(function (r) { return r.json(); }).then(function (st) {
+    if (st.live_s2s && !forceHalf) {
+      enterLiveMode();
+    } else {
+      startHalfDuplex();
+    }
+  }).catch(function () {
+    /* status 讀取失敗 → 保底走半雙工 */
+    startHalfDuplex();
+  });
+}
+
+function startHalfDuplex() {
+  liveMode = false;
+  connectWS();
+  initWakeLayer();
+}
+
+function enterLiveMode() {
+  liveMode = true;
+  /* 停喚醒常駐麥（若已建、吞例外）；live 模式不建 /ws/talk */
+  try {
+    if (window._wakeController && window._wakeController.engine && window._wakeController.engine.stop) {
+      window._wakeController.engine.stop();
+    }
+  } catch (e) { /* 忽略 */ }
+  import("/static/live-client.js").then(function (mod) {
+    liveSession = new mod.LiveSession({
+      onTranscript: function (role, text) {
+        addBubble(role === "USER" ? "student" : "penguin", text, {});
+      },
+      onTurnEnd: function () { setVisualState("idle"); },
+      onError: function (reason) { degradeToHalfDuplex(reason); },
+      onStateChange: function (state) { setVisualState(state); }
+    });
+    return liveSession.start();
+  }).then(function () {
+    window.__liveSession = liveSession;
+    holdHint.textContent = "👆 按住企鵝說話，說完放開";
+    holdHint.classList.remove("disabled");
+    showToast("🎙️ 即時對話模式已開啟，按住企鵝說話");
+  }).catch(function () {
+    degradeToHalfDuplex("stream_error");
+  });
+}
+
+function degradeToHalfDuplex(reason) {
+  if (degrading) { return; }   /* 防重複：ws.onerror 與 live_error 可能同時觸發 */
+  degrading = true;
+  var msgs = {
+    consent_required: "需要您同意錄音上雲才能使用即時對話，改用一般模式",
+    unavailable: "即時對話暫不可用，改用一般模式",
+    stream_error: "即時對話連線中斷，改用一般模式"
+  };
+  showToast(msgs[reason] || "即時對話無法使用，改用一般模式");
+  try { if (liveSession) { liveSession.close(); } } catch (e) { /* 忽略 */ }
+  sessionStorage.setItem("forceHalfDuplex", "1");
+  setTimeout(function () { location.reload(); }, 1500);
+}
+
 /* ---------- 啟動 ---------- */
 buildChips();
 setVisualState("idle");
-connectWS();
 initMic();
-initWakeLayer();
+initModes();   /* 取代 connectWS + initWakeLayer：依 live_s2s 決定 live 或半雙工 */
 refreshStatus();
 setInterval(refreshStatus, 5000);
 
