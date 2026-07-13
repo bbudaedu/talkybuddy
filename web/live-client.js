@@ -59,7 +59,7 @@ export class LiveSession {
 
   async start() {
     // 1) 開 WS
-    this.ws = new WebSocket(liveWsURL());
+    this.ws = new WebSocket(liveWsURL() + (this.cb.continuous ? "?mode=continuous" : ""));
     this.ws.binaryType = "arraybuffer";
     this.ws.onmessage = (ev) => this._onMessage(ev);
     await new Promise((resolve, reject) => {
@@ -73,7 +73,9 @@ export class LiveSession {
     this.playCtx = new AudioContext({ sampleRate: 24000 });
 
     // 3) 擷取：麥克風 → AudioWorklet → PCM16k 上行
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+      channelCount: 1 } });
     this.micCtx = new AudioContext();
     await this.micCtx.audioWorklet.addModule("/static/live-capture-processor.js");
     const src = this.micCtx.createMediaStreamSource(this.stream);
@@ -105,6 +107,22 @@ export class LiveSession {
       this.ws.send(JSON.stringify({ type: "user_end" }));
     }
     if (this.cb.onStateChange) this.cb.onStateChange("talk");
+  }
+
+  // hands-free：整場常開擷取（非單輪）。點企鵝開始 → 呼此。
+  startConversation() {
+    this.capturing = true;
+    if (this.micCtx && this.micCtx.state === "suspended") this.micCtx.resume();
+    if (this.playCtx && this.playCtx.state === "suspended") this.playCtx.resume();
+    if (this.cb.onStateChange) this.cb.onStateChange("listen");
+  }
+
+  stopConversation() {
+    this.capturing = false;
+    if (this.ws && this.ws.readyState === 1) {
+      this.ws.send(JSON.stringify({ type: "bye" }));
+    }
+    if (this.cb.onStateChange) this.cb.onStateChange("idle");
   }
 
   _onMessage(ev) {
