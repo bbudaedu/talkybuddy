@@ -647,27 +647,16 @@ function micDisabled() {
 penguinWrap.addEventListener("contextmenu", function (e) { e.preventDefault(); });
 penguinWrap.addEventListener("click", function (e) {
   e.preventDefault();
-  if (liveMode) { return; }   /* live 模式改用 hold-to-talk（pointerdown/up），不走 tap-to-toggle */
+  if (liveMode) {   /* hands-free：點企鵝 toggle 整場對話（開始/結束） */
+    if (!liveSession) { return; }
+    if (liveSession.capturing) { liveSession.stopConversation(); }
+    else { liveSession.startConversation(); }
+    return;
+  }
   if (!window._wakeController) { showToast("語音輸入暫不可用，請重新整理或用下方快速語句"); return; }
   if (!micAvailable) { showToast("麥克風不可用，請點下方快速語句"); return; }
   window._wakeController.triggerPush();
 });
-
-/* live 模式 hold-to-talk：按住 penguin 說話、放開送 user_end（pointer 事件涵蓋滑鼠/觸控/筆） */
-penguinWrap.addEventListener("pointerdown", function (e) {
-  if (!liveMode || !liveSession) { return; }
-  e.preventDefault();
-  penguinWrap.classList.add("pressing");
-  liveSession.pushToTalkStart();
-});
-function endPushToTalk() {
-  if (!liveMode || !liveSession) { return; }
-  penguinWrap.classList.remove("pressing");
-  liveSession.pushToTalkEnd();
-}
-penguinWrap.addEventListener("pointerup", endPushToTalk);
-penguinWrap.addEventListener("pointercancel", endPushToTalk);
-penguinWrap.addEventListener("pointerleave", endPushToTalk);
 
 /* ---------- /api/status 輪詢（每 5 秒） ---------- */
 function refreshStatus() {
@@ -854,10 +843,11 @@ function enterLiveMode() {
   } catch (e) { /* 忽略 */ }
   import("/static/live-client.js").then(function (mod) {
     liveSession = new mod.LiveSession({
+      continuous: true,
       onTranscript: function (role, text) {
         addBubble(role === "USER" ? "student" : "penguin", text, {});
       },
-      onTurnEnd: function () { setVisualState("idle"); },
+      onTurnEnd: function () { setVisualState("listen"); },
       onError: function (reason) { degradeToHalfDuplex(reason); },
       onStateChange: function (state) { setVisualState(state); }
     });
@@ -866,9 +856,9 @@ function enterLiveMode() {
     window.__liveSession = liveSession;
     connStateEl.textContent = "已連線（即時）";
     connStateEl.className = "ok";
-    holdHint.textContent = "👆 按住企鵝說話，說完放開";
+    holdHint.textContent = "👆 點企鵝開始對話，再點一下結束";
     holdHint.classList.remove("disabled");
-    showToast("🎙️ 即時對話模式已開啟，按住企鵝說話");
+    showToast("🎙️ 即時對話模式已就緒，點企鵝開始");
   }).catch(function () {
     degradeToHalfDuplex("stream_error");
   });
