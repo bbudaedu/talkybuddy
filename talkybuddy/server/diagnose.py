@@ -17,10 +17,11 @@
   5. instructions 三欄（classroom / device / peer）依偵測到的弱點組合出
      具體可執行的老師建議，不寫死同一句。
 
-若環境變數 ANTHROPIC_API_KEY 存在，會嘗試以 urllib 直呼 Anthropic
-Messages API（model="claude-sonnet-5"）產生診斷 JSON；任何失敗（網路、
-逾時、格式錯誤）一律 fallback 回上述規則式結果。純標準函式庫，import
-期絕不載入重依賴、絕不對外連線。
+偵測到雲端腦憑證時（ANTHROPIC_API_KEY 或 ANTHROPIC_AUTH_TOKEN，見
+_resolve_api_config；端點/model 可由 ANTHROPIC_BASE_URL 等環境變數覆蓋以
+接自架中轉），會嘗試以 urllib 直呼 Anthropic 相容 Messages API 產生診斷
+JSON；任何失敗（網路、逾時、格式錯誤）一律 fallback 回上述規則式結果。
+純標準函式庫，import 期絕不載入重依賴、絕不對外連線。
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ import re
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
-from server import guardrails
+from server import anthropic_relay, guardrails
 
 # Asia/Taipei 固定 UTC+8（無日光節約，直接用 timedelta 最穩）
 _TAIPEI_TZ = timezone(timedelta(hours=8))
@@ -53,9 +54,7 @@ _DIM_ZH = {
     "grammar": "文法",
 }
 
-# Anthropic Messages API 參數
-_API_URL = "https://api.anthropic.com/v1/messages"
-_API_MODEL = "claude-sonnet-5"
+# Anthropic Messages API 呼叫逾時（端點/認證/model 見 server.anthropic_relay）
 _API_TIMEOUT_SEC = 12
 
 
@@ -517,9 +516,11 @@ def _validate_diagnosis(d: dict) -> dict:
     }
 
 
-def _call_anthropic_api(interactions: list[dict], prev: dict | None, api_key: str) -> dict:
-    """以 urllib 直呼 Anthropic Messages API，要求輸出診斷 JSON。
+def _call_anthropic_api(interactions: list[dict], prev: dict | None, cfg: dict) -> dict:
+    """以 urllib 直呼 Anthropic（相容）Messages API，要求輸出診斷 JSON。
 
+    ``cfg`` 由 :func:`_resolve_api_config` 產生，含 ``url`` / ``model`` /
+    ``headers``（端點、model、認證 header 皆可由環境變數覆蓋，支援自架中轉）。
     失敗（HTTP 錯誤、逾時、JSON 解析失敗、schema 不符）皆丟例外，
     由呼叫端 fallback 到規則式 mock。
     """
@@ -566,19 +567,15 @@ def _call_anthropic_api(interactions: list[dict], prev: dict | None, api_key: st
     )
     body = json.dumps(
         {
-            "model": _API_MODEL,
+            "model": cfg["model"],
             "max_tokens": 1024,
             "messages": [{"role": "user", "content": prompt}],
         }
     ).encode("utf-8")
     req = urllib.request.Request(
-        _API_URL,
+        cfg["url"],
         data=body,
-        headers={
-            "Content-Type": "application/json",
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-        },
+        headers=cfg["headers"],
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=_API_TIMEOUT_SEC) as resp:
@@ -603,16 +600,16 @@ def generate_diagnosis(interactions: list[dict], prev: dict | None,
                        profile: dict | None = None) -> dict:
     """產生今日學習診斷 dict（欄位契約見 CONTRACTS.md）。
 
-    有 ANTHROPIC_API_KEY 時先嘗試真 API（claude-sonnet-5），
-    任何失敗即靜默 fallback 到規則式 mock —— mock 是 demo 主線。
+    偵測到雲端腦憑證時（見 _resolve_api_config，支援官方金鑰或自架中轉）
+    先嘗試真 API，任何失敗即靜默 fallback 到規則式 mock —— mock 是 demo 主線。
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    cfg = anthropic_relay.resolve_config()
     result = None
     # B4-5 consent gate：真正的雲端資料出境 chokepoint。未取得家長同意時，
-    # 即使有金鑰也不上雲，改走本地規則式（背景 _refresh_directive 亦涵蓋）。
-    if api_key and guardrails.consent_granted():
+    # 即使有憑證也不上雲，改走本地規則式（背景 _refresh_directive 亦涵蓋）。
+    if cfg and guardrails.consent_granted():
         try:
-            result = _call_anthropic_api(interactions, prev, api_key)
+            result = _call_anthropic_api(interactions, prev, cfg)
         except Exception:
             # 雲端層失敗：不拋錯、不阻塞，改用邊緣端規則式診斷
             result = None
