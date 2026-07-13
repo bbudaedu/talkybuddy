@@ -864,6 +864,8 @@ function enterLiveMode() {
     return liveSession.start();
   }).then(function () {
     window.__liveSession = liveSession;
+    connStateEl.textContent = "已連線（即時）";
+    connStateEl.className = "ok";
     holdHint.textContent = "👆 按住企鵝說話，說完放開";
     holdHint.classList.remove("disabled");
     showToast("🎙️ 即時對話模式已開啟，按住企鵝說話");

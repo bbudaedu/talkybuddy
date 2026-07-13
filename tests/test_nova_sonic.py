@@ -126,8 +126,18 @@ async def test_send_audio_opens_audio_content_once_then_end(monkeypatch):
 
     new_keys = [k for c in s._stream.input_stream.sent[base:]
                 for k in json.loads(c.value.bytes_)["event"].keys()]
-    # 首塊觸發一次 AUDIO contentStart，之後只有 audioInput，收尾一個 contentEnd
-    assert new_keys == ["contentStart", "audioInput", "audioInput", "contentEnd"]
+    # 首塊觸發一次 AUDIO contentStart，之後 audioInput；end_user_turn 於 contentEnd
+    # 前補一塊尾端靜音 audioInput（助 Nova VAD 收尾，否則不回覆並 55s 逾時）
+    assert new_keys == [
+        "contentStart", "audioInput", "audioInput", "audioInput", "contentEnd",
+    ]
+    # 收尾前最後一塊 audioInput 必為全零靜音，長度＝設定的尾靜音秒數
+    last_audio = [json.loads(c.value.bytes_)["event"]["audioInput"]["content"]
+                  for c in s._stream.input_stream.sent[base:]
+                  if "audioInput" in json.loads(c.value.bytes_)["event"]][-1]
+    tail_pcm = base64.b64decode(last_audio)
+    assert tail_pcm == nova_sonic._TAIL_SILENCE_PCM
+    assert set(tail_pcm) == {0} and len(tail_pcm) == int(0.8 * 16000) * 2
     # end_user_turn 不得送 promptEnd
     assert "promptEnd" not in new_keys
     # AUDIO contentStart 為 16kHz USER

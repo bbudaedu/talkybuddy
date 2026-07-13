@@ -20,6 +20,12 @@ from dataclasses import dataclass
 
 _log = logging.getLogger(__name__)
 
+# Nova Sonic 以 VAD 偵測語音結束；使用者放開後音訊無尾端靜音時 VAD 不收尾，
+# 不生成回覆並在 55s 後丟 "Timed out waiting for audio bytes"。故 contentEnd
+# 前補一段 16kHz PCM16 靜音助 VAD 收尾（值由 verify_ws_live_e2e.py 實測定案）。
+_TAIL_SILENCE_SEC = 0.8
+_TAIL_SILENCE_PCM = b"\x00\x00" * int(_TAIL_SILENCE_SEC * 16000)
+
 
 def available() -> bool:
     """能否啟用 Nova Sonic bidi：SigV4 env 齊全 + SDK 可 import。"""
@@ -129,8 +135,13 @@ class NovaSonicSession:
             "content": b64}}})
 
     async def end_user_turn(self) -> None:
-        """結束本輪使用者音訊（送 contentEnd）；不送 promptEnd（協定踩雷）。"""
+        """結束本輪使用者音訊：補尾端靜音助 VAD 收尾 → 送 contentEnd。
+        不送 promptEnd（協定踩雷）。尾靜音缺失會導致 Nova 不回覆並 55s 逾時。"""
         if self._audio_content is not None:
+            b64 = base64.b64encode(_TAIL_SILENCE_PCM).decode("ascii")
+            await self._send({"event": {"audioInput": {
+                "promptName": self._prompt_name, "contentName": self._audio_content,
+                "content": b64}}})
             await self._send({"event": {"contentEnd": {
                 "promptName": self._prompt_name, "contentName": self._audio_content}}})
             self._audio_content = None

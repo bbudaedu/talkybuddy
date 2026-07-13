@@ -92,6 +92,10 @@ export class LiveSession {
 
   pushToTalkStart() {
     this.capturing = true;
+    // AudioContext 建立於頁面載入（非使用者手勢）會停在 suspended；此處 pointerdown
+    // 是使用者手勢，resume 才會拉動擷取 worklet（否則錄不到音）與播放（否則聽不到回覆）。
+    if (this.micCtx && this.micCtx.state === "suspended") this.micCtx.resume();
+    if (this.playCtx && this.playCtx.state === "suspended") this.playCtx.resume();
     if (this.cb.onStateChange) this.cb.onStateChange("listen");
   }
 
