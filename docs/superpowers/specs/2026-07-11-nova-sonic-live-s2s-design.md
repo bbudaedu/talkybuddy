@@ -106,3 +106,71 @@ module 級 `available() -> bool`：SigV4 env（`AWS_ACCESS_KEY_ID`/`AWS_SECRET_A
 ## 安全
 - Nova Sonic bidi 只吃 SigV4；憑證走 env、不進 repo；測試 IAM user 用短期 key 且測後撤銷。
 - 音訊上雲受 consent gate 管，與現有 cloud 路徑一致。
+
+---
+
+## 前端錄放整合層設計（2026-07-13 修訂）
+
+> 本章細化原 §4「前端 live-client.js + 模式鈕」，並**修訂定位**。後端 Task 1–7（`NovaSonicSession`、`/ws/live`、`/api/status`、`build_live_system_prompt`）已實作完成；本章聚焦前端真正的錄放接線與模式定位。**本章與原文衝突處以本章為準**：原 §11、§4（第 68 行）、§65–68、§72「模式鈕手動切『即時對話』／可切回」的描述，被下方「定位翻轉」取代。
+
+### 定位翻轉：live 為主、半雙工為自動 fallback ⚠️
+
+- 產品方向：**雲端以 live 全雙工為主要體驗，半雙工 `/ws/talk` 降為 fallback**（僅在 live 不可用/失敗時使用）。斷網本地全雙工僅開發版、留待後續，本次不做。
+- 前端 `init()` 讀 `/api/status` 一次決定主模式（兩模式**互斥、不做執行期熱切換**）：
+  - `live_s2s=true` 且無強制半雙工旗標 → **直接進 live 模式**（hold-to-talk）；停現有喚醒引擎常駐麥、**不建 `/ws/talk`**、連 `/ws/live`。
+  - `live_s2s=false` → 走半雙工（**完全現狀，一行不動**）。
+- 因兩模式由 init 一次決定，**不需要**原 spec 的手動切換模式鈕；前端無使用者主動熱切換。
+
+### 互動模型：hold-to-talk（Phase 1）
+
+- **按住** live 主鈕 → 開始擷取上行 PCM（視覺 `listen`）；**放開** → `ws.send({"type":"user_end"})` 並停上行（視覺 `talk`）。
+- 下行 audio 播放與 transcript 持續進來；收到 `turn_end` → 回 `idle`，可連續多輪（一條 `/ws/live` 連線）。
+- 明確 `user_end` 訊號對接後端既有 `end_user_turn()`（後端設計不變）。
+- **非目標（緊接下一步）**：麥克風常開、可打斷的真 barge-in 全雙工。Phase 1 先跑通 hold-to-talk 端到端，再增量升級（風險隔離）。
+
+### 錄放資料流
+
+```
+上行：getUserMedia → AudioContext → AudioWorklet(live-capture-processor.js)
+      → float32 frames → downsampleTo16k → floatTo16BitPCM → ws.send(binary 16k PCM16)
+下行：ws binary(24k PCM16) → PlaybackQueue → AudioBufferSourceNode 排程接續播放
+      （nextStartTime 累加，低延遲串流；後端下行為 raw binary，前端免 base64 解碼）
+文字：ws text {live_transcript|turn_end|live_error} → callbacks → 逐字稿/狀態/toast
+```
+
+- 播放採 **AudioBufferSourceNode 排程接續**（非播放 worklet），Phase 1 求穩定可跑、複雜度低。
+- 上行必須 **AudioWorklet**（`/ws/talk` 的 MediaRecorder→webm/opus 給的是壓縮流，無法產出 Nova Sonic 需要的 raw PCM16）。
+
+### 自動降級（旗標 + 重整，乾淨還原）
+
+- live 連線失敗 / 收到 `live_error`（`consent_required`/`unavailable`/`stream_error`）/ AudioWorklet 載入失敗 →
+  `sessionStorage['forceHalfDuplex']='1'` → toast 提示 → `location.reload()`。
+- `init()` 見此旗標 → 強制走半雙工並**立即清旗標**（避免重整後又進 live 的無窮循環；下次重開頁面恢復 live 為主）。
+- 以重整達成降級：**零資源洩漏**（麥克風/AudioContext/WS 隨頁面卸載自然釋放），不需手寫拆解/重建邏輯。
+
+### 前端元件
+
+- **純函式層**（`web/live-client.js`，node `--test` 可測）：
+  - `floatTo16BitPCM(float32) → ArrayBuffer`
+  - `base64ToPCM16(b64) → Int16Array`
+  - `PlaybackQueue`（`enqueue`/`size`/`drain`）
+  - **新增 `downsampleTo16k(float32, inRate) → Float32Array`**（麥克風常 44.1k/48k，需降到 16k）
+- **整合層**（`web/live-client.js` 同檔，瀏覽器 API，走手動 e2e）：`LiveSession` class 封裝一場對話的錄放與 WS 接線（`start`/`pushToTalkStart`/`pushToTalkEnd`/`close` + callbacks）。
+- **新增 `web/live-capture-processor.js`**：AudioWorklet processor 檔（audio thread 收 128-frame float32，`postMessage` 回主線程累積）。
+
+### 麥克風／喚醒協調
+
+- 進 live 模式（init 判定）→ 停 `window._wakeController` 的喚醒引擎常駐麥（`engine.stop`）、不建 `/ws/talk`，避免兩路搶麥／搶連線。
+- 還原（降級或使用者離開）→ 靠頁面重整，`init` 重新以半雙工建立喚醒/`/ws/talk`。
+
+### 測試策略（前端）
+
+- 純函式 node `--test`：`floatTo16BitPCM`（16-bit LE、夾限）、`base64ToPCM16`、`PlaybackQueue`、`downsampleTo16k`（升/降取樣長度正確、邊界）。
+- 整合層 + 錄放 + 自動降級：**手動 e2e**——本次含**真機接 Nova Sonic**（使用者提供短期 SigV4，本機 HTTPS 實跑瀏覽器 hold-to-talk 中文往返、聽到語音、transcript 落地）。
+- 回歸：後端 `pytest` 全綠；`/ws/talk` 半雙工路徑一行不動。
+
+### 前端非目標（本次不做）
+
+- 麥克風常開、可打斷的真 barge-in 全雙工 → 緊接下一步。
+- 斷網本地全雙工（僅開發版）→ 留待後續。
+- 使用者主動在兩模式間熱切換的 UI（改由 init 一次決定 + 自動降級）。
