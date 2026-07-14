@@ -12,6 +12,7 @@ def test_static_frame_present():
     assert "英" in p                           # 帶讀英文
     # 兒童安全護欄折入（重用 guardrails 常數的關鍵字）
     assert "個人資料" in p or "個資" in p or "難過" in p
+    assert "放慢" in p and "咬字" in p         # 語速放慢指示（Nova Sonic 無原生 speed 參數）
 
 
 def test_dynamic_target_and_directive_folded():
