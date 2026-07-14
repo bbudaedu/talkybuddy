@@ -125,9 +125,16 @@ asyncio.gather(uplink, downlink, return_exceptions=True)
 | `LiveSession.startConversation/stopConversation` | 整場常開擷取 + 播放 | 點企鵝 toggle | getUserMedia、worklet、WS |
 | `LiveSession._flushPlayback` | barge-in 停播 | `{type:"interrupt"}` | `_sources`、playCtx |
 
-## 附錄 A：Phase 0 spike findings（待填）
+## 附錄 A：Phase 0 spike findings（2026-07-14 真機測，手機 → HTTPS server）
 
-- 題1 靜默漏音：`TBD`
-- 題2 正常分段：`TBD`
-- 題3 barge-in 中斷事件形態：`TBD`
-- 閘門結論：`TBD`
+- **題1 靜默漏音：PASS**。點開始後讓 AI 講長回覆、使用者完全不出聲 → AI 整段講完、無假 USER 氣泡、無自問自答。**AEC 過關**：即使播放走獨立 `playCtx` AudioContext，瀏覽器/OS 的回音消除仍罩得住，**不需重構播放路徑**（§3 的存亡點解除）。
+- **題2 正常分段：PASS**。說一句話 → 停頓 → Nova server 端 VAD **不靠尾靜音**即自動判定 turn 結束並回覆。連續模式永不呼叫 `end_user_turn`／`_TAIL_SILENCE_PCM` 成立。
+- **題3 barge-in 中斷事件形態：`userSpeechStart`（非計畫假設的 `contentEnd.stopReason=="INTERRUPTED"`）**。使用者出聲的瞬間，Nova 送出獨立事件：
+
+  ```json
+  {"userSpeechStart": {"inputAudioOffsetMs": 11760,
+    "promptName": "<uuid>", "sessionId": "<uuid>"}}
+  ```
+
+  對稱地在使用者語音結束送 `userSpeechEnd`（帶 `inputAudioDetectionOffsetMs`/`inputAudioOffsetMs`）。**實測 `contentEnd` 一律帶 `stopReason:"PARTIAL_TURN"`，barge-in 時並不出現 `INTERRUPTED`** → 計畫 Task 6 原假設作廢，改以偵測 `userSpeechStart` 鍵作為 barge-in（interrupt）信號。`userSpeechStart` 在**每次**使用者語音起點都會觸發（含正常輪首句），故映射成 `interrupt` 時，client `_flushPlayback()` 對「沒有播放中音訊」的正常輪自然是 no-op、對「AI 講話中插話」則即時停播，語義正確。
+- **閘門結論：三題皆 PASS → 進 Phase 1（Task 6 依本附錄改以 `userSpeechStart` 解析）。** 播放路徑無需改走共用 context / WebRTC audio element。
