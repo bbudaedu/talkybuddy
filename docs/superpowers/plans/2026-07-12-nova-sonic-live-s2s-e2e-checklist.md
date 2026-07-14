@@ -38,6 +38,16 @@
 - [ ] 不匯出 SigV4 憑證啟動 → `/api/status` `live_s2s=false` → 進頁**不進 live**、直接半雙工
 - [ ] `/ws/talk` 行為完全不變（點企鵝、喚醒詞、快速語句、飛航模式切換）
 
+## hands-free 全雙工（`?mode=continuous`，Phase 1）
+> 進頁 `enterLiveMode` 只建立 `LiveSession({continuous:true})`（WS+getUserMedia+worklet 就緒）**不自動擷取**；點企鵝 toggle 開/關整場對話，turn 邊界交給 Nova server VAD，支援真 barge-in。
+- [ ] 進頁自動進 live → hint「👆 點企鵝開始對話，再點一下結束」、toast「即時對話模式已就緒，點企鵝開始」；**麥克風尚未擷取**
+- [ ] **點企鵝開始**：狀態切 `listen`（麥常開整場）；再點 → `stopConversation`、狀態回 `idle`、送 `bye`
+- [ ] **連續多輪不需再按**：說一句 → 停頓 → Nova VAD 自動判定 turn 結束並回覆；接著再說下一句，無需任何按鍵
+- [ ] **真 barge-in**：AI 講話中出聲 → AI **立即停播**（`_flushPlayback`）、狀態切 `listen`（server 送 `{type:"interrupt"}`）
+- [ ] **靜默無自問自答**：AI 講長回覆時完全不出聲 → 不冒假 USER 氣泡、不自我打斷（AEC 過關實證）
+- [ ] **乾淨關閉**：點結束或關頁 → 無殘留 `/ws/live` 連線、麥克風佔用釋放、伺服器 log 無 teardown InvalidStateError 噴發
+- [ ] **降級安全網**：live 失敗 → 自動降半雙工（既有 hold-to-talk 路徑零改動、續用）
+
 ## 資源清理
 - [ ] 降級 reload 後：live 的麥克風佔用（indicator）已釋放、無殘留 `/ws/live` 連線
 - [ ] 驗完撤短期 SigV4 憑證

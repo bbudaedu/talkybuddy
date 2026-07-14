@@ -480,8 +480,21 @@ async def ws_live(websocket: WebSocket):
             down = asyncio.create_task(_downlink())
             _, pending = await asyncio.wait(
                 {up, down}, return_when=asyncio.FIRST_COMPLETED)
+            # 乾淨關法（避免 teardown race）：先 close session，讓內部 receive loop
+            # 收斂並對 events_continuous 送 None 哨兵 → downlink 自然結束；再取消殘留
+            # task 並 await 吞掉 CancelledError，避免 SDK receive() 被硬取消時丟
+            # InvalidStateError。close() 每步吞例外、可與 finally 的再次 close 疊。
+            try:
+                await session.close()
+            except Exception:
+                pass
             for t in pending:
                 t.cancel()
+            for t in pending:
+                try:
+                    await t
+                except BaseException:
+                    pass
         else:
             while True:
                 msg = await websocket.receive()
