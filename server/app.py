@@ -536,6 +536,26 @@ async def ws_live(websocket: WebSocket):
             await session.close()
         except Exception:
             pass
+        try:
+            await asyncio.to_thread(_run_live_diagnosis)
+        except Exception:
+            logger.exception("live 場末診斷觸發失敗")
+
+
+def _run_live_diagnosis() -> None:
+    """場末回寫診斷：對本場 live 逐字稿跑一次 generate_diagnosis 並存，
+    供下一場 build_lesson 自適應。失敗只記 log、不影響關閉。"""
+    try:
+        recent = [i for i in store.list_interactions(limit=20)
+                  if i.get("source") == "live_s2s"][-10:]
+        if len(recent) < 2:
+            return
+        diags = store.list_diagnoses()
+        prev = diags[-1] if diags else None
+        diag = diagnose.generate_diagnosis(recent, prev, store.get_profile())
+        store.add_diagnosis(diag)
+    except Exception:
+        logger.exception("live 場末診斷失敗")
 
 
 def _store_live_turn(user_texts: list[str], asst_texts: list[str]) -> None:
