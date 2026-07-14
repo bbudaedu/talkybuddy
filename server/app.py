@@ -25,7 +25,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from server import config, diagnose, guardrails, nova_sonic, profile, scaffold, store
+from server import (
+    config, diagnose, guardrails, nova_sonic, profile, pronunciation, scaffold, store,
+)
 from server.asr import ASREngine
 from server.llm import EdgeLLM
 from server.cloud_tts import CloudTTS
@@ -421,6 +423,28 @@ async def ws_live(websocket: WebSocket):
     session = _make_live_session()
     turn_user, turn_asst = [], []
 
+    # 發音評測（B 軸背景）：available 才 tee 使用者上行 PCM，turn_end 背景評分。
+    # 不可用→不 tee、不評分，行為與現行全雙工一致（降級安全）。
+    pron_on = pronunciation.available()
+    pcm_buf = bytearray()
+
+    async def _finish_turn() -> None:
+        """一輪結束：對已緩衝的使用者 PCM 背景評分（有逾時上限），把 pron 併入落地。"""
+        pron = None
+        if pron_on and pcm_buf:
+            try:
+                pron = await asyncio.wait_for(
+                    asyncio.to_thread(_pcm_to_pron_score, bytes(pcm_buf), target),
+                    timeout=config.PRON_SCORE_TIMEOUT_S,
+                )
+            except Exception:
+                pron = None
+        pcm_buf.clear()
+        _store_live_turn(turn_user, turn_asst, pron)
+        turn_user.clear()
+        turn_asst.clear()
+        await emit({"type": "turn_end"})
+
     async def drain_events() -> None:
         """迭代模型事件轉發前端；turn_end 落地 transcript。"""
         async for ev in session.events():
@@ -433,10 +457,7 @@ async def ws_live(websocket: WebSocket):
                 elif ev.role == "ASSISTANT":
                     turn_asst.append(ev.text)
             elif ev.kind == "turn_end":
-                _store_live_turn(turn_user, turn_asst)
-                turn_user.clear()
-                turn_asst.clear()
-                await emit({"type": "turn_end"})
+                await _finish_turn()
 
     # hands-free 連續模式（?mode=continuous）：上下行雙 Task 常駐，turn 邊界交給 Nova VAD。
     continuous = websocket.query_params.get("mode") == "continuous"
@@ -449,6 +470,8 @@ async def ws_live(websocket: WebSocket):
             if msg.get("bytes") is not None:
                 if msg["bytes"]:
                     await session.send_audio(msg["bytes"])
+                    if pron_on:
+                        pcm_buf.extend(msg["bytes"])   # tee 一份供 turn_end 評分
                 continue
             raw = msg.get("text")
             if not raw:
@@ -472,10 +495,7 @@ async def ws_live(websocket: WebSocket):
                 elif ev.role == "ASSISTANT":
                     turn_asst.append(ev.text)
             elif ev.kind == "turn_end":
-                _store_live_turn(turn_user, turn_asst)
-                turn_user.clear()
-                turn_asst.clear()
-                await emit({"type": "turn_end"})
+                await _finish_turn()
             elif ev.kind == "interrupt":
                 # barge-in：轉發給前端停播 + 切 listen（Nova server VAD 偵測到插話）
                 await emit({"type": "interrupt"})
@@ -510,6 +530,8 @@ async def ws_live(websocket: WebSocket):
                 if msg.get("bytes") is not None:
                     if msg["bytes"]:
                         await session.send_audio(msg["bytes"])
+                        if pron_on:
+                            pcm_buf.extend(msg["bytes"])   # tee 供 turn_end 評分
                     continue
                 raw = msg.get("text")
                 if not raw:
@@ -558,18 +580,59 @@ def _run_live_diagnosis() -> None:
         logger.exception("live 場末診斷失敗")
 
 
-def _store_live_turn(user_texts: list[str], asst_texts: list[str]) -> None:
-    """把一輪 live transcript 落地（scores 留空待 Phase 2）；失敗不影響串流。"""
+def _pcm_to_pron_score(pcm: bytes, reference: str, rate: int = 16000) -> float | None:
+    """把一輪使用者 PCM16 mono 組成暫存 wav → pronunciation.score → 用後即刪。
+
+    定位＝B 軸背景聲學評測（見 server/pronunciation.py，路 A）。純同步、CPU 密集，
+    由呼叫端丟 asyncio.to_thread + 逾時包起來，避免擋事件迴圈。
+    不可用／空 PCM／空 reference／任何例外 → None（呼叫端維持既有行為）。
+    隱私：暫存 wav 評完即刪、只回 0-100 分數。
+    """
+    if not pcm or not (reference or "").strip():
+        return None
+    if not pronunciation.available():
+        return None
+    import os
+    import tempfile
+    import wave
+
+    path = None
+    try:
+        fd, path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        with wave.open(path, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)      # PCM16
+            w.setframerate(rate)   # 上行＝16kHz mono（web/live-client.js downsampleTo16k）
+            w.writeframes(pcm)
+        return pronunciation.score(path, reference)
+    except Exception:
+        return None
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except Exception:
+                pass
+
+
+def _store_live_turn(
+    user_texts: list[str], asst_texts: list[str], pron: float | None = None
+) -> None:
+    """把一輪 live transcript 落地；pron 有值時寫 scores["pronunciation"]。失敗不影響串流。"""
     asr_text = " ".join(t for t in user_texts if t).strip()
     reply_text = " ".join(t for t in asst_texts if t).strip()
     if not (asr_text or reply_text):
         return
+    scores: dict = {}
+    if pron is not None:
+        scores["pronunciation"] = float(pron)
     try:
         store.add_interaction({
             "asr_text": asr_text,
             "asr_conf": 1.0,
             "reply_text": reply_text,
-            "scores": {},
+            "scores": scores,
             "source": "live_s2s",
         })
     except Exception:

@@ -2,6 +2,8 @@
 """/api/status live_s2s 欄 + /ws/live 端點行為測試（注入 fake NovaSonicSession）。"""
 from __future__ import annotations
 
+import os
+
 from starlette.testclient import TestClient
 
 from server import app as app_mod
@@ -68,6 +70,8 @@ def _wire_fake(monkeypatch):
     monkeypatch.setattr(config, "LIVE_S2S_ENABLED", True)
     monkeypatch.setattr(nova_sonic, "available", lambda: True)
     monkeypatch.setattr(app_mod, "_make_live_session", lambda: _FakeSession())
+    # 預設關閉發音評測，避免這些非發音測試意外載入真模型；需要者自行 setattr True。
+    monkeypatch.setattr(app_mod.pronunciation, "available", lambda: False)
 
 
 def test_ws_live_turn_stores_interaction(monkeypatch):
@@ -111,6 +115,7 @@ def test_ws_live_continuous_forwards_and_ignores_user_end(monkeypatch):
     monkeypatch.setattr(nova_sonic, "available", lambda: True)
     fake = _FakeSessionContinuous()
     monkeypatch.setattr(app_mod, "_make_live_session", lambda: fake)
+    monkeypatch.setattr(app_mod.pronunciation, "available", lambda: False)
     monkeypatch.setattr(app_mod.guardrails, "consent_granted", lambda: True)
     seen = {}
     monkeypatch.setattr(app_mod.store, "add_interaction",
@@ -141,6 +146,7 @@ def test_ws_live_continuous_forwards_interrupt(monkeypatch):
     monkeypatch.setattr(config, "LIVE_S2S_ENABLED", True)
     monkeypatch.setattr(nova_sonic, "available", lambda: True)
     monkeypatch.setattr(app_mod, "_make_live_session", lambda: _FakeInterrupt())
+    monkeypatch.setattr(app_mod.pronunciation, "available", lambda: False)
     monkeypatch.setattr(app_mod.guardrails, "consent_granted", lambda: True)
     client = TestClient(app_mod.app)
     with client.websocket_connect("/ws/live?mode=continuous") as ws:
@@ -174,3 +180,80 @@ def test_ws_live_denied_when_unavailable(monkeypatch):
         payload = json.loads(ws.receive()["text"])
         assert payload["type"] == "live_error"
         assert payload["reason"] == "unavailable"
+
+
+# ---------------------------------------------------------------------------
+# 階段2 發音評測接線：_store_live_turn(pron=) 與 _pcm_to_pron_score 助手
+# ---------------------------------------------------------------------------
+
+def test_store_live_turn_writes_pronunciation_score(monkeypatch):
+    """pron 有值 → scores["pronunciation"] 寫入。"""
+    seen = {}
+    monkeypatch.setattr(app_mod.store, "add_interaction",
+                        lambda d: seen.update(d) or 1)
+    app_mod._store_live_turn(["hello"], ["hi"], pron=73.0)
+    assert seen["scores"]["pronunciation"] == 73.0
+
+
+def test_store_live_turn_empty_scores_when_pron_none(monkeypatch):
+    """pron=None（現況/降級）→ scores 維持空、向後相容。"""
+    seen = {}
+    monkeypatch.setattr(app_mod.store, "add_interaction",
+                        lambda d: seen.update(d) or 1)
+    app_mod._store_live_turn(["hello"], ["hi"], pron=None)
+    assert seen["scores"] == {}
+
+
+def test_pcm_to_pron_score_none_when_unavailable(monkeypatch):
+    monkeypatch.setattr(app_mod.pronunciation, "available", lambda: False)
+    assert app_mod._pcm_to_pron_score(b"\x00\x00" * 100, "hello") is None
+
+
+def test_pcm_to_pron_score_none_on_empty_pcm(monkeypatch):
+    monkeypatch.setattr(app_mod.pronunciation, "available", lambda: True)
+    assert app_mod._pcm_to_pron_score(b"", "hello") is None
+
+
+def test_ws_live_turn_scores_pronunciation(monkeypatch):
+    """turn-based：使用者 PCM 被 tee，turn_end 背景評分後把 pron 寫進該輪 interaction。"""
+    _wire_fake(monkeypatch)
+    monkeypatch.setattr(app_mod.guardrails, "consent_granted", lambda: True)
+    monkeypatch.setattr(app_mod.pronunciation, "available", lambda: True)
+    scored = {}
+
+    def fake_score(path, ref):
+        scored["ref"] = ref
+        return 82.0
+
+    monkeypatch.setattr(app_mod.pronunciation, "score", fake_score)
+    seen = {}
+    monkeypatch.setattr(app_mod.store, "add_interaction",
+                        lambda d: seen.update(d) or 1)
+    client = TestClient(app_mod.app)
+    with client.websocket_connect("/ws/live") as ws:
+        ws.send_bytes(b"\x01\x02" * 800)                 # 一段使用者 PCM
+        ws.send_text(json.dumps({"type": "user_end"}))
+        for _ in range(4):
+            ws.receive()
+        ws.send_text(json.dumps({"type": "bye"}))
+    assert seen.get("scores", {}).get("pronunciation") == 82.0
+    assert scored.get("ref")                              # 對該場跟讀 target 句評分
+
+
+def test_pcm_to_pron_score_builds_wav_scores_and_deletes(monkeypatch):
+    """組 16k mono wav → pronunciation.score → 回分數；暫存 wav 事後刪除（隱私）。"""
+    monkeypatch.setattr(app_mod.pronunciation, "available", lambda: True)
+    captured = {}
+
+    def fake_score(path, ref):
+        captured["path"] = path
+        captured["exists_during"] = os.path.exists(path)
+        captured["ref"] = ref
+        return 77.0
+
+    monkeypatch.setattr(app_mod.pronunciation, "score", fake_score)
+    out = app_mod._pcm_to_pron_score(b"\x01\x02" * 1600, "I want an apple.")
+    assert out == 77.0
+    assert captured["ref"] == "I want an apple."
+    assert captured["exists_during"] is True            # 評分時 wav 在
+    assert not os.path.exists(captured["path"])          # 評分後刪除（用後即刪）

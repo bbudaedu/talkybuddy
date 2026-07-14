@@ -119,6 +119,9 @@ ELEVENLABS_VOICE_ID: str = os.environ.get("ELEVENLABS_VOICE_ID", "Xb7hH8MSUJpSbS
 ELEVENLABS_MODEL: str = os.environ.get("ELEVENLABS_MODEL", "eleven_v3")
 # 雲端合成逾時（秒）；逾時即降級回邊緣。
 CLOUD_TTS_TIMEOUT_S: float = float(os.environ.get("CLOUD_TTS_TIMEOUT_S", "6.0"))
+# 發音評測（B 軸背景，見 server/pronunciation.py）逾時（秒）；含首輪模型載入。
+# 逾時→該輪 pron=None 照寫 transcript，避免分數與 interaction 脫鉤。
+PRON_SCORE_TIMEOUT_S: float = float(os.environ.get("PRON_SCORE_TIMEOUT_S", "15.0"))
 # v3 voice_settings 情緒參數（取代無效的 speed；預設值＝真 API 手測聽感選定，可用 env 調）：
 # stability 低→情緒起伏大、高→平穩；style 誇張說話特色；similarity_boost 貼近原聲。
 ELEVENLABS_STABILITY: float = float(os.environ.get("ELEVENLABS_STABILITY", "0.5"))
