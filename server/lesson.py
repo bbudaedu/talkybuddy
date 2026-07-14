@@ -5,7 +5,17 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 _DEFAULT_SENTENCE = "How are you today?"
+
+
+@dataclass
+class Lesson:
+    topic: str
+    target_sentence: str
+    target_form: str | None
+    directive: str | None
 
 
 def pick_target_sentence(topic, profile=None) -> str:
@@ -32,3 +42,27 @@ def pick_target_sentence(topic, profile=None) -> str:
         return cands[0]["sent"]
     except Exception:
         return _DEFAULT_SENTENCE
+
+
+def build_lesson(diagnoses, profile=None) -> Lesson:
+    """由最新診斷 + profile 組本場教材。全程安全退化，永不擋 live。"""
+    from server import curriculum, diagnose
+    default_topic = curriculum.TOPIC_ORDER[0]
+    default_form = curriculum._TARGET_FORM[1]
+    try:
+        latest = (diagnoses or [])[-1] if (diagnoses or []) else None
+        directive = None
+        topic = default_topic
+        target_form = default_form
+        if latest:
+            ls = latest.get("level_state") or {}
+            cd = latest.get("companion_directive")
+            if cd:
+                directive = diagnose.format_directive_for_prompt(cd, ls) or None
+            topic = ls.get("topic") or default_topic
+            target_form = ls.get("target_form") or default_form
+        return Lesson(topic, pick_target_sentence(topic, profile),
+                      target_form, directive)
+    except Exception:
+        return Lesson(default_topic, pick_target_sentence(default_topic, profile),
+                      default_form, None)

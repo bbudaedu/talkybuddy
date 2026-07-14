@@ -1,4 +1,5 @@
 from server import lesson
+from server import curriculum
 
 
 def test_pick_target_sentence_by_topic():
@@ -23,3 +24,29 @@ def test_pick_target_sentence_unknown_topic_falls_back():
 def test_pick_target_sentence_missing_profile_ok():
     s = lesson.pick_target_sentence("animal", {})
     assert isinstance(s, str) and s
+
+
+def test_build_lesson_cold_start_uses_defaults():
+    lp = lesson.build_lesson([], None)
+    assert lp.topic == curriculum.TOPIC_ORDER[0]  # "animal"
+    assert lp.target_form == curriculum._TARGET_FORM[1]
+    assert lp.directive is None
+    assert isinstance(lp.target_sentence, str) and lp.target_sentence
+
+
+def test_build_lesson_uses_latest_diagnosis():
+    diagnoses = [{
+        "companion_directive": {"difficulty": "up"},
+        "level_state": {"topic": "food", "target_form": "短句 3-4 詞"},
+    }]
+    lp = lesson.build_lesson(diagnoses, None)
+    assert lp.topic == "food"
+    assert lp.target_form == "短句 3-4 詞"
+    assert lp.directive and isinstance(lp.directive, str)
+    assert ("eat" in lp.target_sentence) or ("drink" in lp.target_sentence)
+
+
+def test_build_lesson_missing_level_state_falls_back():
+    lp = lesson.build_lesson([{"companion_directive": {"difficulty": "keep"}}], None)
+    assert lp.topic == curriculum.TOPIC_ORDER[0]
+    assert isinstance(lp.target_sentence, str) and lp.target_sentence
