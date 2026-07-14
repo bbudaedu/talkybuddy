@@ -24,11 +24,20 @@ async def test_wake_config_shape_and_enabled_true(monkeypatch):
     body = resp.json()
     assert set(body.keys()) == {
         "enabled", "access_key", "keyword_builtin", "keyword_label",
-        "keyword_public_path", "model_public_path", "sensitivity",
+        "keyword_public_path", "model_public_path", "sensitivity", "sherpa",
     }
     assert body["enabled"] is True
     assert body["access_key"] == "test-key-123"
     assert isinstance(body["sensitivity"], float)
+
+
+async def test_wake_config_has_sherpa_block():
+    async with await _client() as client:
+        resp = await client.get("/api/wake-config")
+    assert resp.status_code == 200
+    sh = resp.json()["sherpa"]
+    assert set(sh) >= {"enabled", "base_url", "keywords", "keywords_threshold", "keywords_score"}
+    assert sh["keywords_threshold"] == 0.25
 
 
 async def test_wake_config_disabled_when_no_key(monkeypatch):

@@ -59,6 +59,13 @@ WAKE_MODEL_PUBLIC_PATH: str = os.environ.get("WAKE_MODEL_PUBLIC_PATH", "/static/
 # 喚醒靈敏度 0~1（越高越易觸發、也越易誤觸）。
 WAKE_SENSITIVITY: float = float(os.environ.get("WAKE_SENSITIVITY", "0.6"))
 
+# --- sherpa-onnx KWS（中文喚醒詞「說說學伴」，取代 Porcupine；裝置端、免 key）---
+WAKE_SHERPA_ENABLED: bool = os.environ.get("WAKE_SHERPA_ENABLED", "1") not in ("", "0", "false", "False")
+WAKE_SHERPA_BASE_URL: str = os.environ.get("WAKE_SHERPA_BASE_URL", "/static/vendor/sherpa-kws/")
+WAKE_SHERPA_KEYWORDS: str = os.environ.get("WAKE_SHERPA_KEYWORDS", "sh uō sh uō x ué b àn @說說學伴")
+WAKE_SHERPA_THRESHOLD: float = float(os.environ.get("WAKE_SHERPA_THRESHOLD", "0.25"))
+WAKE_SHERPA_SCORE: float = float(os.environ.get("WAKE_SHERPA_SCORE", "1.0"))
+
 
 # ---------------------------------------------------------------------------
 # 雲端 LLM 大腦（子專案 A）：network_mode=cloud 時，陪聊/導師改經 Bedrock Converse。
