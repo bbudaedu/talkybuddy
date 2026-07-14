@@ -15,6 +15,11 @@ import pytest
 from server import config, store
 
 
+def pytest_configure(config):  # noqa: F811 - pytest hook
+    """註冊自訂 marker，避免 PytestUnknownMarkWarning。"""
+    config.addinivalue_line("markers", "slow: 需載入重模型或長時間執行的測試")
+
+
 @pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):
     """把 DB_PATH 導向 tmp 目錄，並建立乾淨的資料表。"""
