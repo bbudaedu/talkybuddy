@@ -456,7 +456,6 @@ async def ws_live(websocket: WebSocket):
 
     async def _downlink() -> None:
         async for ev in session.events_continuous():
-            print("[live-raw]", ev.kind, getattr(ev, "role", ""), flush=True)  # spike，Task 9 移除
             if ev.kind == "audio":
                 await emit_bytes(ev.audio)
             elif ev.kind == "transcript":
@@ -470,6 +469,9 @@ async def ws_live(websocket: WebSocket):
                 turn_user.clear()
                 turn_asst.clear()
                 await emit({"type": "turn_end"})
+            elif ev.kind == "interrupt":
+                # barge-in：轉發給前端停播 + 切 listen（Nova server VAD 偵測到插話）
+                await emit({"type": "interrupt"})
 
     try:
         await session.start(system_prompt)

@@ -131,6 +131,29 @@ def test_ws_live_continuous_forwards_and_ignores_user_end(monkeypatch):
     assert seen.get("asr_text") == "哈囉" and seen.get("reply_text") == "嗨呀"
 
 
+def test_ws_live_continuous_forwards_interrupt(monkeypatch):
+    """連續模式 downlink 收 NovaEvent('interrupt') → emit {type:'interrupt'}（barge-in）。"""
+    class _FakeInterrupt(_FakeSession):
+        async def events_continuous(self):
+            from server.nova_sonic import NovaEvent
+            yield NovaEvent("audio", audio=b"\x00\x00" * 4)
+            yield NovaEvent("interrupt")
+    monkeypatch.setattr(config, "LIVE_S2S_ENABLED", True)
+    monkeypatch.setattr(nova_sonic, "available", lambda: True)
+    monkeypatch.setattr(app_mod, "_make_live_session", lambda: _FakeInterrupt())
+    monkeypatch.setattr(app_mod.guardrails, "consent_granted", lambda: True)
+    client = TestClient(app_mod.app)
+    with client.websocket_connect("/ws/live?mode=continuous") as ws:
+        kinds = []
+        for _ in range(2):
+            m = ws.receive()
+            if m.get("text"):
+                kinds.append(json.loads(m["text"]).get("type"))
+            elif m.get("bytes"):
+                kinds.append("audio")
+    assert "interrupt" in kinds
+
+
 def test_ws_live_denied_without_consent(monkeypatch):
     _wire_fake(monkeypatch)
     monkeypatch.setattr(app_mod.guardrails, "consent_granted", lambda: False)
