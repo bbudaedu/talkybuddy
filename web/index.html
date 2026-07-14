@@ -648,9 +648,18 @@ penguinWrap.addEventListener("contextmenu", function (e) { e.preventDefault(); }
 penguinWrap.addEventListener("click", function (e) {
   e.preventDefault();
   if (liveMode) {   /* hands-free：點企鵝 toggle 整場對話（開始/結束） */
-    if (!liveSession) { return; }
-    if (liveSession.capturing) { liveSession.stopConversation(); }
-    else { liveSession.startConversation(); }
+    if (!liveSession || liveCueBusy) { return; }
+    if (liveSession.capturing) {
+      liveSession.stopConversation();          /* 先關麥，再播休息提示（mic 已停不會收到） */
+      playLiveCue("先休息一下，想聊再點我一下");
+    } else {
+      liveCueBusy = true;
+      setVisualState("talk");                  /* 企鵝先說「我在」，提示播完才開麥 */
+      playLiveCue("我在，請說", function () {
+        liveCueBusy = false;
+        if (liveSession) { liveSession.startConversation(); }
+      });
+    }
     return;
   }
   if (!window._wakeController) { showToast("語音輸入暫不可用，請重新整理或用下方快速語句"); return; }
@@ -718,6 +727,31 @@ function playWakeCue() {
       speechSynthesis.speak(u);
     }
   } catch (e) { /* 忽略 */ }
+}
+
+/* hands-free 開麥/休息語音提示：用 speechSynthesis 播一句短提示。
+ * onDone 於 播完 / 出錯 / 保底 timeout / 無 speechSynthesis 時觸發（且只一次）。
+ * START 靠此把「開麥」延到提示播完，避免常開麥把自己的提示音當成使用者輸入。 */
+var liveCueBusy = false;
+function playLiveCue(text, onDone) {
+  var done = false;
+  function finish() {
+    if (done) { return; }
+    done = true;
+    if (onDone) { onDone(); }
+  }
+  try {
+    if (typeof speechSynthesis !== "undefined" && speechSynthesis) {
+      speechSynthesis.cancel();   /* 清掉殘留佇列，避免疊播 */
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = "zh-TW"; u.rate = 1.0;
+      u.onend = finish; u.onerror = finish;
+      speechSynthesis.speak(u);
+      setTimeout(finish, 2500);   /* 保底：部分行動瀏覽器不觸發 onend */
+      return;
+    }
+  } catch (e) { /* 忽略，直接 finish */ }
+  finish();
 }
 
 function initWakeLayer() {
