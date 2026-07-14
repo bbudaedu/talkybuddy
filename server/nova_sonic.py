@@ -41,7 +41,7 @@ def available() -> bool:
 
 @dataclass
 class NovaEvent:
-    """events() yield 的事件：kind ∈ {"transcript","audio","turn_end"}。"""
+    """events() yield 的事件：kind ∈ {"transcript","audio","turn_end","interrupt"}。"""
     kind: str
     role: str = ""          # transcript：USER / ASSISTANT
     text: str = ""          # transcript 文字
@@ -177,7 +177,15 @@ class NovaSonicSession:
                     if pcm:
                         got_assistant = True
                         await self._queue.put(NovaEvent("audio", audio=pcm))
-                elif "completionEnd" in ev:
+                elif "userSpeechStart" in ev:
+                    # barge-in：Nova server VAD 偵測到使用者語音起點時送的獨立事件。
+                    # 實測（spec 附錄 A）barge-in 信號＝userSpeechStart，非計畫原假設的
+                    # contentEnd.stopReason=="INTERRUPTED"（contentEnd 一律 PARTIAL_TURN）。
+                    # 每次使用者語音起點都觸發（含正常輪首句）；client _flushPlayback 對
+                    # 無播放中音訊的正常輪自然是 no-op，對 AI 講話中插話則即時停播。
+                    await self._queue.put(NovaEvent("interrupt"))
+                    got_assistant = False
+                if "completionEnd" in ev:
                     # 先 USER-ASR 段（未見 assistant）→ 不收尾；assistant 段 → turn_end
                     if got_assistant:
                         await self._queue.put(NovaEvent("turn_end"))

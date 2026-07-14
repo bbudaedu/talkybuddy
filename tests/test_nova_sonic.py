@@ -207,6 +207,32 @@ async def test_events_continuous_yields_across_multiple_turns(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_receive_loop_emits_interrupt_on_user_speech_start(monkeypatch):
+    """Nova barge-in 事件 userSpeechStart → queue 出現 NovaEvent(kind='interrupt')。
+
+    實測（spec 附錄 A）：barge-in 時 Nova 送獨立 userSpeechStart 事件，而非
+    contentEnd.stopReason=='INTERRUPTED'（contentEnd 一律 PARTIAL_TURN）。
+    """
+    out = [
+        _out_event(textOutput={"role": "ASSISTANT", "content": "我正在說"}),
+        _out_event(userSpeechStart={"inputAudioOffsetMs": 1000,
+                                    "promptName": "p", "sessionId": "s"}),
+    ]
+    fake_client = _FakeClient(out_events=out)
+    monkeypatch.setattr(nova_sonic.NovaSonicSession, "_build_client",
+                        lambda self: fake_client)
+    s = nova_sonic.NovaSonicSession("m", "tiffany", "us-east-1")
+    await s.start("sys")
+    kinds = []
+    async for e in s.events_continuous():
+        kinds.append(e.kind)
+        if e.kind == "interrupt":
+            break
+    assert "interrupt" in kinds
+    await s.close()
+
+
+@pytest.mark.asyncio
 async def test_close_sends_prompt_and_session_end(monkeypatch):
     fake_client = _FakeClient()
     monkeypatch.setattr(nova_sonic.NovaSonicSession, "_build_client",
