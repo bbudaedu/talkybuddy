@@ -26,7 +26,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from server import (
-    config, diagnose, guardrails, nova_sonic, profile, pronunciation, scaffold, store,
+    config, diagnose, guardrails, lesson, nova_sonic, profile, pronunciation,
+    scaffold, store,
 )
 from server.asr import ASREngine
 from server.llm import EdgeLLM
@@ -98,6 +99,23 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="TalkyBuddy 說說學伴", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def _cross_origin_isolation(request, call_next):
+    """全站回應帶 COOP:same-origin + COEP:require-corp。
+
+    sherpa-onnx KWS WASM 以 emscripten `-pthread` 建置，執行時要建立 shared
+    WebAssembly.Memory，瀏覽器僅在 ``crossOriginIsolated === true`` 時才允許。
+    缺這兩個 header 時，手機端 WASM init 會卡住 → live 喚醒層 Promise chain
+    無法完成（畫面卡在「連線中」、點企鵝無反應）。全站頁面與資產皆同源，
+    加這兩個 header 對其他資源無副作用。契約見 tests/test_cross_origin_isolation.py。
+    """
+    response = await call_next(request)
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+    return response
+
 
 if WEB_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
@@ -415,10 +433,12 @@ async def ws_live(websocket: WebSocket):
         await websocket.close()
         return
 
-    # 動態鷹架注入：沿用 pipeline 目前的 B 軸 directive（已是格式化字串或 None）
-    directive = getattr(pipeline, "_directive", None)
-    target = "How are you today?"  # Phase 1 起始目標句（詞庫通用引導句）
-    system_prompt = scaffold.build_live_system_prompt(target, directive)
+    # 本場教材：由最新診斷 + profile 選今日主題/目標句/策略（安全退化，永不擋 live）。
+    # 同一份 Lesson 供「發音評測參考句 target」與「教練跟讀 system_prompt」，單一真相來源。
+    live_lesson = lesson.build_lesson(store.list_diagnoses(), store.get_profile())
+    target = live_lesson.target_sentence  # 發音評測參考句 = 本場跟讀目標句
+    system_prompt = scaffold.build_live_system_prompt(
+        live_lesson.target_sentence, live_lesson.directive, topic=live_lesson.topic)
 
     session = _make_live_session()
     turn_user, turn_asst = [], []
@@ -562,6 +582,17 @@ async def ws_live(websocket: WebSocket):
             await asyncio.to_thread(_run_live_diagnosis)
         except Exception:
             logger.exception("live 場末診斷觸發失敗")
+
+
+def _build_live_prompt() -> str:
+    """組本場 live system prompt：選教材（build_lesson）→ 教練跟讀 prompt。
+
+    離線可單元測試的 seam；ws_live 連線時另建同一份 Lesson 以同時取得發音
+    評測參考句（target）與 prompt。build_lesson 全程安全退化，永不擋 live。
+    """
+    lp = lesson.build_lesson(store.list_diagnoses(), store.get_profile())
+    return scaffold.build_live_system_prompt(
+        lp.target_sentence, lp.directive, topic=lp.topic)
 
 
 def _run_live_diagnosis() -> None:

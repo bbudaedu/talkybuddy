@@ -257,3 +257,21 @@ def test_pcm_to_pron_score_builds_wav_scores_and_deletes(monkeypatch):
     assert captured["ref"] == "I want an apple."
     assert captured["exists_during"] is True            # 評分時 wav 在
     assert not os.path.exists(captured["path"])          # 評分後刪除（用後即刪）
+
+
+# ---------------------------------------------------------------------------
+# Task 4：ws_live 連線用 build_lesson 組教學 prompt（_build_live_prompt 助手）
+# ---------------------------------------------------------------------------
+
+def test_build_live_prompt_uses_lesson(monkeypatch):
+    from server import lesson
+    monkeypatch.setattr(app_mod.store, "list_diagnoses", lambda: [])
+    monkeypatch.setattr(app_mod.store, "get_profile", lambda: None)
+    monkeypatch.setattr(
+        lesson, "build_lesson",
+        lambda diags, prof: lesson.Lesson("food", "I want to eat an apple.",
+                                          "單字", "【策略】多鼓勵。"))
+    p = app_mod._build_live_prompt()
+    assert "I want to eat an apple." in p
+    assert "food" in p
+    assert "【策略】多鼓勵。" in p
