@@ -240,6 +240,71 @@ def test_ws_live_turn_scores_pronunciation(monkeypatch):
     assert scored.get("ref")                              # 對該場跟讀 target 句評分
 
 
+class _FakeSessionContinuousLateTurnEnd(_FakeSession):
+    """真機情境 fake：最後一輪 turn_end 仍在串流佇列，uplink 先因 bye 收尾。
+
+    turn_end 只在 close()（teardown 開始）被呼叫後才吐出，重現「連線提早關閉→
+    發音評測跑不到 turn_end」。正確行為＝teardown 應 drain 掉最後一輪（含發音
+    評測落地），而非直接 cancel downlink。
+    """
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        import asyncio
+        self._audio_seen = asyncio.Event()
+        self._close_called = asyncio.Event()
+
+    async def send_audio(self, pcm16):
+        self.audio_chunks.append(pcm16)
+        self._audio_seen.set()
+
+    async def events_continuous(self):
+        from server.nova_sonic import NovaEvent
+        await self._audio_seen.wait()                    # 確保 uplink 已 tee pcm
+        yield NovaEvent("transcript", role="USER", text="I want an apple")
+        await self._close_called.wait()                  # teardown 開始才放行
+        yield NovaEvent("turn_end")                      # drain 階段才吐 → 應被處理
+
+    async def close(self):
+        self.closed = True
+        self._close_called.set()
+
+
+def test_ws_live_continuous_drains_final_turn_pron_on_bye(monkeypatch):
+    """continuous：最後一輪 turn_end 在 bye 收尾後才到，teardown 應 drain 並落地發音評測。"""
+    monkeypatch.setattr(config, "LIVE_S2S_ENABLED", True)
+    monkeypatch.setattr(nova_sonic, "available", lambda: True)
+    fake = _FakeSessionContinuousLateTurnEnd()
+    monkeypatch.setattr(app_mod, "_make_live_session", lambda: fake)
+    monkeypatch.setattr(app_mod.guardrails, "consent_granted", lambda: True)
+    monkeypatch.setattr(app_mod.pronunciation, "available", lambda: True)
+    monkeypatch.setattr(app_mod.pronunciation, "score", lambda path, ref: 82.0)
+    seen = {}
+    monkeypatch.setattr(app_mod.store, "add_interaction",
+                        lambda d: seen.update(d) or 1)
+    client = TestClient(app_mod.app)
+    got_turn_end = False
+    with client.websocket_connect("/ws/live?mode=continuous") as ws:
+        ws.send_bytes(b"\x01\x02" * 800)                 # 一段使用者 PCM（被 tee）
+        ws.send_text(json.dumps({"type": "bye"}))        # uplink 收尾 → 觸發 teardown
+        # 讀到最後一輪 turn_end 才離開 with（連線存活期間 server drain 完該輪）；
+        # 舊碼直接 cancel downlink → 不會送 turn_end、連線被關 → receive 丟例外。
+        try:
+            for _ in range(6):
+                m = ws.receive()
+                if m.get("type") == "websocket.close":
+                    break
+                if m.get("text") and json.loads(m["text"]).get("type") == "turn_end":
+                    got_turn_end = True
+                    break
+        except Exception:
+            pass
+    # 最後一輪應被 drain：turn_end 送達、發音評測落地、逐字稿存下
+    assert got_turn_end
+    assert seen.get("asr_text") == "I want an apple"
+    assert seen.get("scores", {}).get("pronunciation") == 82.0
+
+
 def test_pcm_to_pron_score_builds_wav_scores_and_deletes(monkeypatch):
     """組 16k mono wav → pronunciation.score → 回分數；暫存 wav 事後刪除（隱私）。"""
     monkeypatch.setattr(app_mod.pronunciation, "available", lambda: True)

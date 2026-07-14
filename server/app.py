@@ -535,9 +535,19 @@ async def ws_live(websocket: WebSocket):
                 await session.close()
             except Exception:
                 pass
+            # downlink drain：uplink 先收尾（掰掰/斷線）時，最後一輪 turn_end 可能還在
+            # 佇列/評分中。直接 cancel 會砍掉該輪發音評測與落地（手機真機驗收踩到），
+            # 故有界等待 downlink 把剩餘事件 drain 完（發音評測最久 PRON_SCORE_TIMEOUT_S）；
+            # 逾時由 wait_for 自動 cancel 保底、不 hang。
+            if down in pending:
+                try:
+                    await asyncio.wait_for(
+                        down, timeout=config.PRON_SCORE_TIMEOUT_S + 2.0)
+                except Exception:
+                    pass
             for t in pending:
-                t.cancel()
-            for t in pending:
+                if not t.done():
+                    t.cancel()
                 try:
                     await t
                 except BaseException:
