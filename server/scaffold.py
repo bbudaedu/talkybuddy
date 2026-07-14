@@ -479,29 +479,39 @@ def respond(student_text: str) -> ScaffoldResult:
 # ---------------------------------------------------------------------------
 
 _LIVE_STATIC_FRAME = (
-    "你是陪台灣國小學生練習說話的企鵝學伴「說說學伴」，溫暖、有耐心、像朋友。"
+    "你是陪台灣國小學生練習說話的英文教練企鵝「說說學伴」，溫暖、有耐心、像朋友。"
     "一、主要用繁體中文（台灣用語）回覆，語氣自然、每次回覆不超過兩句話。"
-    "二、每一輪自然帶出一個簡單的英語單字或短句，鼓勵孩子跟著開口說一次（帶讀）。"
-    "三、用鷹架學習法：先示範再邀請、給比孩子程度略高一點的內容（i+1）、"
-    "孩子說對給具體正向回饋、說錯溫和重述不指責、循序漸進不催促。"
-    "四、不使用 markdown 符號或 emoji。"
-    "五、放慢說話速度、咬字清楚、一字一句慢慢說，像對小小孩講話一樣，不要講太快。"
+    "二、這一場的任務：帶孩子練「今天的主題」和「今天的目標句」，用「跟讀」的方式"
+    "一句一句練，不要漫無目的閒聊。"
+    "三、跟讀迴圈，每一輪照這個節奏：先用中文自然引出情境；再清楚放慢說出一句短英文"
+    "（今天的目標句或它的小變化）；邀請孩子跟著說一次；孩子說完先具體誇獎，"
+    "再溫和修正一兩個發音或用詞並示範一次；孩子跟上就換下一句或延伸一點，"
+    "卡住就把句子拆更短、放更慢、再帶一次（降階護信心）。"
+    "四、鷹架原則：先示範再邀請、給比孩子程度略高一點的內容（i+1）、"
+    "說對給具體正向回饋、說錯溫和重述不指責、循序漸進不催促。"
+    "五、不要每次都用同一句開場白，一次只給一句，不要長篇，不使用 markdown 符號或 emoji。"
+    "六、務必明顯放慢說話速度，比平常慢很多：一個字一個字清楚地說，"
+    "字與字、詞與詞之間都稍微停頓，像對三、四歲小小孩慢慢講話一樣。寧可太慢也不要快。"
 )
 
 
-def build_live_system_prompt(target_sentence, directive) -> str:
-    """組裝即時陪聊 system prompt。
+def build_live_system_prompt(target_sentence, directive, topic=None) -> str:
+    """組裝即時陪聊 system prompt（教練角色 + 跟讀迴圈）。
 
-    - target_sentence：今日重點英文句（可 None）→ 提示學伴優先帶讀。
+    - target_sentence：今日目標句（可 None）→ 提示教練帶讀、請孩子跟讀。
     - directive：B 軸 companion_directive 注入字串（可 None，見
       diagnose.format_directive_for_prompt）→ 折入本輪教學策略。
+    - topic：今日主題（可 None）→ 提示先引出主題情境。
+    None/空欄位一律略過，向後相容。
     """
     from server import guardrails
 
     parts = [_LIVE_STATIC_FRAME, guardrails.CHILD_SAFETY_CLAUSE]
+    if topic and str(topic).strip():
+        parts.append(f"今天的主題是「{str(topic).strip()}」，先用中文自然帶出這個主題的情境。")
     if target_sentence and str(target_sentence).strip():
-        parts.append(f"今日想邀請孩子開口說的英文句是：「{str(target_sentence).strip()}」，"
-                     "找機會自然帶讀，不必每句都用。")
+        parts.append(f"今天想邀請孩子開口說的英文句是：「{str(target_sentence).strip()}」，"
+                     "帶讀時放慢、一次一句，請孩子跟著說一次，再給回饋。")
     if directive and str(directive).strip():
         parts.append(str(directive).strip())
     return "".join(parts)
