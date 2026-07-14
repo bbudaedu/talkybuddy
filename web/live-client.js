@@ -36,6 +36,14 @@ export function downsampleTo16k(float32, inRate) {
   return out;
 }
 
+// 結束詞比對：正規化（轉小寫、去空白標點）後命中任一結束詞回 true。
+// 僅供協調器對 USER role 逐字稿呼叫（避免誤判 AI 回話）。
+export function matchFarewell(text) {
+  if (!text) return false;
+  const t = String(text).toLowerCase().replace(/[\s,.!?，。！？、~～]/g, "");
+  return /掰掰|拜拜|再見|再见|結束|结束|掰啦|byebye|bye/.test(t);
+}
+
 /* ---------- 瀏覽器整合層（手動 e2e；node 測不觸及） ---------- */
 
 export function liveWsURL() {
