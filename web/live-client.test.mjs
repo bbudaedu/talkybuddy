@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { floatTo16BitPCM, base64ToPCM16, PlaybackQueue, downsampleTo16k } from "./live-client.js";
+import { floatTo16BitPCM, base64ToPCM16, PlaybackQueue, downsampleTo16k, LiveSession } from "./live-client.js";
 
 test("floatTo16BitPCM 轉出 16-bit LE，範圍夾限", () => {
   const buf = floatTo16BitPCM(new Float32Array([0, 1, -1, 2]));
@@ -33,4 +33,24 @@ test("downsampleTo16k 48k→16k 長度約 1/3、16k passthrough 原參考", () =
   for (let i = 0; i < 48; i++) src[i] = i / 48;
   assert.equal(downsampleTo16k(src, 48000).length, 16);
   assert.equal(downsampleTo16k(src, 16000), src);   // 同 sampleRate 直接回傳原陣列
+});
+
+test("_flushPlayback 停所有 source、清陣列、歸零排程游標（barge-in）", () => {
+  const s = new LiveSession({});
+  s.playCtx = { currentTime: 5 };              // 假 playCtx（不觸真瀏覽器 API）
+  const stopped = [];
+  s._sources = [{ stop: () => stopped.push("a") }, { stop: () => stopped.push("b") }];
+  s._nextStart = 99;
+  s._flushPlayback();
+  assert.deepEqual(stopped, ["a", "b"]);       // 兩個 source 都停
+  assert.equal(s._sources.length, 0);          // 陣列清空
+  assert.equal(s._nextStart, 5);               // 歸零到 playCtx.currentTime
+});
+
+test("startConversation 設 capturing=true 並回報 listen（micCtx 為 null 時不觸瀏覽器 API）", () => {
+  let state = null;
+  const s = new LiveSession({ onStateChange: (v) => { state = v; } });
+  s.startConversation();
+  assert.equal(s.capturing, true);
+  assert.equal(state, "listen");
 });

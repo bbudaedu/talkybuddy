@@ -55,6 +55,7 @@ export class LiveSession {
     this.node = null;
     this.capturing = false;
     this._nextStart = 0;
+    this._sources = [];      // 排程中的 BufferSourceNode（barge-in flush 用）
   }
 
   async start() {
@@ -136,6 +137,9 @@ export class LiveSession {
       if (this.cb.onTranscript) this.cb.onTranscript(m.role, m.text);
     } else if (m.type === "turn_end") {
       if (this.cb.onTurnEnd) this.cb.onTurnEnd();
+    } else if (m.type === "interrupt") {
+      this._flushPlayback();
+      if (this.cb.onStateChange) this.cb.onStateChange("listen");
     } else if (m.type === "live_error") {
       if (this.cb.onError) this.cb.onError(m.reason);
     }
@@ -150,10 +154,22 @@ export class LiveSession {
     const node = this.playCtx.createBufferSource();
     node.buffer = buf;
     node.connect(this.playCtx.destination);
+    this._sources.push(node);
+    node.onended = () => {
+      const i = this._sources.indexOf(node);
+      if (i >= 0) this._sources.splice(i, 1);
+    };
     const now = this.playCtx.currentTime;
     this._nextStart = Math.max(this._nextStart, now);
     node.start(this._nextStart);
     this._nextStart += buf.duration;
+  }
+
+  // barge-in：停掉所有排程中的播放並歸零排程游標（AI 立刻閉嘴）。
+  _flushPlayback() {
+    this._sources.forEach((n) => { try { n.stop(); } catch (e) {} });
+    this._sources = [];
+    if (this.playCtx) this._nextStart = this.playCtx.currentTime;
   }
 
   async close() {
