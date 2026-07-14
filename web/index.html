@@ -647,19 +647,11 @@ function micDisabled() {
 penguinWrap.addEventListener("contextmenu", function (e) { e.preventDefault(); });
 penguinWrap.addEventListener("click", function (e) {
   e.preventDefault();
-  if (liveMode) {   /* hands-free：點企鵝 toggle 整場對話（開始/結束） */
-    if (!liveSession || liveCueBusy) { return; }
-    if (liveSession.capturing) {
-      liveSession.stopConversation();          /* 先關麥，再播休息提示（mic 已停不會收到） */
-      playLiveCue("先休息一下，想聊再點我一下");
-    } else {
-      liveCueBusy = true;
-      setVisualState("talk");                  /* 企鵝先說「我在」，提示播完才開麥 */
-      playLiveCue("我在，請說", function () {
-        liveCueBusy = false;
-        if (liveSession) { liveSession.startConversation(); }
-      });
-    }
+  if (liveMode) {   /* hands-free：喚醒與點企鵝等效，交給協調器 */
+    var lw = window.__liveWake;
+    if (!lw) { return; }
+    if (lw.state === "conversing") { lw.end("push"); }
+    else { lw.wake("push"); }
     return;
   }
   if (!window._wakeController) { showToast("語音輸入暫不可用，請重新整理或用下方快速語句"); return; }
@@ -869,30 +861,77 @@ function startHalfDuplex() {
 
 function enterLiveMode() {
   liveMode = true;
-  /* 停喚醒常駐麥（若已建、吞例外）；live 模式不建 /ws/talk */
+  /* 停半雙工喚醒常駐麥（若已建、吞例外）；live 模式改用 sherpa KWS + 協調器 */
   try {
     if (window._wakeController && window._wakeController.engine && window._wakeController.engine.stop) {
       window._wakeController.engine.stop();
     }
   } catch (e) { /* 忽略 */ }
-  import("/static/live-client.js").then(function (mod) {
-    liveSession = new mod.LiveSession({
-      continuous: true,
-      onTranscript: function (role, text) {
-        addBubble(role === "USER" ? "student" : "penguin", text, {});
-      },
-      onTurnEnd: function () { setVisualState("listen"); },
-      onError: function (reason) { degradeToHalfDuplex(reason); },
-      onStateChange: function (state) { setVisualState(state); }
+
+  Promise.all([
+    import("/static/live-client.js"),
+    import("/static/live-wake.js"),
+    import("/static/sherpa-loader.js"),
+    import("/static/sherpa-engine.js")
+  ]).then(function (mods) {
+    var LiveSession = mods[0].LiveSession;
+    var matchFarewell = mods[0].matchFarewell;
+    var LiveWakeCoordinator = mods[1].LiveWakeCoordinator;
+    var loadSherpaModule = mods[2].loadSherpaModule;
+    var createSherpaEngine = mods[3].createSherpaEngine;
+
+    var coordinator;   /* 先宣告供 startSession 閉包引用 */
+
+    function startSession() {
+      var s = new LiveSession({
+        continuous: true,
+        onTranscript: function (role, text) {
+          addBubble(role === "USER" ? "student" : "penguin", text, {});
+          if (coordinator) { coordinator.onTranscript(role, text); }
+        },
+        onError: function (reason) { degradeToHalfDuplex(reason); },
+        onStateChange: function (state) { setVisualState(state); }
+      });
+      return s.start().then(function () { return s; });
+    }
+
+    function onCue(kind) {
+      return new Promise(function (res) {
+        playLiveCue(kind === "start" ? "我在，請說" : "先休息一下，想聊再喊我", res);
+      });
+    }
+
+    /* 讀 wake-config → 建 sherpa engine（失敗則 engine=null，仍可點企鵝） */
+    return fetch("/api/wake-config").then(function (r) { return r.json(); }).then(function (cfg) {
+      var sh = cfg && cfg.sherpa;
+      var enginePromise = (sh && sh.enabled)
+        ? loadSherpaModule(sh.base_url).then(function (Module) {
+            return createSherpaEngine({
+              Module: Module,
+              keywords: sh.keywords,
+              keywordsThreshold: sh.keywords_threshold,
+              keywordsScore: sh.keywords_score
+            });
+          }).catch(function () { return null; })
+        : Promise.resolve(null);
+      return enginePromise.then(function (engine) {
+        coordinator = new LiveWakeCoordinator({
+          engine: engine,
+          startSession: startSession,
+          onCue: onCue,
+          onStateChange: function (state) { setVisualState(state); },
+          matchFarewell: matchFarewell
+        });
+        window.__liveWake = coordinator;
+        connStateEl.textContent = "已連線（即時）";
+        connStateEl.className = "ok";
+        holdHint.textContent = engine ? "🗣️ 喊「說說學伴」或點我開始，說「掰掰」結束"
+                                      : "👆 點企鵝開始對話，再點一下結束";
+        holdHint.classList.remove("disabled");
+        showToast(engine ? "🎙️ 喊「說說學伴」或點企鵝開始" : "🎙️ 即時對話已就緒，點企鵝開始");
+        return coordinator.arm();
+      });
     });
-    return liveSession.start();
-  }).then(function () {
-    window.__liveSession = liveSession;
-    connStateEl.textContent = "已連線（即時）";
-    connStateEl.className = "ok";
-    holdHint.textContent = "👆 點企鵝開始對話，再點一下結束";
-    holdHint.classList.remove("disabled");
-    showToast("🎙️ 即時對話模式已就緒，點企鵝開始");
   }).catch(function () {
     degradeToHalfDuplex("stream_error");
   });
@@ -908,6 +947,14 @@ function degradeToHalfDuplex(reason) {
   };
   showToast(msgs[reason] || "即時對話無法使用，改用一般模式");
   try { if (liveSession) { liveSession.close(); } } catch (e) { /* 忽略 */ }
+  /* live 模式改由協調器持有 session/KWS engine：一併收麥（reload 前避免雙麥） */
+  try {
+    var lw = window.__liveWake;
+    if (lw) {
+      if (lw.session) { lw.session.close(); }
+      if (lw.engine && lw.engine.stop) { lw.engine.stop(); }
+    }
+  } catch (e) { /* 忽略 */ }
   sessionStorage.setItem("forceHalfDuplex", "1");
   setTimeout(function () { location.reload(); }, 1500);
 }
