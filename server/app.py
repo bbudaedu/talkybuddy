@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from server import auth, config, diagnose, guardrails, profile, store
+from server import auth, config, diagnose, guardrails, nova_sonic, profile, scaffold, store
 from server.asr import ASREngine
 from server.llm import EdgeLLM
 from server.cloud_tts import CloudTTS
@@ -56,6 +56,15 @@ pipeline = VoicePipeline(
 )
 # 承接佈署 profile 預設：cloud profile → 全語音走雲端管線；edge → 邊緣本地。
 pipeline.network_mode = config.default_network_mode()
+
+
+def _make_live_session():
+    """建一場 NovaSonicSession（測試以 monkeypatch 換 fake）。"""
+    return nova_sonic.NovaSonicSession(
+        model_id=config.NOVA_SONIC_MODEL_ID,
+        voice=config.NOVA_SONIC_VOICE,
+        region=config.BEDROCK_REGION,
+    )
 
 
 def _prewarm_engines() -> None:
@@ -89,6 +98,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="TalkyBuddy 說說學伴", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def _cross_origin_isolation(request, call_next):
+    """全站回應加 COOP:same-origin + COEP:require-corp，讓 sherpa-onnx KWS WASM
+    能建立 shared WebAssembly.Memory（crossOriginIsolated）。全站同源，對其他資源無副作用。"""
+    response = await call_next(request)
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+    return response
 
 if WEB_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
@@ -125,6 +144,7 @@ async def api_status():
         "cloud_llm": bool(cloud_llm_engine.available()),
         "network_mode": pipeline.network_mode,
         "pending": store.pending_count(),
+        "live_s2s": bool(config.LIVE_S2S_ENABLED and nova_sonic.available()),
     }
 
 
@@ -454,3 +474,202 @@ async def ws_talk(websocket: WebSocket):
         pass
     finally:
         cancel_flush()
+
+
+@app.websocket("/ws/live")
+async def ws_live(websocket: WebSocket):
+    """即時全雙工 S2S（Nova Sonic）：與 /ws/talk 並存。
+
+    連線先過 consent + available gate；之後上行 PCM16(16k) → send_audio，
+    下行 Nova Sonic audio(24k)/transcript 轉發；user_end → end_user_turn 後
+    迭代 events() 直到 turn_end；turn_end 把 USER/ASSISTANT transcript 落地。
+    """
+    await websocket.accept()
+
+    send_lock = asyncio.Lock()
+
+    async def emit(payload: dict) -> None:
+        try:
+            async with send_lock:
+                await websocket.send_json(payload)
+        except Exception:
+            pass
+
+    async def emit_bytes(data: bytes) -> None:
+        try:
+            async with send_lock:
+                await websocket.send_bytes(data)
+        except Exception:
+            pass
+
+    # gate：consent 優先（資料出境），再 available
+    if not guardrails.consent_granted():
+        await emit({"type": "live_error", "reason": "consent_required"})
+        await websocket.close()
+        return
+    if not (config.LIVE_S2S_ENABLED and nova_sonic.available()):
+        await emit({"type": "live_error", "reason": "unavailable"})
+        await websocket.close()
+        return
+
+    # 動態鷹架注入：沿用 pipeline 目前的 B 軸 directive（已是格式化字串或 None）
+    directive = getattr(pipeline, "_directive", None)
+    target = "How are you today?"  # Phase 1 起始目標句（詞庫通用引導句）
+    system_prompt = scaffold.build_live_system_prompt(target, directive)
+
+    session = _make_live_session()
+    turn_user, turn_asst = [], []
+
+    async def drain_events() -> None:
+        """迭代模型事件轉發前端；turn_end 落地 transcript。"""
+        async for ev in session.events():
+            if ev.kind == "audio":
+                await emit_bytes(ev.audio)
+            elif ev.kind == "transcript":
+                await emit({"type": "live_transcript", "role": ev.role, "text": ev.text})
+                if ev.role == "USER":
+                    turn_user.append(ev.text)
+                elif ev.role == "ASSISTANT":
+                    turn_asst.append(ev.text)
+            elif ev.kind == "turn_end":
+                _store_live_turn(turn_user, turn_asst)
+                turn_user.clear()
+                turn_asst.clear()
+                await emit({"type": "turn_end"})
+
+    # hands-free 連續模式（?mode=continuous）：上下行雙 Task 常駐，turn 邊界交給 Nova VAD。
+    continuous = websocket.query_params.get("mode") == "continuous"
+
+    async def _uplink() -> None:
+        while True:
+            msg = await websocket.receive()
+            if msg.get("type") == "websocket.disconnect":
+                return
+            if msg.get("bytes") is not None:
+                if msg["bytes"]:
+                    await session.send_audio(msg["bytes"])
+                continue
+            raw = msg.get("text")
+            if not raw:
+                continue
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                continue
+            if payload.get("type") == "bye":
+                return
+            # 連續模式：user_end 無意義（turn 邊界交給 Nova VAD），忽略
+
+    async def _downlink() -> None:
+        async for ev in session.events_continuous():
+            if ev.kind == "audio":
+                await emit_bytes(ev.audio)
+            elif ev.kind == "transcript":
+                await emit({"type": "live_transcript", "role": ev.role, "text": ev.text})
+                if ev.role == "USER":
+                    turn_user.append(ev.text)
+                elif ev.role == "ASSISTANT":
+                    turn_asst.append(ev.text)
+            elif ev.kind == "turn_end":
+                _store_live_turn(turn_user, turn_asst)
+                turn_user.clear()
+                turn_asst.clear()
+                await emit({"type": "turn_end"})
+            elif ev.kind == "interrupt":
+                # barge-in：轉發給前端停播 + 切 listen（Nova server VAD 偵測到插話）
+                await emit({"type": "interrupt"})
+
+    try:
+        await session.start(system_prompt)
+        if continuous:
+            up = asyncio.create_task(_uplink())
+            down = asyncio.create_task(_downlink())
+            _, pending = await asyncio.wait(
+                {up, down}, return_when=asyncio.FIRST_COMPLETED)
+            # 乾淨關法（避免 teardown race）：先 close session，讓內部 receive loop
+            # 收斂並對 events_continuous 送 None 哨兵 → downlink 自然結束；再取消殘留
+            # task 並 await 吞掉 CancelledError，避免 SDK receive() 被硬取消時丟
+            # InvalidStateError。close() 每步吞例外、可與 finally 的再次 close 疊。
+            try:
+                await session.close()
+            except Exception:
+                pass
+            for t in pending:
+                t.cancel()
+            for t in pending:
+                try:
+                    await t
+                except BaseException:
+                    pass
+        else:
+            while True:
+                msg = await websocket.receive()
+                if msg.get("type") == "websocket.disconnect":
+                    break
+                if msg.get("bytes") is not None:
+                    if msg["bytes"]:
+                        await session.send_audio(msg["bytes"])
+                    continue
+                raw = msg.get("text")
+                if not raw:
+                    continue
+                try:
+                    payload = json.loads(raw)
+                except Exception:
+                    continue
+                mtype = payload.get("type")
+                if mtype == "user_end":
+                    await session.end_user_turn()
+                    await drain_events()
+                elif mtype == "bye":
+                    break
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        try:
+            await emit({"type": "live_error", "reason": "stream_error"})
+        except Exception:
+            pass
+    finally:
+        try:
+            await session.close()
+        except Exception:
+            pass
+        try:
+            await asyncio.to_thread(_run_live_diagnosis)
+        except Exception:
+            logger.exception("live 場末診斷觸發失敗")
+
+
+def _run_live_diagnosis() -> None:
+    """場末回寫診斷：對本場 live 逐字稿跑一次 generate_diagnosis 並存，
+    供下一場 build_lesson 自適應。失敗只記 log、不影響關閉。"""
+    try:
+        recent = [i for i in store.list_interactions(limit=20)
+                  if i.get("source") == "live_s2s"][-10:]
+        if len(recent) < 2:
+            return
+        diags = store.list_diagnoses()
+        prev = diags[-1] if diags else None
+        diag = diagnose.generate_diagnosis(recent, prev, store.get_profile())
+        store.add_diagnosis(diag)
+    except Exception:
+        logger.exception("live 場末診斷失敗")
+
+
+def _store_live_turn(user_texts: list[str], asst_texts: list[str]) -> None:
+    """把一輪 live transcript 落地（scores 留空待 Phase 2）；失敗不影響串流。"""
+    asr_text = " ".join(t for t in user_texts if t).strip()
+    reply_text = " ".join(t for t in asst_texts if t).strip()
+    if not (asr_text or reply_text):
+        return
+    try:
+        store.add_interaction({
+            "asr_text": asr_text,
+            "asr_conf": 1.0,
+            "reply_text": reply_text,
+            "scores": {},
+            "source": "live_s2s",
+        })
+    except Exception:
+        logger.exception("live transcript 落地失敗")

@@ -67,6 +67,9 @@ WAKE_SHERPA_THRESHOLD: float = float(os.environ.get("WAKE_SHERPA_THRESHOLD", "0.
 WAKE_SHERPA_SCORE: float = float(os.environ.get("WAKE_SHERPA_SCORE", "1.0"))
 
 
+# Bedrock 服務 region（Nova Sonic live S2S 沿用；陪聊/診斷雲端腦走 anthropic-relay，不需其餘 Converse 設定）。
+BEDROCK_REGION: str = os.environ.get("BEDROCK_REGION", "us-east-1")
+
 # ---------------------------------------------------------------------------
 # B4-5 家長同意 gate（consent；見 research/b_axis/B4_隱私與Guardrails.md §2.3）
 # demo 預設 True（正式版接學校/家長書面同意書，屬法遵層級，工程只留旗標）。
@@ -80,6 +83,17 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 CONSENT_GRANTED: bool = _env_bool("TALKYBUDDY_CONSENT_GRANTED", True)
+
+
+# ---------------------------------------------------------------------------
+# Nova Sonic 即時 S2S 陪聊（Phase 1；見 docs/superpowers/specs/2026-07-11-nova-sonic-live-s2s-design.md）
+# bidi 只吃 SigV4：憑證走 env（AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY），不進 repo。
+# region 沿用 BEDROCK_REGION。實際可用性 = LIVE_S2S_ENABLED AND nova_sonic.available()。
+# （放在 _env_bool 定義之後，避免 NameError。）
+# ---------------------------------------------------------------------------
+NOVA_SONIC_MODEL_ID: str = os.environ.get("NOVA_SONIC_MODEL_ID", "amazon.nova-2-sonic-v1:0")
+NOVA_SONIC_VOICE: str = os.environ.get("NOVA_SONIC_VOICE", "tiffany")
+LIVE_S2S_ENABLED: bool = _env_bool("LIVE_S2S_ENABLED", True)
 
 
 # ---------------------------------------------------------------------------

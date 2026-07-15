@@ -59,8 +59,9 @@ async def test_get_api_status_shape():
     assert resp.status_code == 200
     body = resp.json()
     assert set(body.keys()) == {
-        "asr", "llm", "tts", "cloud_tts", "cloud_llm", "network_mode", "pending"
+        "asr", "llm", "tts", "cloud_tts", "cloud_llm", "network_mode", "pending", "live_s2s"
     }
+    assert isinstance(body["live_s2s"], bool)
     assert isinstance(body["asr"], bool)
     assert isinstance(body["llm"], bool)
     assert isinstance(body["tts"], bool)

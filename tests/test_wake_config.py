@@ -31,6 +31,15 @@ async def test_wake_config_shape_and_enabled_true(monkeypatch):
     assert isinstance(body["sensitivity"], float)
 
 
+async def test_wake_config_has_sherpa_block():
+    async with await _client() as client:
+        resp = await client.get("/api/wake-config")
+    assert resp.status_code == 200
+    sh = resp.json()["sherpa"]
+    assert set(sh) >= {"enabled", "base_url", "keywords", "keywords_threshold", "keywords_score"}
+    assert sh["keywords_threshold"] == 0.25
+
+
 async def test_wake_config_disabled_when_no_key(monkeypatch):
     monkeypatch.setattr(config, "PICOVOICE_ACCESS_KEY", "")
     async with await _client() as client:

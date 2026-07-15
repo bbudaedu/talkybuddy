@@ -323,6 +323,9 @@ var busy = false;               // 一輪進行中（半雙工）
 var playingTTS = false;         // TTS 播放中鎖 push-to-talk
 var interimBubble = null;       // asr_result 即時上屏氣泡
 var networkMode = "edge";
+var liveMode = false;           // 即時 S2S（Nova Sonic）模式：true 時走 hold-to-talk，不建 /ws/talk
+var liveSession = null;         // LiveSession 實例（live 模式）
+var degrading = false;          // 降級中旗標：防重複 toast/reload
 
 /* ---------- 身份 token（跨平台雲端登入） ---------- */
 var authToken = localStorage.getItem("tb_token") || "";
@@ -666,6 +669,13 @@ function micDisabled() {
 penguinWrap.addEventListener("contextmenu", function (e) { e.preventDefault(); });
 penguinWrap.addEventListener("click", function (e) {
   e.preventDefault();
+  if (liveMode) {   /* hands-free：喚醒與點企鵝等效，交給協調器 */
+    var lw = window.__liveWake;
+    if (!lw) { return; }
+    if (lw.state === "conversing") { lw.end("push"); }
+    else { lw.wake("push"); }
+    return;
+  }
   if (!window._wakeController) { showToast("語音輸入暫不可用，請重新整理或用下方快速語句"); return; }
   if (!micAvailable) { showToast("麥克風不可用，請點下方快速語句"); return; }
   window._wakeController.triggerPush();
@@ -731,6 +741,31 @@ function playWakeCue() {
       speechSynthesis.speak(u);
     }
   } catch (e) { /* 忽略 */ }
+}
+
+/* hands-free 開麥/休息語音提示：用 speechSynthesis 播一句短提示。
+ * onDone 於 播完 / 出錯 / 保底 timeout / 無 speechSynthesis 時觸發（且只一次）。
+ * START 靠此把「開麥」延到提示播完，避免常開麥把自己的提示音當成使用者輸入。 */
+var liveCueBusy = false;
+function playLiveCue(text, onDone) {
+  var done = false;
+  function finish() {
+    if (done) { return; }
+    done = true;
+    if (onDone) { onDone(); }
+  }
+  try {
+    if (typeof speechSynthesis !== "undefined" && speechSynthesis) {
+      speechSynthesis.cancel();   /* 清掉殘留佇列，避免疊播 */
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = "zh-TW"; u.rate = 1.0;
+      u.onend = finish; u.onerror = finish;
+      speechSynthesis.speak(u);
+      setTimeout(finish, 2500);   /* 保底：部分行動瀏覽器不觸發 onend */
+      return;
+    }
+  } catch (e) { /* 忽略，直接 finish */ }
+  finish();
 }
 
 function initWakeLayer() {
@@ -826,6 +861,130 @@ function initWakeLayer() {
   });
 }
 
+/* ---------- 即時 S2S（Nova Sonic）live 模式 ---------- */
+/* live 為主 + 自動降級：進頁讀 /api/status，live_s2s 且無 forceHalfDuplex → enterLiveMode；
+ * 否則走既有半雙工（connectWS + 喚醒層）。兩模式互斥、init 一次決定、不熱切換。 */
+function initModes() {
+  var forceHalf = sessionStorage.getItem("forceHalfDuplex");
+  if (forceHalf) { sessionStorage.removeItem("forceHalfDuplex"); }   /* 一次性：清旗標防降級循環 */
+  fetch("/api/status").then(function (r) { return r.json(); }).then(function (st) {
+    if (st.live_s2s && !forceHalf) {
+      enterLiveMode();
+    } else {
+      startHalfDuplex();
+    }
+  }).catch(function () {
+    /* status 讀取失敗 → 保底走半雙工 */
+    startHalfDuplex();
+  });
+}
+
+function startHalfDuplex() {
+  liveMode = false;
+  connectWS();
+  initWakeLayer();
+}
+
+function enterLiveMode() {
+  liveMode = true;
+  /* 停半雙工喚醒常駐麥（若已建、吞例外）；live 模式改用 sherpa KWS + 協調器 */
+  try {
+    if (window._wakeController && window._wakeController.engine && window._wakeController.engine.stop) {
+      window._wakeController.engine.stop();
+    }
+  } catch (e) { /* 忽略 */ }
+
+  Promise.all([
+    import("/static/live-client.js"),
+    import("/static/live-wake.js"),
+    import("/static/sherpa-loader.js"),
+    import("/static/sherpa-engine.js")
+  ]).then(function (mods) {
+    var LiveSession = mods[0].LiveSession;
+    var matchFarewell = mods[0].matchFarewell;
+    var LiveWakeCoordinator = mods[1].LiveWakeCoordinator;
+    var loadSherpaModule = mods[2].loadSherpaModule;
+    var createSherpaEngine = mods[3].createSherpaEngine;
+
+    var coordinator;   /* 先宣告供 startSession 閉包引用 */
+
+    function startSession() {
+      var s = new LiveSession({
+        continuous: true,
+        onTranscript: function (role, text) {
+          addBubble(role === "USER" ? "student" : "penguin", text, {});
+          if (coordinator) { coordinator.onTranscript(role, text); }
+        },
+        onError: function (reason) { degradeToHalfDuplex(reason); },
+        onStateChange: function (state) { setVisualState(state); }
+      });
+      return s.start().then(function () { return s; });
+    }
+
+    function onCue(kind) {
+      return new Promise(function (res) {
+        playLiveCue(kind === "start" ? "我在，請說" : "先休息一下，想聊再喊我", res);
+      });
+    }
+
+    /* 讀 wake-config → 建 sherpa engine（失敗則 engine=null，仍可點企鵝） */
+    return fetch("/api/wake-config").then(function (r) { return r.json(); }).then(function (cfg) {
+      var sh = cfg && cfg.sherpa;
+      var enginePromise = (sh && sh.enabled)
+        ? loadSherpaModule(sh.base_url).then(function (Module) {
+            return createSherpaEngine({
+              Module: Module,
+              keywords: sh.keywords,
+              keywordsThreshold: sh.keywords_threshold,
+              keywordsScore: sh.keywords_score
+            });
+          }).catch(function () { return null; })
+        : Promise.resolve(null);
+      return enginePromise.then(function (engine) {
+        coordinator = new LiveWakeCoordinator({
+          engine: engine,
+          startSession: startSession,
+          onCue: onCue,
+          onStateChange: function (state) { setVisualState(state); },
+          matchFarewell: matchFarewell
+        });
+        window.__liveWake = coordinator;
+        connStateEl.textContent = "已連線（即時）";
+        connStateEl.className = "ok";
+        holdHint.textContent = engine ? "🗣️ 喊「說說學伴」或點我開始，說「掰掰」結束"
+                                      : "👆 點企鵝開始對話，再點一下結束";
+        holdHint.classList.remove("disabled");
+        showToast(engine ? "🎙️ 喊「說說學伴」或點企鵝開始" : "🎙️ 即時對話已就緒，點企鵝開始");
+        return coordinator.arm();
+      });
+    });
+  }).catch(function () {
+    degradeToHalfDuplex("stream_error");
+  });
+}
+
+function degradeToHalfDuplex(reason) {
+  if (degrading) { return; }   /* 防重複：ws.onerror 與 live_error 可能同時觸發 */
+  degrading = true;
+  var msgs = {
+    consent_required: "需要您同意錄音上雲才能使用即時對話，改用一般模式",
+    unavailable: "即時對話暫不可用，改用一般模式",
+    stream_error: "即時對話連線中斷，改用一般模式"
+  };
+  showToast(msgs[reason] || "即時對話無法使用，改用一般模式");
+  try { if (liveSession) { liveSession.close(); } } catch (e) { /* 忽略 */ }
+  /* live 模式改由協調器持有 session/KWS engine：一併收麥（reload 前避免雙麥） */
+  try {
+    var lw = window.__liveWake;
+    if (lw) {
+      if (lw.session) { lw.session.close(); }
+      if (lw.engine && lw.engine.stop) { lw.engine.stop(); }
+    }
+  } catch (e) { /* 忽略 */ }
+  sessionStorage.setItem("forceHalfDuplex", "1");
+  setTimeout(function () { location.reload(); }, 1500);
+}
+
 /* ---------- 啟動 ---------- */
 var _booted = false;
 function boot() {
@@ -833,9 +992,8 @@ function boot() {
   _booted = true;
   buildChips();
   setVisualState("idle");
-  connectWS();
   initMic();
-  initWakeLayer();
+  initModes();   /* 取代 connectWS + initWakeLayer：依 live_s2s 決定 live 或半雙工（半雙工分支仍走 sherpa KWS） */
   refreshStatus();
   setInterval(refreshStatus, 5000);
   /* 開場招呼 */
