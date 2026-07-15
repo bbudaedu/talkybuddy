@@ -135,9 +135,20 @@ def _compute_scores(interactions: list[dict], prev: dict | None) -> dict:
                 for it in interactions
             ]
             raw[dim] = sum(vals) / len(vals)
-        # asr_confidence 平均（0-1）映射到 0-100 → pronunciation
-        confs = [float(it.get("asr_confidence", 0.6)) for it in interactions]
-        raw["pronunciation"] = (sum(confs) / len(confs)) * 100.0
+        # pronunciation：優先用 live 背景聲學評測的真分數（scores["pronunciation"]，
+        # 見 server/pronunciation.py）；逾時/降級為 None 者略過。皆無真分才 fallback
+        # 到 asr_confidence 映射（向後相容）。
+        prons = [
+            float(it["scores"]["pronunciation"])
+            for it in interactions
+            if isinstance(it.get("scores"), dict)
+            and it["scores"].get("pronunciation") is not None
+        ]
+        if prons:
+            raw["pronunciation"] = sum(prons) / len(prons)
+        else:
+            confs = [float(it.get("asr_confidence", 0.6)) for it in interactions]
+            raw["pronunciation"] = (sum(confs) / len(confs)) * 100.0
     else:
         # 沒有新互動：沿用 prev；連 prev 都沒有就用保底值
         raw = {

@@ -25,7 +25,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from server import auth, config, diagnose, guardrails, nova_sonic, profile, scaffold, store
+from server import (
+    auth, config, diagnose, guardrails, lesson, nova_sonic, profile,
+    pronunciation, scaffold, store,
+)
 from server.asr import ASREngine
 from server.llm import EdgeLLM
 from server.cloud_tts import CloudTTS
@@ -102,12 +105,19 @@ app = FastAPI(title="TalkyBuddy 說說學伴", lifespan=lifespan)
 
 @app.middleware("http")
 async def _cross_origin_isolation(request, call_next):
-    """全站回應加 COOP:same-origin + COEP:require-corp，讓 sherpa-onnx KWS WASM
-    能建立 shared WebAssembly.Memory（crossOriginIsolated）。全站同源，對其他資源無副作用。"""
+    """全站回應帶 COOP:same-origin + COEP:require-corp。
+
+    sherpa-onnx KWS WASM 以 emscripten `-pthread` 建置，執行時要建立 shared
+    WebAssembly.Memory，瀏覽器僅在 ``crossOriginIsolated === true`` 時才允許。
+    缺這兩個 header 時，手機端 WASM init 會卡住 → live 喚醒層 Promise chain
+    無法完成（畫面卡在「連線中」、點企鵝無反應）。全站頁面與資產皆同源，
+    加這兩個 header 對其他資源無副作用。契約見 tests/test_cross_origin_isolation.py。
+    """
     response = await call_next(request)
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
     return response
+
 
 if WEB_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
@@ -512,13 +522,37 @@ async def ws_live(websocket: WebSocket):
         await websocket.close()
         return
 
-    # 動態鷹架注入：沿用 pipeline 目前的 B 軸 directive（已是格式化字串或 None）
-    directive = getattr(pipeline, "_directive", None)
-    target = "How are you today?"  # Phase 1 起始目標句（詞庫通用引導句）
-    system_prompt = scaffold.build_live_system_prompt(target, directive)
+    # 本場教材：由最新診斷 + profile 選今日主題/目標句/策略（安全退化，永不擋 live）。
+    # 同一份 Lesson 供「發音評測參考句 target」與「教練跟讀 system_prompt」，單一真相來源。
+    live_lesson = lesson.build_lesson(store.list_diagnoses(), store.get_profile())
+    target = live_lesson.target_sentence  # 發音評測參考句 = 本場跟讀目標句
+    system_prompt = scaffold.build_live_system_prompt(
+        live_lesson.target_sentence, live_lesson.directive, topic=live_lesson.topic)
 
     session = _make_live_session()
     turn_user, turn_asst = [], []
+
+    # 發音評測（B 軸背景）：available 才 tee 使用者上行 PCM，turn_end 背景評分。
+    # 不可用→不 tee、不評分，行為與現行全雙工一致（降級安全）。
+    pron_on = pronunciation.available()
+    pcm_buf = bytearray()
+
+    async def _finish_turn() -> None:
+        """一輪結束：對已緩衝的使用者 PCM 背景評分（有逾時上限），把 pron 併入落地。"""
+        pron = None
+        if pron_on and pcm_buf:
+            try:
+                pron = await asyncio.wait_for(
+                    asyncio.to_thread(_pcm_to_pron_score, bytes(pcm_buf), target),
+                    timeout=config.PRON_SCORE_TIMEOUT_S,
+                )
+            except Exception:
+                pron = None
+        pcm_buf.clear()
+        _store_live_turn(turn_user, turn_asst, pron)
+        turn_user.clear()
+        turn_asst.clear()
+        await emit({"type": "turn_end"})
 
     async def drain_events() -> None:
         """迭代模型事件轉發前端；turn_end 落地 transcript。"""
@@ -532,10 +566,7 @@ async def ws_live(websocket: WebSocket):
                 elif ev.role == "ASSISTANT":
                     turn_asst.append(ev.text)
             elif ev.kind == "turn_end":
-                _store_live_turn(turn_user, turn_asst)
-                turn_user.clear()
-                turn_asst.clear()
-                await emit({"type": "turn_end"})
+                await _finish_turn()
 
     # hands-free 連續模式（?mode=continuous）：上下行雙 Task 常駐，turn 邊界交給 Nova VAD。
     continuous = websocket.query_params.get("mode") == "continuous"
@@ -548,6 +579,8 @@ async def ws_live(websocket: WebSocket):
             if msg.get("bytes") is not None:
                 if msg["bytes"]:
                     await session.send_audio(msg["bytes"])
+                    if pron_on:
+                        pcm_buf.extend(msg["bytes"])   # tee 一份供 turn_end 評分
                 continue
             raw = msg.get("text")
             if not raw:
@@ -571,10 +604,7 @@ async def ws_live(websocket: WebSocket):
                 elif ev.role == "ASSISTANT":
                     turn_asst.append(ev.text)
             elif ev.kind == "turn_end":
-                _store_live_turn(turn_user, turn_asst)
-                turn_user.clear()
-                turn_asst.clear()
-                await emit({"type": "turn_end"})
+                await _finish_turn()
             elif ev.kind == "interrupt":
                 # barge-in：轉發給前端停播 + 切 listen（Nova server VAD 偵測到插話）
                 await emit({"type": "interrupt"})
@@ -594,9 +624,19 @@ async def ws_live(websocket: WebSocket):
                 await session.close()
             except Exception:
                 pass
+            # downlink drain：uplink 先收尾（掰掰/斷線）時，最後一輪 turn_end 可能還在
+            # 佇列/評分中。直接 cancel 會砍掉該輪發音評測與落地（手機真機驗收踩到），
+            # 故有界等待 downlink 把剩餘事件 drain 完（發音評測最久 PRON_SCORE_TIMEOUT_S）；
+            # 逾時由 wait_for 自動 cancel 保底、不 hang。
+            if down in pending:
+                try:
+                    await asyncio.wait_for(
+                        down, timeout=config.PRON_SCORE_TIMEOUT_S + 2.0)
+                except Exception:
+                    pass
             for t in pending:
-                t.cancel()
-            for t in pending:
+                if not t.done():
+                    t.cancel()
                 try:
                     await t
                 except BaseException:
@@ -609,6 +649,8 @@ async def ws_live(websocket: WebSocket):
                 if msg.get("bytes") is not None:
                     if msg["bytes"]:
                         await session.send_audio(msg["bytes"])
+                        if pron_on:
+                            pcm_buf.extend(msg["bytes"])   # tee 供 turn_end 評分
                     continue
                 raw = msg.get("text")
                 if not raw:
@@ -641,6 +683,17 @@ async def ws_live(websocket: WebSocket):
             logger.exception("live 場末診斷觸發失敗")
 
 
+def _build_live_prompt() -> str:
+    """組本場 live system prompt：選教材（build_lesson）→ 教練跟讀 prompt。
+
+    離線可單元測試的 seam；ws_live 連線時另建同一份 Lesson 以同時取得發音
+    評測參考句（target）與 prompt。build_lesson 全程安全退化，永不擋 live。
+    """
+    lp = lesson.build_lesson(store.list_diagnoses(), store.get_profile())
+    return scaffold.build_live_system_prompt(
+        lp.target_sentence, lp.directive, topic=lp.topic)
+
+
 def _run_live_diagnosis() -> None:
     """場末回寫診斷：對本場 live 逐字稿跑一次 generate_diagnosis 並存，
     供下一場 build_lesson 自適應。失敗只記 log、不影響關閉。"""
@@ -657,18 +710,59 @@ def _run_live_diagnosis() -> None:
         logger.exception("live 場末診斷失敗")
 
 
-def _store_live_turn(user_texts: list[str], asst_texts: list[str]) -> None:
-    """把一輪 live transcript 落地（scores 留空待 Phase 2）；失敗不影響串流。"""
+def _pcm_to_pron_score(pcm: bytes, reference: str, rate: int = 16000) -> float | None:
+    """把一輪使用者 PCM16 mono 組成暫存 wav → pronunciation.score → 用後即刪。
+
+    定位＝B 軸背景聲學評測（見 server/pronunciation.py，路 A）。純同步、CPU 密集，
+    由呼叫端丟 asyncio.to_thread + 逾時包起來，避免擋事件迴圈。
+    不可用／空 PCM／空 reference／任何例外 → None（呼叫端維持既有行為）。
+    隱私：暫存 wav 評完即刪、只回 0-100 分數。
+    """
+    if not pcm or not (reference or "").strip():
+        return None
+    if not pronunciation.available():
+        return None
+    import os
+    import tempfile
+    import wave
+
+    path = None
+    try:
+        fd, path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        with wave.open(path, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)      # PCM16
+            w.setframerate(rate)   # 上行＝16kHz mono（web/live-client.js downsampleTo16k）
+            w.writeframes(pcm)
+        return pronunciation.score(path, reference)
+    except Exception:
+        return None
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except Exception:
+                pass
+
+
+def _store_live_turn(
+    user_texts: list[str], asst_texts: list[str], pron: float | None = None
+) -> None:
+    """把一輪 live transcript 落地；pron 有值時寫 scores["pronunciation"]。失敗不影響串流。"""
     asr_text = " ".join(t for t in user_texts if t).strip()
     reply_text = " ".join(t for t in asst_texts if t).strip()
     if not (asr_text or reply_text):
         return
+    scores: dict = {}
+    if pron is not None:
+        scores["pronunciation"] = float(pron)
     try:
         store.add_interaction({
             "asr_text": asr_text,
             "asr_conf": 1.0,
             "reply_text": reply_text,
-            "scores": {},
+            "scores": scores,
             "source": "live_s2s",
         })
     except Exception:

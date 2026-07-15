@@ -273,3 +273,38 @@ def test_generate_diagnosis_bedrock_fail_falls_back_to_mock(monkeypatch):
     monkeypatch.setattr(cloud_llm, "diagnose_via_bedrock", lambda i, p: None)
     out = diagnose.generate_diagnosis([{"student_text": "貓", "scores": {}}], None)
     assert "scores" in out and out.get("companion_directive")  # mock 兜底
+
+
+# ---------------------------------------------------------------------------
+# _compute_scores：真發音分數（live 背景評測）優先，無則 fallback asr_confidence
+# ---------------------------------------------------------------------------
+
+def test_compute_scores_uses_real_pronunciation_when_present():
+    """interaction scores 內有真 pronunciation → pronunciation 維度取真分平均，
+    不再用 asr_confidence 映射（否則 0.3→30，真分應為 85）。"""
+    interactions = [
+        {"scores": {"pronunciation": 90}, "asr_confidence": 0.3},
+        {"scores": {"pronunciation": 80}, "asr_confidence": 0.3},
+    ]
+    out = diagnose._compute_scores(interactions, None)
+    assert out["pronunciation"] == 85
+
+
+def test_compute_scores_falls_back_to_asr_conf_without_pronunciation():
+    """無真 pronunciation → 維持 asr_confidence 映射（向後相容）。"""
+    interactions = [
+        {"scores": {}, "asr_confidence": 0.5},
+        {"scores": {}, "asr_confidence": 0.5},
+    ]
+    out = diagnose._compute_scores(interactions, None)
+    assert out["pronunciation"] == 50
+
+
+def test_compute_scores_ignores_none_pronunciation_entries():
+    """部分 interaction pron=None（評分逾時/降級）→ 只平均有值者，不當 0。"""
+    interactions = [
+        {"scores": {"pronunciation": 88}, "asr_confidence": 0.2},
+        {"scores": {"pronunciation": None}, "asr_confidence": 0.2},
+    ]
+    out = diagnose._compute_scores(interactions, None)
+    assert out["pronunciation"] == 88
