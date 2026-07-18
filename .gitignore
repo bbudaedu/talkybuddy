@@ -1,2 +1,49 @@
-# sherpa-onnx WASM 資產（fetch-on-setup，勿進版控）
+# Secrets & credentials
+*.key
+*.pem
+.env
+.env.*
+credentials.json
+token.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.venv
+venv/
+# Streaming venv (A2 real-wiring; built from requirements-streaming.txt)
+.venv-streaming/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model artifacts (fetched at install time by scripts/setup_env.sh; not committed).
+# No trailing slash: in git worktrees these may be symlinks to a shared checkout,
+# and a dir-only pattern (trailing /) would not match a symlink.
+models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
+models/_sherpa_cache
+# Large model binaries — LLM (qwen .gguf) and piper TTS voices (.onnx)
+models/*.gguf
+models/*.onnx
+
+# A1 wake assets — Porcupine params/keyword models (fetched at verify time, not committed)
+web/assets/*.pv
+web/assets/*.ppn
+# sherpa KWS WASM 資產（fetch-on-setup，勿進版控）
 web/vendor/sherpa-kws/
+
+# gstack
+.gstack/
+
+# Runtime SQLite DB — seeded fresh on boot via seed_demo(); never commit demo state
+data/*.db
+# Runtime logs (server / verify / rehearsal); keep setup.log as install record
+logs/*.log
+!logs/setup.log
+# Spike scratch logs (pron_assess etc.) — throwaway experiment output, never committed
+spike/**/*.log
