@@ -46,7 +46,8 @@
     "post_planning_gaps": true,
     "security_enforcement": true,
     "security_asvs_level": 1,
-    "security_block_on": "high"
+    "security_block_on": "high",
+    "test_command": "pytest"
   },
   "ship": {
     "pr_body_sections": []
@@ -64,5 +65,6 @@
   },
   "mode": "yolo",
   "granularity": "coarse",
-  "quick_branch_template": null
+  "quick_branch_template": null,
+  "response_language": "zh-TW"
 }
