@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-08-cloud-llm-bedrock-foundation-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "cloud_llm 地基：Bedrock FM 收編智慧大腦（子專案 A）最小落地設計",
+  "summary": "技術設計 spec，將陪聊與導師 Agent 雲端推理接上 Amazon Bedrock Converse API，含架構、契約與 B4 安全地板接線。",
+  "scope": ["cloud_llm", "Amazon Bedrock Converse API", "陪聊 Agent", "導師 Agent", "pipeline._process_text", "diagnose.generate_diagnosis", "B4 安全地板/guardrails", "network_mode cloud 路徑"],
+  "cross_refs": ["research/16_Bedrock端到端S2S_可行性評估.md", "research/06_雲端助教Agent層.md", "research/11_B軸智慧教學層_設計交接.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

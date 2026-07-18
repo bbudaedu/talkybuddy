@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/plans/2026-07-08-a2-2-streaming-turn-manager.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "A2-2 StreamingTurnManager + Barge-in 迴路 Implementation Plan",
+  "summary": "Technical spec for a full-duplex streaming turn loop in server/streaming/ with Silero VAD barge-in and interruptible sentence-by-sentence TTS.",
+  "scope": ["server/streaming", "StreamingTurnManager", "InterruptibleSynth", "SpeechGate", "ReplySource", "Silero VAD barge-in", "Pipecat 1.5.0 pipeline", "sherpa-onnx TTS", "FunASRSTTService"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": "Self-labels as 'spec' throughout; contains implementation contracts (Consumes/Produces interfaces, function signatures, barge-in concurrency ordering, invariants). Structured as a task-based implementation plan but dominant signals are technical build contracts → SPEC. References to research/16 and research/12 are decision pointers, not resolvable doc paths, so cross_refs left empty."
+}

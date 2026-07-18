@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-08-a2-1-pipecat-spike-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "A2-1 Pipecat 整合 Spike 設計書（拋棄式 go/no-go）",
+  "summary": "Throwaway go/no-go spike design verifying Pipecat can host batch SenseVoice STT plus sentence-level interruptible sherpa TTS under barge-in without touching _process_text.",
+  "scope": ["Pipecat", "FunASRSTTService", "SenseVoice batch STT", "SherpaInterruptibleTTSService", "sherpa-onnx TTS", "programmatic barge-in / interruption", "StubLLMService", "spike a2_pipecat"],
+  "cross_refs": ["research/12", "research/13", "research/14", "research/15", "talkybuddy/server/", "server/tts.py", "tts.py", "asr.py"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

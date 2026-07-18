@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/plans/2026-07-12-nova-sonic-live-s2s-e2e-checklist.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Nova Sonic 即時 S2S — 手動端到端驗收 checklist",
+  "summary": "Manual end-to-end acceptance checklist for Nova Sonic live speech-to-speech mode with automatic fallback to half-duplex.",
+  "scope": ["Nova Sonic", "live S2S", "hold-to-talk", "hands-free full-duplex", "half-duplex fallback", "/ws/live", "/ws/talk"],
+  "cross_refs": ["scripts/verify_nova_sonic_live.py", "docs/voice-reference/<中文語音>.wav"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

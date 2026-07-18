@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/plans/2026-07-14-live-b1-teaching-wiring.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "live 接 B1/B3 教學內容 Implementation Plan",
+  "summary": "Task-by-task implementation plan wiring B1 teaching content into live hands-free conversations via a new server/lesson.py and coach-style follow-along loop.",
+  "scope": ["live hands-free 對話", "server/lesson.py", "scaffold.build_live_system_prompt", "app.py ws_live", "diagnose", "curriculum", "教練跟讀迴圈"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": "Implementation plan under docs/.../plans/ with checkbox task steps → DOC. Contains SPEC-like function 'Interfaces' (e.g. pick_target_sentence signature) but no API/schema/protocol contract as primary artifact; no ADR status or PRD user stories. Referenced items are code paths, not doc paths, so cross_refs empty."
+}

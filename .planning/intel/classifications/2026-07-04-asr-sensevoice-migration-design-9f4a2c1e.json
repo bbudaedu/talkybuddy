@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-04-asr-sensevoice-migration-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "ASR 換 sherpa-onnx + SenseVoice-Small + OpenCC 設計書",
+  "summary": "Design/spec for migrating the ASR engine from faster-whisper to sherpa-onnx SenseVoice-Small int8 plus OpenCC, keeping whisper as a feature-flag fallback.",
+  "scope": ["ASR engine", "sherpa-onnx", "SenseVoice-Small", "OpenCC s2twp", "faster-whisper fallback", "server/asr.py", "feature flag ASR_BACKEND"],
+  "cross_refs": ["research/03_ASR選型.md", "CONTRACTS.md", "server/asr.py", "server/asr_base.py", "server/asr_whisper.py", "server/asr_sensevoice.py", "pipeline.py", "app.py", "config.py", "setup_env.sh", "test_pipeline.py", "test_asr_backend.py"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Path under **/specs/** plus strong SPEC content: ASREngine interface contract, architecture file-split table, config/data schemas, error-handling and test plans. Design-book framing (設計書) confirms technical specification, not a locked ADR."
+}

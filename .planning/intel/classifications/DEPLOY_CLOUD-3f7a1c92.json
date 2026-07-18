@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/DEPLOY_CLOUD.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "雲端 VM 佈署指南（跨平台雲端登入）",
+  "summary": "Operational runbook for deploying TalkyBuddy's cloud VM: env vars, startup, TLS/WSS reverse proxy, edge doll sync, and demo seed accounts.",
+  "scope": ["cloud VM deployment", "environment variables", "TLS/WSS reverse proxy", "edge doll sync", "demo seed accounts", "cloud/edge pipeline profiles"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

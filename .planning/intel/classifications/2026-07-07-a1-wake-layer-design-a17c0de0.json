@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-07-a1-wake-layer-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "A1 喚醒層設計書（Porcupine 語音喚醒 + tap-to-toggle push）",
+  "summary": "Client-side wake layer spec: Porcupine on-device voice wakeword plus tap-to-toggle push, feeding the existing single-turn pipeline.",
+  "scope": ["語音喚醒 wakeword", "Porcupine", "WakeController 狀態機", "MicRouter", "web/index.html client", "/ws/talk 音訊上傳契約", "tap-to-toggle push UX"],
+  "cross_refs": ["CONTRACTS.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

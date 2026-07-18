@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/PRIVACY.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "說說學伴 TalkyBuddy — 隱私與資料最小化說明",
+  "summary": "Privacy and data-minimization policy for a children's voice-learning toy: audio never persisted, layered guardrails, de-identification before cloud, parental consent.",
+  "scope": ["privacy policy", "data minimization", "voice audio handling", "content safety guardrails", "de-identification", "parental consent", "PDPA", "COPPA"],
+  "cross_refs": ["research/b_axis/B4_隱私與Guardrails.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

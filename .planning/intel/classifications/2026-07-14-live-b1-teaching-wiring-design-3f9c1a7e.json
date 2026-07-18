@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-14-live-b1-teaching-wiring-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "設計：把 B1/B3 教學內容接進 live 對話（解決重複亂聊）",
+  "summary": "技術設計：新增 server/lesson.py 選教材、重寫 live system prompt 為教練跟讀迴圈、live 收尾回寫診斷，形成自適應閉環。",
+  "scope": ["server/lesson.py", "server/scaffold.py build_live_system_prompt", "server/app.py ws_live", "live hands-free 對話", "B1/B3 教學閉環", "背景診斷"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/plans/2026-07-04-asr-sensevoice-migration.md",
+  "type": "SPEC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "ASR 換 sherpa-onnx + SenseVoice-Small 實作計畫",
+  "summary": "Implementation plan/spec migrating ASR from faster-whisper to sherpa-onnx + SenseVoice-Small int8 with OpenCC, keeping whisper as feature-flag fallback.",
+  "scope": ["ASR engine", "sherpa-onnx", "SenseVoice-Small", "faster-whisper fallback", "OpenCC s2twp", "ASREngine contract", "server/asr backend factory"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": "Located under docs/superpowers/plans/ as a task-by-task implementation plan (DOC-like tutorial structure), but dominant signals are technical contracts: fixed ASREngine interface (available/transcribe/_ensure_model), Global Constraints the system must honor, tech stack versions, and Consumes/Produces interface specs → SPEC. No ADR status field or decision-vs-consequences framing, no user stories → not ADR/PRD. cross_refs empty: only code file paths and superpowers sub-skill names referenced, no markdown doc links. source_hash is a placeholder (no hashing tool available); slug filename already unique."
+}

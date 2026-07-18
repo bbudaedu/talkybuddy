@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/plans/2026-07-08-a2-1-pipecat-spike.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "A2-1 Pipecat 整合 Spike Implementation Plan",
+  "summary": "Task-by-task implementation plan for a throwaway spike testing whether Pipecat can host batch SenseVoice STT plus sentence-level interruptible sherpa TTS.",
+  "scope": ["Pipecat", "SenseVoice STT", "sherpa TTS", "barge-in interruption", "spike venv", "TDD"],
+  "cross_refs": ["docs/superpowers/specs/2026-07-08-a2-1-pipecat-spike-design.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

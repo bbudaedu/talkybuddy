@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-14-nova-sonic-handsfree-fullduplex-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Nova Sonic hands-free 全雙工 設計",
+  "summary": "Technical design to upgrade Nova Sonic S2S from hold-to-talk to hands-free full-duplex with native VAD and real barge-in.",
+  "scope": ["Nova Sonic S2S", "hands-free full-duplex", "barge-in", "echo cancellation (AEC)", "server/app.py ws_live", "server/nova_sonic.py", "web/live-client.js", "web/index.html"],
+  "cross_refs": ["2026-07-11-nova-sonic-live-s2s-design.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

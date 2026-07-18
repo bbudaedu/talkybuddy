@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-10-a2-realwire-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "A2 Real-Wiring Slice — 把 barge-in 迴路接上真實麥克風/喇叭",
+  "summary": "Technical design for wiring the StreamingTurnManager barge-in loop to real mic/speaker via Pipecat LocalAudioTransport and Silero VAD.",
+  "scope": ["StreamingTurnManager", "barge-in", "Pipecat LocalAudioTransport", "SileroVAD", "FunASRSTTService", "SherpaInterruptibleTTSService", "run_realwire.py", "streaming pipeline"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

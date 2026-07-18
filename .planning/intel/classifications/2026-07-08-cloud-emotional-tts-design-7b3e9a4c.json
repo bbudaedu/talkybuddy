@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-08-cloud-emotional-tts-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "雲端情緒 TTS（ElevenLabs）最小落地設計",
+  "summary": "Technical design for routing cloud mode TTS to ElevenLabs with silent fallback to edge Piper, defining module contracts, config, and tests.",
+  "scope": ["ElevenLabs cloud TTS", "server/cloud_tts.py", "server/pipeline.py", "server/config.py", "server/app.py", "edge Piper fallback", "WAV 22050Hz output contract"],
+  "cross_refs": ["research/17_自然情緒TTS_雲端克隆與邊緣提升.md", "research/16"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Path in specs/ plus module contracts, API endpoint, config schema, error-handling table, and test plan → SPEC. Contains a '使用者決策（已確認）' section with locked-style decisions, but dominant signals are implementation contracts, not a single ADR decision; status reads '設計待實作' (design pending), so not locked."
+}

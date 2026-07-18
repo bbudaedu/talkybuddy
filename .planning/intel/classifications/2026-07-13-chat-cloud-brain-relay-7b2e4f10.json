@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/plans/2026-07-13-chat-cloud-brain-relay.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "對話接自架中轉（雲端腦）Implementation Plan",
+  "summary": "Implementation plan to route real-time chat replies through a cloud brain (Anthropic-compatible relay) with fallback to local EdgeLLM then scaffold.",
+  "scope": ["CloudLLM", "anthropic_relay", "EdgeLLM", "VoicePipeline", "cloud relay", "deidentify/guardrail"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": "Task-by-task implementation plan (Goal/Architecture/Tech Stack/Global Constraints/Task+Step checkboxes) → dominant structure is a planning DOC. Contains SPEC-like interface contracts (e.g. resolve_config() signatures) but no formal system-spec framing; no ADR Decision/Consequences and no PRD user stories. cross_refs empty: only code files (diagnose.py, app.py) referenced, no doc links."
+}

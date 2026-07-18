@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-08-a2-2-streaming-turn-manager-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "A2-2 StreamingTurnManager + Barge-in 迴路 設計",
+  "summary": "Server-side full-duplex streaming turn loop design with barge-in cancellation, defining component boundaries, interfaces, and data flow.",
+  "scope": ["server/streaming", "StreamingTurnManager", "ReplySource", "InterruptibleSynth", "Silero VAD", "barge-in", "TurnResult", "Pipecat"],
+  "cross_refs": ["research/12_A2_全雙工barge-in_設計交接.md", "spike/a2_pipecat/SPIKE-RESULT.md", "spike/a2_pipecat/interruptible_synth.py", "server/pipeline.py", "server/streaming/reply_source.py", "server/streaming/interruptible_synth.py", "server/streaming/vad.py", "server/streaming/turn_manager.py"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

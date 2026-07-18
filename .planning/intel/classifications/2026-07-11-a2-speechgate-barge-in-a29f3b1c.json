@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/plans/2026-07-11-a2-speechgate-barge-in.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "SpeechGate → turn_manager barge-in 專用門檻縫 Implementation Plan",
+  "summary": "Implementation plan wiring SpeechGate as an independently tunable barge-in detector (BargeInGate → BargeInDetectedFrame) decoupled from turn-taking VAD.",
+  "scope": ["SpeechGate", "BargeInGate", "BargeInDetectedFrame", "StreamingTurnManager", "Pipecat pipeline", "Silero VAD", "barge-in detection"],
+  "cross_refs": ["talkybuddy/docs/superpowers/specs/2026-07-10-a2-speechgate-barge-in-design.md", "server/streaming/vad.py", "server/streaming/turn_manager.py", "server/pipeline.py"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Path under docs/superpowers/plans/ — a task-by-task implementation plan. Contains code snippets and interface definitions (SPEC-like) but structured as an execution plan referencing a separate design SPEC. No ADR status/decision-consequences, no user stories/acceptance criteria. Classified DOC (plan/guide) with medium confidence."
+}

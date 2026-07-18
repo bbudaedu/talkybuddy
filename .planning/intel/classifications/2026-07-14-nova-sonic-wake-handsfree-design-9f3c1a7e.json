@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-14-nova-sonic-wake-handsfree-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "設計：喚醒詞→hands-free 全語音迴圈（Nova Sonic + sherpa KWS）",
+  "summary": "技術設計：以 sherpa KWS 喚醒詞「說說學伴」進入 Nova Sonic hands-free 全語音對話，結束詞收尾回 IDLE，含協調器介面、接線、降級與測試。",
+  "scope": ["Nova Sonic live/hands-free", "sherpa KWS 喚醒詞", "live-wake.js 協調器", "matchFarewell 結束詞偵測", "index.html enterLiveMode 接線", "wake-config sherpa 後端"],
+  "cross_refs": ["2026-07-14-nova-sonic-handsfree-fullduplex-design.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

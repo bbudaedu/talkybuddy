@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/plans/2026-07-14-nova-sonic-handsfree-fullduplex.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Nova Sonic hands-free 全雙工 Implementation Plan",
+  "summary": "Phased implementation plan to upgrade Nova Sonic live S2S from hold-to-talk to hands-free full-duplex with continuous audio, VAD segmentation, and barge-in.",
+  "scope": ["Nova Sonic", "hands-free full-duplex", "/ws/live continuous mode", "NovaSonicSession", "AEC spike", "barge-in", "FastAPI WebSocket", "Web Audio API"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

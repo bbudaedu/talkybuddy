@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/plans/2026-07-12-nova-sonic-live-s2s.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Nova Sonic 即時 S2S 陪聊（Phase 1 垂直切片）Implementation Plan",
+  "summary": "Task-by-task implementation plan for adding a full-duplex Chinese live speech-to-speech chat path via Amazon Nova Sonic bidi (/ws/live).",
+  "scope": ["Nova Sonic bidi", "/ws/live WebSocket bridge", "NovaSonicSession", "live system prompt scaffold", "web/live-client.js AudioWorklet", "server/app.py", "server/config.py"],
+  "cross_refs": ["scripts/verify_nova_sonic_live.py", "server/nova_sonic.py", "server/app.py", "server/config.py", "server/scaffold.py", "server/cloud_llm.py", "web/live-client.js", "web/live-client.test.mjs", "web/index.html", "web/mic-router.test.mjs", "docs/superpowers/plans/2026-07-12-nova-sonic-live-s2s-e2e-checklist.md", "tests/test_nova_sonic.py", "tests/test_scaffold_live_prompt.py", "tests/test_app_live.py"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

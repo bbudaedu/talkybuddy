@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/plans/2026-07-10-a2-realwire.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "A2 Real-Wiring Slice Implementation Plan",
+  "summary": "Task-by-task implementation plan to wire the StreamingTurnManager barge-in loop onto Pipecat LocalAudioTransport with real Silero VAD, FunASR STT, and sherpa TTS.",
+  "scope": ["StreamingTurnManager", "Pipecat LocalAudioTransport", "Silero VAD", "FunASR/SenseVoice STT", "sherpa-onnx TTS", "streaming venv", "canned-WAV acceptance test"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

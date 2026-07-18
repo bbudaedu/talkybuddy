@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-11-nova-sonic-live-s2s-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Nova Sonic 即時 S2S 陪聊（Phase 1 垂直切片）設計",
+  "summary": "Phase 1 technical design for a Nova Sonic full-duplex Chinese speech-to-speech companion via a new /ws/live endpoint, with scaffolded English coaching and transcript persistence.",
+  "scope": ["Nova Sonic", "NovaSonicSession", "/ws/live WebSocket", "build_live_system_prompt", "web/live-client.js", "AudioWorklet PCM pipeline", "scaffold 鷹架 prompt", "transcript persistence"],
+  "cross_refs": ["research/16_Bedrock端到端S2S_可行性評估.md", "scripts/verify_nova_sonic_live.py", "server/cloud_llm.py", "server/streaming/", "server/nova_sonic.py", "server/app.py", "server/scaffold.py", "web/live-client.js", "web/live-capture-processor.js", "index.html"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Located under specs/ with dominant SPEC signals: component interfaces, bidi protocol details, data-flow diagrams, config keys, and TDD test strategy. Contains a '決策摘要' (decision summary) table with ADR-like content, but overall document is implementation-contract design → SPEC. Includes a 2026-07-13 revision section that overrides parts of the original text."
+}

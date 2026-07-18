@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-13-chat-cloud-brain-relay-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "對話回覆接自架中轉（雲端腦）設計",
+  "summary": "Technical design for routing chat replies through a self-hosted Anthropic-compatible relay (cloud brain) with consent gate, de-identification, guardrails, and cloud→edge→scaffold fallback.",
+  "scope": ["cloud LLM relay", "CloudLLM contract", "anthropic_relay module", "pipeline fallback", "diagnose.py", "guardrails", "consent gate"],
+  "cross_refs": ["server/CONTRACTS.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

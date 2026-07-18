@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/plans/2026-07-08-cloud-emotional-tts.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "雲端情緒 TTS（ElevenLabs）Implementation Plan",
+  "summary": "Task-by-task implementation plan for cloud ElevenLabs emotional Chinese TTS in cloud network mode, with silent fallback to edge Piper.",
+  "scope": ["ElevenLabs cloud TTS", "CloudTTS", "pipeline TTS routing", "WAV synthesis (22050Hz/16-bit/mono)", "edge Piper fallback", "config env vars"],
+  "cross_refs": ["docs/superpowers/specs/2026-07-08-cloud-emotional-tts-design.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Implementation/execution plan (procedural TDD checkbox tasks, files-to-modify, step-by-step). Contains SPEC-like content (function contracts available()/synth(), WAV format, config interfaces, a deliberate urllib-vs-httpx deviation), so SPEC was a competing signal. Classified DOC because the authoritative technical spec is a separate referenced 母脈絡 doc (docs/superpowers/specs/2026-07-08-cloud-emotional-tts-design.md) and this document's dominant nature is an implementation runbook, not the source-of-truth contract. Not an ADR/PRD (no status field, no user stories/acceptance criteria)."
+}

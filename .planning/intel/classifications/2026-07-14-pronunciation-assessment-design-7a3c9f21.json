@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/budaedu/talkybuddy/docs/superpowers/specs/2026-07-14-pronunciation-assessment-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "發音評測（真聲學）設計",
+  "summary": "Technical design for a local acoustic pronunciation-scoring module (server/pronunciation.py) and its wiring into the /ws/live pipeline and diagnose scoring.",
+  "scope": ["pronunciation assessment", "server/pronunciation.py", "wav2vec2 phoneme model", "g2p_en ARPAbet", "CTC decode", "/ws/live Nova Sonic", "PCM tee buffer", "diagnose scoring"],
+  "cross_refs": ["spike/pron_assess/SPIKE-RESULT.md", "PRIVACY.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Path under /specs/ plus module contracts, explicit API signatures, PCM format, and a TDD plan → dominant SPEC signals. Embeds a pinned architecture decision (route A; /ws/live as main line, user-confirmed 2026-07-14) but has no ADR frontmatter/status or numbered filename, so classified SPEC not ADR; synthesizer may extract the embedded decision as a locked constraint."
+}
