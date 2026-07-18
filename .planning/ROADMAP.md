@@ -4,16 +4,19 @@
 
 從共用的繁中「感知層」（ASR + 喚醒）出發，接著平行交付兩條一等公民對話路徑——先建自架串流全雙工回合式對話（Path 1），在導入雲端能力時同步立起隱私護欄與雲端大腦 / 情感語音，再交付即時 Nova Sonic S2S hands-free 對話（Path 2）。兩路徑就緒後，把 B1/B3 教學內容與本地發音評估掛上 live 路徑形成自適應學習閉環，最後完成跨平台雲端 VM 部署。全程遵循「音檔不落地、上雲前去識別化、家長同意」的隱私原則。
 
+Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一條**邊緣離線**路徑：先於 PC 完成零硬體風險的技術債整備與板卡到手 spike（Phase 7），接著用已驗證的 CPU 引擎跑出離線聽→想→說迴圈作為存亡關鍵（Phase 8），再做斷網橋段的話劇化硬化（Phase 9）；NPU 加速感知（Phase 10）與雲端教師閉環（Phase 11）為可平行、可獨立交付的加值軌道，Nova Sonic 連網 staging（Phase 12）殿後，且為進度落後時第一個可犧牲項。
+
 ## Milestones
 
 - **Milestone 1 — Delivered Baseline** (Phases 1–6): 由 30 份既有設計/計畫文件 ingest 而成，經 2026-07-18 對照 codebase 逐 phase 驗證確認**功能已實作**。4、5 完整交付；1、2、3、6 交付但有已登錄缺口（見下方標記與 STATE.md「Known-Gaps Backlog」）。此 milestone 視為 baseline，不再新開發，缺口以 backlog 追蹤。
-- **Milestone 2 — (待規劃)**: 新功能開發（`/gsd-new-milestone`）。
+- **Milestone 2 — Genio 520 決賽 Edge MVP** (Phases 7–12): 12 天衝刺（決賽 ≈2026-07-30），交付邊緣離線 MVP + NPU 感知加速 + 現場斷網橋段 + 雲端教師閉環；Nova Sonic 連網 staging 為最低優先、進度落後時第一個可犧牲。詳見下方 Phase Details。
 
 ## Phases
 
 **Phase Numbering:**
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+- Milestone 2 continues the sequence from Milestone 1 (Phase 7 onward); numbering is not reset per milestone.
 
 ### Milestone 1 — Delivered Baseline (verified 2026-07-18)
 
@@ -23,6 +26,15 @@
 - [x] **Phase 4: Live Nova Sonic S2S Conversation (Path 2)** - 「說說學伴」喚醒進入 Nova Sonic hands-free 全雙工即時對話 — 🟢 DELIVERED（caveat: AEC 僅瀏覽器原生）
 - [x] **Phase 5: Adaptive Teaching Loop & Pronunciation Assessment** - B1/B3 教學串接與本地聲學發音評估（route A 閉環）— 🟢 DELIVERED
 - [x] **Phase 6: Cross-Platform Cloud Deployment** - 雲端 VM 部署（TLS/WSS、pipeline profiles、edge doll sync）— 🟡 DELIVERED w/ gap: TLS/WSS reverse proxy 僅文件化，無提交的 proxy 設定 / VM 實跑驗證
+
+### Milestone 2 — Genio 520 決賽 Edge MVP (in progress)
+
+- [ ] **Phase 7: Day-0 Config Hardening & Board Bring-Up Spike** - 結清 n_ctx/ffmpeg 等技術債、立起 edge/ 骨架與 adb 部署管線，並對 Yocto vs Android 14 做出 go/no-go 決策
+- [ ] **Phase 8: CPU-Only Offline Edge Turn Loop** - 全 CPU 引擎在真機跑出完整離線聽→想→說中英雙語鷹架帶讀迴圈（決賽存亡關鍵）
+- [ ] **Phase 9: Network-Cut Demo Hardening** - 主持人手動斷網後裝置持續離線對話，無多秒靜默 hang
+- [ ] **Phase 10: NPU-Accelerated Perception** - ASR 經 NPU delegate 加速並通過繁中品質閘，含停損機制可退回 CPU 基線
+- [ ] **Phase 11: Cloud Teacher Closed-Loop** - 邊緣衍生文字/分數機會式同步上雲，經 direct Bedrock Converse 產出診斷並顯示於教師儀表板
+- [ ] **Phase 12: Nova Sonic Online Staging & Final Rehearsal** - Nova Sonic 連網 S2S staging 作為斷網橋段前導，含完整彩排與備援影片（最低優先，落後先砍）
 
 ## Phase Details
 
@@ -93,10 +105,81 @@
   3. demo seed 帳號與 edge-doll sync 能對部署後端運作
 **Plans**: TBD
 
+### Phase 7: Day-0 Config Hardening & Board Bring-Up Spike
+**Goal**: Day-0 零硬體風險的技術債與 config 已結清（`n_ctx` config-driven、移除 ffmpeg 轉檔依賴），`edge/` 頂層骨架與 adb 部署管線已就緒，且已對 Hti G520 板卡的作業系統路徑（官方 Yocto BSP vs fallback Android 14）做出有日期的 go/no-go 決策——讓後續所有邊緣工作有穩定地基可以站立。
+**Depends on**: Nothing new — 建立於 Milestone 1 既有基線之上（M2 第一個 phase）
+**Requirements**: EDGE-01, EDGE-02, EDGE-03, EDGE-04
+**Success Criteria** (what must be TRUE):
+  1. `LLM_N_CTX` 已改為 profile-driven 設定（edge=512），不再是 `llm.py` 內硬編的 1024
+  2. `pipeline.py` 具備 RIFF-sniff fast path：原生 WAV（ALSA 擷取）輸入不再呼叫 ffmpeg 子行程轉檔
+  3. 頂層 `edge/`（`edge/deploy`、`edge/models`、`edge/runtime`）資料夾骨架與對稱 `docs/DEPLOY_EDGE.md` 已建立並可被後續 phase 直接使用
+  4. adb build → push → run 部署迴圈已在板卡（Android 14 或已燒錄的 Yocto 映像）上完整跑過一次
+  5. 已產出一份有日期的 go/no-go 決策紀錄：Yocto BSP 燒錄是否成功、後續走 Yocto 或 fallback Android 14（含新增成本，如 Java/NDK shim）
+**Plans**: TBD
+
+### Phase 8: CPU-Only Offline Edge Turn Loop
+**Goal**: 在 Genio 520 真機上，全 CPU 引擎（不倚賴 NPU）即可離線跑完一次完整聽ASR→想LLM→說TTS 的中英雙語鷹架帶讀對話，且速度落在舞台可接受範圍內——這是決賽全案存亡的關鍵一步，若淪為音箱則全案失敗。
+**Depends on**: Phase 7
+**Requirements**: ELOOP-01, ELOOP-02, ELOOP-03, ELOOP-04
+**Success Criteria** (what must be TRUE):
+  1. 在真機以 `TALKYBUDDY_PIPELINE_PROFILE=edge` 完成一次完整聽→想→說迴圈，全程零雲端網路呼叫（經封包/log 稽核驗證，非僅程式碼審閱）
+  2. llama.cpp native binary（`-march=armv8.2-a+dotprod+i8mm`，非 `llama-cpp-python`）離線生成非樣板的中英雙語鷹架回覆，可被現場觀眾感知為「即時生成」而非預錄
+  3. on-device 首字延遲與每回合延遲已實測，並訂出舞台可接受的 go/no-go 門檻（硬體實測數字，非假設）
+  4. 三引擎鏈（ASR + LLM + TTS）於真機同時載入之峰值記憶體 < 4GB 並留有 headroom（含 `n_ctx` 收斂後的實測數字）
+**Plans**: TBD
+
+### Phase 9: Network-Cut Demo Hardening
+**Goal**: 現場主持人可隨時手動切斷裝置的雲端連線，孩子與說說學伴的對話完全不受影響地持續離線進行，且不會出現多秒靜默 hang——這是決賽創意與可行性評分最高槓桿的記憶點。
+**Depends on**: Phase 8
+**Requirements**: NETCUT-01, NETCUT-02, NETCUT-03
+**Success Criteria** (what must be TRUE):
+  1. 主持人可用手動 kill-switch 切斷雲端 uplink 作為主要斷網機制；瀏覽器↔本機 server 的 loopback 不受影響，裝置持續離線對話
+  2. 雲端呼叫 timeout 已縮短 / race，且已具備主動網路偵測，斷網瞬間不會出現多秒靜默 hang；背景輪詢於離線視窗暫停
+  3. UI 提供明確可見的 online/offline 狀態切換（badge），讓觀眾能親眼確認離線宣稱
+  4. 斷網彩排腳本已完成 ≥3 次實體斷網重複演練（含講話中途斷網），且每次恢復時間 <1–2 秒
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 10: NPU-Accelerated Perception
+**Goal**: 在不威脅 Phase 8 既有 CPU 基線的前提下，語音感知（至少 ASR）真正加速跑在 Genio 520 的 NPU 上、有紀錄可證非靜默偽成功，且繁中辨識/合成品質通過母語聽測——讓「國產晶片加速」從口號變成可驗證的事實。此 phase 為加值、time-boxed，含明確停損點，CPU 保底路徑全程可用。
+**Depends on**: Phase 8（加值層，不阻擋、可與 Phase 9、11 平行進行）
+**Requirements**: NPU-01, NPU-02, NPU-03
+**Success Criteria** (what must be TRUE):
+  1. 已完成 1–2 天 spike 並產出書面決策（ADR）：ORT-NeuronEP vs TFLite 轉檔（NP8 Converter 公版 → Neuron Stable Delegate），排除 NDA-gated 路徑（ncc-tflite/DLA、GAI Toolkit）
+  2. ASR（SenseVoice）經 NPU delegate 加速，並附 per-op 放置 logging，可證明真實 NPU op 執行比例（而非「跑了就當作成功」）
+  3. 算子不支援時自動退 CPU，且此 fallback 可在 log/HUD 被觀察到，不得靜默偽成功
+  4. 以真實繁中決賽腳本音訊完成母語聽測 A/B（FP32 vs INT8），品質達到「有感但可上台」的驗收門檻，簽核後此 phase 才視為完成
+  5. **停損點**：若中途檢查點未能展示可運作的 NPU 加速，直接以 Phase 8 的 CPU-only 基線作為完整可展示的 demo 收尾，不影響其他 phase 的交付
+**Plans**: TBD
+
+### Phase 11: Cloud Teacher Closed-Loop
+**Goal**: 孩子完成一次邊緣對話後，衍生文字與分數能在裝置重新連網時機會式同步上雲，經雲端 LLM 產出四維診斷並顯示在既有教師儀表板上，讓「邊緣對話 → 教師洞察」的敘事閉環成立，同時收斂既有 G1 consent 缺口。
+**Depends on**: Phase 8（可與 Phase 9、10 平行進行）
+**Requirements**: TCLOUD-01, TCLOUD-02
+**Success Criteria** (what must be TRUE):
+  1. `sync_client.push_pending()` 上傳前已補上 `guardrails.deidentify()` 與 `guardrails.consent_granted()` 閘門（收斂 G1 缺口）；只上傳衍生文字/分數，音檔絕不出裝置
+  2. 裝置重新連網後，`/api/sync` 機會式上傳成功，不需人工介入
+  3. `diagnose.py` 經 direct `boto3 bedrock-runtime.converse()` 產出四維診斷（不走 Hermes Agent，依 2026-07-04 內部架構評審）
+  4. 既有教師儀表板（5 秒輪詢，維持不變）顯示源自邊緣 session 的真實（非 mock）診斷資料
+**Plans**: TBD
+
+### Phase 12: Nova Sonic Online Staging & Final Rehearsal
+**Goal**: 在決賽現場，Nova Sonic 連網 S2S 已完成 staging，可作為斷網橋段前「連網」半場的可靠演出；此為本 milestone 最低優先項目，若進度落後為第一個可整體犧牲者，且被砍不影響核心離線迴路與斷網橋段的可展示性。
+**Depends on**: Phase 9（彩排需涵蓋已硬化的斷網橋段）
+**Requirements**: NOVA-01
+**Success Criteria** (what must be TRUE):
+  1. Nova Sonic S2S 可在 demo 網路環境下連線展示，作為斷網橋段的「連網」前導橋段
+  2. 已完成至少兩次含斷網橋段的完整端到端彩排
+  3. 已錄製 60–90 秒備援 demo 影片，作為現場單點失效的備援
+  4. **書面中途停損（cutline）**：Nova Sonic staging 為進度落後時第一個可犧牲項目；若 Phase 8/9 尚未穩定，本 phase 可整體砍除而不影響前述 phase 的交付與決賽可上台性
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
+
+- Milestone 1（已交付基線）：1 → 2 → 3 → 4 → 5 → 6
+- Milestone 2（本輪衝刺）：7 → 8 →（9、10、11 可平行推進；10、11 為加值/可犧牲軌道，不阻擋其他 phase）→ 12（依賴 9；本身為最低優先、進度落後時第一個可犧牲）
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -106,3 +189,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 4. Live Nova Sonic S2S Conversation (Path 2) | baseline | Delivered | 2026-07-18 (verified) |
 | 5. Adaptive Teaching Loop & Pronunciation Assessment | baseline | Delivered | 2026-07-18 (verified) |
 | 6. Cross-Platform Cloud Deployment | baseline | Delivered w/ gap | 2026-07-18 (verified) |
+| 7. Day-0 Config Hardening & Board Bring-Up Spike | 0/? | Not started | - |
+| 8. CPU-Only Offline Edge Turn Loop | 0/? | Not started | - |
+| 9. Network-Cut Demo Hardening | 0/? | Not started | - |
+| 10. NPU-Accelerated Perception | 0/? | Not started | - |
+| 11. Cloud Teacher Closed-Loop | 0/? | Not started | - |
+| 12. Nova Sonic Online Staging & Final Rehearsal | 0/? | Not started | - |

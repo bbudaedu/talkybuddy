@@ -2,11 +2,15 @@
 gsd_state_version: 1.0
 milestone: 2
 milestone_name: Genio 520 決賽 Edge MVP
+current_phase: 7
+current_phase_name: Day-0 Config Hardening & Board Bring-Up Spike
 status: planning
-last_updated: "2026-07-18T15:33:26.984Z"
-last_activity: 2026-07-18
+stopped_at: context exhaustion at 76% (2026-07-18)
+last_updated: "2026-07-18T16:14:21.087Z"
+last_activity: 2026-07-19
+last_activity_desc: Milestone 2 roadmap created (Phase 7–12)
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-18)
 
 **Core value:** 孩子能喊「說說學伴」進行自然、可 barge-in 的口說繁中對話，同時教學並評估，且自架串流與 Nova Sonic 兩路徑皆能達成。
-**Current focus:** Milestone 1 已交付基線；待規劃 Milestone 2（新功能）— `/gsd-new-milestone`
+**Current focus:** Milestone 2（Genio 520 決賽 Edge MVP）roadmap 已建立（Phase 7–12，17/17 需求覆蓋）；下一步規劃 Phase 7
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 7 (Day-0 Config Hardening & Board Bring-Up Spike) — not started
 Plan: —
-Status: Defining requirements
-Last activity: 2026-07-18 — Milestone 2 started
+Status: Roadmap ready — awaiting /gsd-plan-phase 7
+Last activity: 2026-07-19 — Milestone 2 roadmap created (Phase 7–12)
 
 ## Performance Metrics
 
@@ -60,10 +64,11 @@ Recent decisions affecting current work:
 - 雙模式共存：Path 1 自架串流 + Path 2 Nova Sonic S2S 皆一等公民，不合併（本輪使用者鎖定）
 - 喚醒引擎依客戶端模式分流：Porcupine（Path 1）/ sherpa-onnx KWS「說說學伴」（Path 2）
 - Route A（/ws/live 為發音評估主線）、ElevenLabs 情感 TTS + 靜默降級、Nova Sonic Phase 1 vertical slice 皆為 proposed（未鎖定 ADR）
+- **[M2] Roadmap 排序（2026-07-19）**：Phase 7（config/board bring-up spike）→ 8（CPU-only 離線迴路，決賽存亡關鍵）→ 9（斷網橋段硬化）→ 10／11（NPU 加速、雲端教師閉環，可平行、屬加值/可犧牲軌道，不阻擋彼此）→ 12（Nova Sonic staging，最低優先，依賴 9，進度落後時第一個整體犧牲）
 
 ### Pending Todos
 
-None yet.
+- 下一步：`/gsd-plan-phase 7`（Day-0 Config Hardening & Board Bring-Up Spike）
 
 ### Known-Gaps Backlog (baseline verified 2026-07-18)
 
@@ -87,11 +92,12 @@ None yet.
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Edge Hardware | Genio 520 NPU 實機部署（EDGE-01/02） | v2 | 2026-07-18 |
-| Scale & Sync | 多裝置同步壓測、教師儀表板即時推播（SYNC-01/DASH-01） | v2 | 2026-07-18 |
+| Edge Hardware | Genio 520 NPU 實機部署（EDGE-01/02） | v2（已於 2026-07-19 排入 M2 Phase 7/10） | 2026-07-18 |
+| Scale & Sync | 多裝置同步壓測、教師儀表板即時推播（SYNC-01/DASH-01） | v2 out-of-scope | 2026-07-18 |
+| M2 Scope Cuts | on-device 音素發音評分、NPU TTS 加速、GAI Toolkit/ncc-tflite DLA 路徑、三源 RAG、雙雲 LLM、裝置端多用戶/多裝置同步、教師儀表板即時推播、自建 OS — 詳見 REQUIREMENTS.md v2 Out of Scope | v2 out-of-scope | 2026-07-19 |
 
 ## Session Continuity
 
-Last session: 2026-07-18T15:33:17.345Z
-Stopped at: context exhaustion at 75% (2026-07-18)
+Last session: 2026-07-18T16:14:21.084Z
+Stopped at: context exhaustion at 76% (2026-07-18)
 Resume file: None

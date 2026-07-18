@@ -64,15 +64,31 @@
 
 ## Traceability（M2）
 
-由 roadmapper 於建立 roadmap 時填入。
+由 roadmapper 於 2026-07-19 建立 roadmap 時填入；對應 `.planning/ROADMAP.md` Phase 7–12。
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| （待 roadmapper 對應）| — | Pending |
+| EDGE-01 | Phase 7 | Pending |
+| EDGE-02 | Phase 7 | Pending |
+| EDGE-03 | Phase 7 | Pending |
+| EDGE-04 | Phase 7 | Pending |
+| ELOOP-01 | Phase 8 | Pending |
+| ELOOP-02 | Phase 8 | Pending |
+| ELOOP-03 | Phase 8 | Pending |
+| ELOOP-04 | Phase 8 | Pending |
+| NETCUT-01 | Phase 9 | Pending |
+| NETCUT-02 | Phase 9 | Pending |
+| NETCUT-03 | Phase 9 | Pending |
+| NPU-01 | Phase 10 | Pending |
+| NPU-02 | Phase 10 | Pending |
+| NPU-03 | Phase 10 | Pending |
+| TCLOUD-01 | Phase 11 | Pending |
+| TCLOUD-02 | Phase 11 | Pending |
+| NOVA-01 | Phase 12 | Pending |
 
 **Coverage:**
 - v2 requirements: 17 total
-- Mapped to phases: （待 roadmapper 填）
+- Mapped to phases: 17/17 ✓ (no orphans)
 
 ---
 
@@ -134,4 +150,4 @@
 
 ---
 *Requirements defined: M1 2026-07-18；M2 2026-07-19*
-*Last updated: 2026-07-19 — 定義 Milestone 2（Genio 520 決賽 Edge MVP）需求*
+*Last updated: 2026-07-19 — Milestone 2 roadmap 建立完成（Phase 7–12），Traceability 100% 覆蓋（17/17）*
