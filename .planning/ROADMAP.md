@@ -4,18 +4,25 @@
 
 從共用的繁中「感知層」（ASR + 喚醒）出發，接著平行交付兩條一等公民對話路徑——先建自架串流全雙工回合式對話（Path 1），在導入雲端能力時同步立起隱私護欄與雲端大腦 / 情感語音，再交付即時 Nova Sonic S2S hands-free 對話（Path 2）。兩路徑就緒後，把 B1/B3 教學內容與本地發音評估掛上 live 路徑形成自適應學習閉環，最後完成跨平台雲端 VM 部署。全程遵循「音檔不落地、上雲前去識別化、家長同意」的隱私原則。
 
+## Milestones
+
+- **Milestone 1 — Delivered Baseline** (Phases 1–6): 由 30 份既有設計/計畫文件 ingest 而成，經 2026-07-18 對照 codebase 逐 phase 驗證確認**功能已實作**。4、5 完整交付；1、2、3、6 交付但有已登錄缺口（見下方標記與 STATE.md「Known-Gaps Backlog」）。此 milestone 視為 baseline，不再新開發，缺口以 backlog 追蹤。
+- **Milestone 2 — (待規劃)**: 新功能開發（`/gsd-new-milestone`）。
+
 ## Phases
 
 **Phase Numbering:**
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Perception & Wake Foundation** - 繁中 ASR（SenseVoice + OpenCC + whisper fallback）與喚醒層基礎
-- [ ] **Phase 2: Self-Hosted Streaming Conversation (Path 1)** - 自架全雙工串流回合式對話與 barge-in（真實麥克風 / 喇叭）
-- [ ] **Phase 3: Cloud Brain, Emotional Voice & Privacy Guardrails** - 雲端 LLM / relay + ElevenLabs 情感語音，含家長同意與去識別化護欄
-- [ ] **Phase 4: Live Nova Sonic S2S Conversation (Path 2)** - 「說說學伴」喚醒進入 Nova Sonic hands-free 全雙工即時對話
-- [ ] **Phase 5: Adaptive Teaching Loop & Pronunciation Assessment** - B1/B3 教學串接與本地聲學發音評估（route A 閉環）
-- [ ] **Phase 6: Cross-Platform Cloud Deployment** - 雲端 VM 部署（TLS/WSS、pipeline profiles、edge doll sync）
+### Milestone 1 — Delivered Baseline (verified 2026-07-18)
+
+- [x] **Phase 1: Perception & Wake Foundation** - 繁中 ASR（SenseVoice + OpenCC + whisper fallback）與喚醒層基礎 — 🟢 DELIVERED（🟡 gap: SenseVoice→whisper 為手動 flag，非自動 fallback；by-design）
+- [x] **Phase 2: Self-Hosted Streaming Conversation (Path 1)** - 自架全雙工串流回合式對話與 barge-in（真實麥克風 / 喇叭）— 🟡 DELIVERED w/ gap: `run_realwire.py` 漏接 `BargeInGate`，真機 barge-in 不觸發；無實機執行證據
+- [x] **Phase 3: Cloud Brain, Emotional Voice & Privacy Guardrails** - 雲端 LLM / relay + ElevenLabs 情感語音，含家長同意與去識別化護欄 — 🟡 DELIVERED w/ gap: cloud-TTS 合成點缺 consent 檢查（cloud-profile 開機可繞過家長同意）；無原生 Bedrock Converse 後端，僅 relay
+- [x] **Phase 4: Live Nova Sonic S2S Conversation (Path 2)** - 「說說學伴」喚醒進入 Nova Sonic hands-free 全雙工即時對話 — 🟢 DELIVERED（caveat: AEC 僅瀏覽器原生）
+- [x] **Phase 5: Adaptive Teaching Loop & Pronunciation Assessment** - B1/B3 教學串接與本地聲學發音評估（route A 閉環）— 🟢 DELIVERED
+- [x] **Phase 6: Cross-Platform Cloud Deployment** - 雲端 VM 部署（TLS/WSS、pipeline profiles、edge doll sync）— 🟡 DELIVERED w/ gap: TLS/WSS reverse proxy 僅文件化，無提交的 proxy 設定 / VM 實跑驗證
 
 ## Phase Details
 
@@ -93,9 +100,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Perception & Wake Foundation | 0/TBD | Not started | - |
-| 2. Self-Hosted Streaming Conversation (Path 1) | 0/TBD | Not started | - |
-| 3. Cloud Brain, Emotional Voice & Privacy Guardrails | 0/TBD | Not started | - |
-| 4. Live Nova Sonic S2S Conversation (Path 2) | 0/TBD | Not started | - |
-| 5. Adaptive Teaching Loop & Pronunciation Assessment | 0/TBD | Not started | - |
-| 6. Cross-Platform Cloud Deployment | 0/TBD | Not started | - |
+| 1. Perception & Wake Foundation | baseline | Delivered (gap logged) | 2026-07-18 (verified) |
+| 2. Self-Hosted Streaming Conversation (Path 1) | baseline | Delivered w/ gap | 2026-07-18 (verified) |
+| 3. Cloud Brain, Emotional Voice & Privacy Guardrails | baseline | Delivered w/ gap | 2026-07-18 (verified) |
+| 4. Live Nova Sonic S2S Conversation (Path 2) | baseline | Delivered | 2026-07-18 (verified) |
+| 5. Adaptive Teaching Loop & Pronunciation Assessment | baseline | Delivered | 2026-07-18 (verified) |
+| 6. Cross-Platform Cloud Deployment | baseline | Delivered w/ gap | 2026-07-18 (verified) |

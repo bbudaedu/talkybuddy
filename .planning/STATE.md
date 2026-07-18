@@ -1,12 +1,14 @@
 ---
 gsd_state_version: '1.0'
-status: planning
+status: baseline-delivered
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 6
   total_plans: 0
   completed_plans: 0
-  percent: 0
+  percent: 100
+milestone: 1
+milestone_status: delivered-baseline
 ---
 
 # Project State
@@ -16,16 +18,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-18)
 
 **Core value:** 孩子能喊「說說學伴」進行自然、可 barge-in 的口說繁中對話，同時教學並評估，且自架串流與 Nova Sonic 兩路徑皆能達成。
-**Current focus:** Phase 1 — Perception & Wake Foundation
+**Current focus:** Milestone 1 已交付基線；待規劃 Milestone 2（新功能）— `/gsd-new-milestone`
 
 ## Current Position
 
-Phase: 1 of 6 (Perception & Wake Foundation)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-07-18 — Bootstrapped PROJECT / REQUIREMENTS / ROADMAP / STATE from ingested-doc intel
+Milestone: 1 (Delivered Baseline) — Phases 1–6 已驗證交付
+Status: Baseline delivered；等待新功能定義以開 Milestone 2
+Last activity: 2026-07-18 — 逐 phase 對照 codebase 驗證基線並登錄缺口 backlog
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100% (Milestone 1 baseline)
 
 ## Performance Metrics
 
@@ -60,6 +61,18 @@ Recent decisions affecting current work:
 ### Pending Todos
 
 None yet.
+
+### Known-Gaps Backlog (baseline verified 2026-07-18)
+
+登錄自基線驗證，不阻擋新功能；可擇期併入未來 milestone 或單獨修補。
+
+| # | Phase | 缺口 | 嚴重度 | 證據 |
+|---|-------|------|--------|------|
+| G1 | 3 | cloud-TTS 合成點缺 `consent_granted()` 檢查：cloud-profile 開機 + consent=false 仍會呼叫 ElevenLabs（家長同意可被繞過） | 🔴 高（兒童隱私） | server/pipeline.py:321-326；config.py:137-139；app.py:61 |
+| G2 | 2 | `run_realwire.py` build_processors 漏接 `BargeInGate` → 真實麥克風/喇叭上 barge-in 不觸發；無實機執行證據 | 🟠 中 | server/streaming/run_realwire.py:45-52 |
+| G3 | 6 | TLS/WSS reverse proxy 僅 DEPLOY_CLOUD.md 文件化，無提交的 Caddyfile/nginx 設定或 VM 實跑驗證 | 🟠 中（部署時處理） | docs/DEPLOY_CLOUD.md:35-50 |
+| G4 | 3 | 無原生 Bedrock Converse 回覆後端，只有 config 切換的 Anthropic-Messages relay（LLM-02「Bedrock/relay 切換」為 config-fronting） | 🟡 低（by-design 可接受） | server/config.py:70-71；server/anthropic_relay.py:32-55 |
+| G5 | 1 | SenseVoice→whisper 為手動 `ASR_BACKEND` flag，非自動 fallback | 🟡 低（符合 ASR-02 原文） | server/asr.py:12；asr_base.py:17 |
 
 ### Blockers/Concerns
 
