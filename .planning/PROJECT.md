@@ -20,6 +20,24 @@ TalkyBuddy（說說學伴）是一款給兒童使用的語音 AI 繁體中文（
 - **Success metric**（north-star）: 兩條對話路徑皆能跑完整迴圈——wake → converse → spoken reply with barge-in——並由 B1/B3 教學內容驅動對話、發音評估產出分數，全程在家長同意（parental consent）的隱私護欄下運作。
 - **Strategy notes**: 由既有 `docs/superpowers/specs/*` 設計文件與 `docs/PRIVACY.md`、`docs/DEPLOY_CLOUD.md` 匯集而成。
 
+## Current Milestone: v2 — Genio 520 決賽 Edge MVP
+
+**Goal:** 在 MediaTek Genio 520（Hti hub G520，Android 14 / 4GB / NPU）上跑出決賽現場可上台的實機 MVP——邊緣**離線**完成「聽 ASR → 想 LLM → 說 TTS」中英雙語鷹架帶讀（不淪為雲端音箱），並用 NPU 加速語音佐證國產晶片加分。**原則：先讓 POC 過關且驚豔，效能/品質優化列為下一步。**
+
+**Target features:**
+- 裝置 runtime + NB(adb) 部署管線：先測 Android 14，因 4GB/效能預期改燒**官方 Yocto BSP 映像**（不自建 OS）；可分攤工作盡量丟 NB。
+- **NPU 管感知**：ASR/TTS 轉 `.tflite INT8`，經 TFLite/Neuron Delegate（NeuroPilot Public，免 NDA）上 Genio 520 NPU；算子 fallback 時退 CPU。
+- **CPU 管生成**：邊緣弱腦 llama.cpp GGUF（Qwen2.5-1.5B Q4）跑 Cortex-A78，離線真生成簡短英文練習回覆。
+- 邊緣離線即時迴路（Path 1 類）+ **現場斷網橋段**（決賽記憶點）。
+- Path 2 Nova Sonic 連線 S2S（連網加值）。
+- 雲端非同步教師閉環：Hermes Agent + Bedrock 產出四維診斷 → 教師儀表板。
+- 離線隱私：兒童語音不出裝置；只上傳衍生文字/分數（順帶收斂 G1 consent 缺口）。
+- 4GB 記憶體預算與模型裁剪（峰值估 ~2.6–3.1GB，需留 headroom）。
+
+**Key context:** 決賽評分（主題 25%／應用 20%／可行 20%／創意 20%／完成 15%／國產晶片 +2）；約剩 12 天（決賽 ≈2026-07-30）。勝負手＝邊緣離線實機 + 斷網橋段 + 教師閉環。範圍砍除（沿用 28 天 MVP 規劃書）：三源 RAG、雙雲 LLM、**on-device 音素級發音評分**、裝置端多用戶。成敗準則：端側智慧須有感，若淪為音箱則全案失敗。來源：`~/hackathon/`（決賽評分/demo 腳本、28 天 MVP 規劃書、技術 SPEC v2、Hti G520 SDK）。
+
+> ⚠ 張力：12 天衝刺（強收斂）vs.「三者都要」（Path1+Nova Sonic+教師閉環，範圍最大）。roadmap 將把 demo 勝負手排最前確保可上台，Nova Sonic 為加值、時間不足時第一個可犧牲。
+
 ## Requirements
 
 完整可勾選需求見 `.planning/REQUIREMENTS.md`。以下為高層摘要。
@@ -75,6 +93,11 @@ TalkyBuddy（說說學伴）是一款給兒童使用的語音 AI 繁體中文（
 | Route A — `/ws/live`（Nova Sonic）為發音評估主線，本地聲學評分掛在其 PCM buffer | 來源文件 user-confirmed 2026-07-14；但無鎖定 ADR frontmatter | — Pending（proposed，未鎖定） |
 | 雲端情感 TTS 走 ElevenLabs，靜默降級到 edge Piper | 來源「使用者決策（已確認）」；文件狀態「設計待實作」 | — Pending（proposed，未鎖定） |
 | Nova Sonic live S2S Phase 1 vertical slice（`/ws/live` bidi + transcript 持久化） | 來源含決策摘要 + 2026-07-13 修訂；無鎖定 ADR | — Pending（proposed，未鎖定） |
+| **[M2] 決賽 Edge MVP 綁定 ≈12 天期程（決賽 2026-07-30）** | POC 過關優先於完整性；範圍向 demo 腳本收斂 | ✓ Good（M2 使用者鎖定） |
+| **[M2] NPU 管感知(ASR/TTS via Neuron Delegate)、CPU 管生成(llama.cpp)** | 免 NDA(NeuroPilot Public)、真用國產晶片 NPU；CPU 保底 + NPU 一等交付 | ✓ Good（M2 使用者鎖定） |
+| **[M2] 先測 Android 14 → 改燒官方 Yocto BSP（不自建 OS）** | 4GB/效能預期不足；官方映像降風險 | ✓ Good（M2 使用者鎖定） |
+| **[M2] 沿用 28 天 MVP 規劃書砍除清單（含 on-device 音素發音評分）** | 12 天內收斂風險；發音評分改 LLM 整體評語或退雲端 | ✓ Good（M2 使用者鎖定） |
+| **[M2] 三者都要：邊緣離線 + Nova Sonic S2S + 雲端教師閉環** | 使用者裁決；Nova Sonic 為加值、時間不足時第一個可犧牲 | — Pending（範圍風險待 roadmap 排序） |
 
 ---
-*Last updated: 2026-07-18 after new-project-from-ingest bootstrap*
+*Last updated: 2026-07-18 after /gsd-new-milestone (v2 Genio 520 決賽 Edge MVP defined)*
