@@ -81,9 +81,9 @@
 **SQL Injection via JSON Payload Storage:**
 - Risk: Interactions and diagnoses stored as JSON TEXT in SQLite; if JSON content is ever displayed without sanitization, could be XSS vector
 - Files: `server/store.py` (lines 122-145), `server/app.py` (API endpoints returning stored JSON)
-- Current mitigation: All data displayed via React/Vue in teacher.html and index.html (likely uses framework escaping); student text comes from ASR/user input only
+- Current mitigation: Frontend is vanilla JS (no React/Vue framework); teacher.html and index.html render stored JSON via DOM APIs, so escaping is NOT automatic and depends on avoiding `innerHTML`; student text comes from ASR/user input only
 - Recommendations:
-  1. Verify all JSON display paths use framework escape (not `innerHTML` or equivalent)
+  1. Audit all JSON display paths in `web/*.js` to confirm they use `textContent`/DOM node creation rather than `innerHTML`
   2. Add Content-Security-Policy header to prevent inline script execution
   3. Document sanitization strategy for student_text field
 
