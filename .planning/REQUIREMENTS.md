@@ -1,119 +1,137 @@
 # Requirements: TalkyBuddy（說說學伴）
 
-**Defined:** 2026-07-18
-**Core Value:** 孩子能喊出「說說學伴」，進行一段自然、可即時打斷（barge-in）的口說繁體中文對話，這段對話同時教學並評估其語言能力，且自架串流路徑與即時 Nova Sonic 路徑皆能完整達成。
+**Core Value:** 孩子能喊「說說學伴」，進行一段自然、可 barge-in 的口說繁中對話——同時教學並評估——且自架串流與即時 Nova Sonic 兩路徑皆能達成。
 
-> **雙模式共存原則**：Path 1（自架串流回合式）與 Path 2（Nova Sonic 即時 S2S）為兩條一等公民路徑，各自獨立成需求。跨切面關注（ASR、喚醒、雲端 LLM、雲端 TTS、隱私、部署）明確標示其作用範圍。刻意的降級鏈（CloudLLM→EdgeLLM→scaffold、ElevenLabs→edge、SenseVoice→whisper）為容錯設計，非衝突。
+---
 
-## v1 Requirements
+# Milestone 2 — Genio 520 決賽 Edge MVP（Active）
 
-### ASR — 繁中語音辨識基礎（共用輸入層）
+**Defined:** 2026-07-19
+**Goal:** 在 MediaTek Genio 520（Hti hub G520，MT8371 / MDLA 5.3 / Android 14 / 4GB）上跑出決賽可上台的**離線**「聽 ASR → 想 LLM → 說 TTS」中英雙語鷹架帶讀 MVP——NPU 管感知、CPU 管生成、現場斷網橋段，並以雲端教師閉環加值。約剩 12 天（決賽 ≈2026-07-30）。**原則：POC 過關且驚豔優先，效能/品質優化列下一步。**
 
-- [ ] **ASR-01**: 以 sherpa-onnx + SenseVoice-Small int8 為主要 ASR，經 OpenCC s2twp 輸出繁體中文（台灣用語）；固定 `ASREngine` 介面（available/transcribe/_ensure_model）與 backend factory
-- [ ] **ASR-02**: 當 SenseVoice 不可用時，透過 `ASR_BACKEND` feature flag 降級到 faster-whisper 仍可辨識
-- [ ] **ASR-03**: 低信心辨識（conf < 門檻）時回傳友善的 fallback 語句，而非錯誤逐字稿
-
-### WAKE — 喚醒層（依客戶端模式分流）
-
-- [ ] **WAKE-01**: Path 1 回合式客戶端支援 Porcupine 裝置端語音喚醒 + tap-to-toggle 推播，餵入既有單回合 pipeline（WakeController / MicRouter）
-- [ ] **WAKE-02**: Path 2 即時客戶端以 sherpa-onnx KWS 喚醒詞「說說學伴」進入 live 模式；告別語（matchFarewell）結束並返回 IDLE（live-wake.js 協調器）
-- [ ] **WAKE-03**: 提供 `/api/wake-config` 端點選擇 wake backend，並在喚醒不可用時降級為手動 push-to-talk
-
-### STREAM — Path 1 自架串流全雙工對話
-
-- [ ] **STREAM-01**: Pipecat 整合 spike 驗證（go/no-go）：可託管 batch SenseVoice STT（FunASRSTTService）+ 句級可打斷 sherpa-onnx TTS，於程式化 barge-in 下運作
-- [ ] **STREAM-02**: `StreamingTurnManager` 全雙工回合迴圈，含 Silero VAD barge-in 與逐句可打斷 TTS（InterruptibleSynth / ReplySource，Pipecat 1.5.0）
-- [ ] **STREAM-03**: `SpeechGate` 作為獨立可調的 barge-in 偵測器（BargeInGate → BargeInDetectedFrame），與回合式 Silero VAD 解耦
-- [ ] **STREAM-04**: 透過 Pipecat LocalAudioTransport 將 barge-in 迴圈接上真實麥克風 / 喇叭（run_realwire），非僅罐頭 WAV
-
-### PRIV — 隱私護欄（所有雲端路徑的跨切面前置條件）
-
-- [ ] **PRIV-01**: 音檔絕不持久化；任何上雲前對文字做去識別化（de-identification）
-- [ ] **PRIV-02**: 所有雲端路徑（relay / Bedrock / Nova Sonic）皆須通過家長同意閘門（consent gate）與分層 guardrails；遵循 PDPA/COPPA
-
-### LLM — 雲端大腦（Path 1 回合式回覆生成）
-
-- [ ] **LLM-01**: 雲端模式下陪聊 / 導師 LLM 經 Amazon Bedrock Converse 推論，採 EdgeLLM-compatible 契約（CloudLLM.generate → str | None）、8.0s timeout SLO，並優雅降級到本地
-- [ ] **LLM-02**: 可改走自架 Anthropic-compatible relay（cloud brain），含 consent gate、去識別化、guardrails 與 cloud→edge→scaffold 降級，維持相同 CloudLLM 契約
-
-### TTS — 雲端情感語音（Path 1 回合式語音輸出）
-
-- [ ] **TTS-01**: 雲端模式將 TTS 導向 ElevenLabs 情感中文語音，靜默降級到 edge Piper；輸出契約 WAV 22050Hz/16-bit/mono（server/cloud_tts.py available()/synth()）
-
-### LIVE — Path 2 即時 Nova Sonic S2S 對話
-
-- [ ] **LIVE-01**: 經新的 `/ws/live` WebSocket 提供 Nova Sonic 全雙工中文 S2S（bidi 協定、AudioWorklet PCM pipeline、transcript 持久化、build_live_system_prompt）
-- [ ] **LIVE-02**: 將 Nova Sonic S2S 由 hold-to-talk 升級為 hands-free 全雙工，採 native VAD + 真實 barge-in + 回音消除（AEC）
-
-### TEACH — 自適應教學迴圈
-
-- [ ] **TEACH-01**: 新增 server/lesson.py 選材，改寫 live system prompt 為 coach follow-along 迴圈（B1/B3 教學內容），並於 live 收尾寫回 diagnosis 形成自適應閉環
-
-### PRON — 發音評估（route A）
-
-- [ ] **PRON-01**: 本地聲學發音評分模組 server/pronunciation.py（wav2vec2 phoneme、g2p_en ARPAbet、CTC decode），經 PCM tee buffer 掛入 /ws/live Nova Sonic pipeline 餵給 diagnose；不持久化原始音檔
-
-### DEPLOY — 跨平台雲端部署
-
-- [ ] **DEPLOY-01**: 於雲端 VM 部署，含環境變數、啟動、TLS/WSS reverse proxy、demo seed 帳號
-- [ ] **DEPLOY-02**: 以 `TALKYBUDDY_PIPELINE_PROFILE`（edge / cloud）切換 pipeline profile，並支援 edge doll sync（不需改碼）
+> **優先序原則**：demo 存亡關鍵（離線迴路 + 斷網橋段）排最前並先用已驗證的 CPU 引擎；NPU 加速與 Nova Sonic 為 time-boxed 加值、含 stop-loss，落後時 Nova Sonic 第一個可犧牲。研究來源見 `.planning/research/SUMMARY.md`。
 
 ## v2 Requirements
 
-延後至未來版本，追蹤但不在當前 roadmap。
+### ELOOP — 邊緣離線對話迴路（CPU-first，存亡關鍵）
 
-### Edge Hardware（Genio 520）
+- [ ] **ELOOP-01**: 裝置端 FastAPI 以 `TALKYBUDDY_PIPELINE_PROFILE=edge` 跑完整**離線** 聽ASR→想LLM→說TTS 迴路，全 CPU 引擎（SenseVoice int8 + llama.cpp Qwen2.5-1.5B Q4 + sherpa-onnx TTS），不依賴雲端
+- [ ] **ELOOP-02**: llama.cpp 以 native binary over localhost 生成（非 llama-cpp-python wheel），build flag `-march=armv8.2-a+dotprod+i8mm`；離線真生成中英雙語鷹架帶讀（follow-along）簡短回覆
+- [ ] **ELOOP-03**: on-device 首字延遲 / 每回合延遲實測，訂出舞台可接受延遲 go/no-go 門檻（硬體實測，非假設）
+- [ ] **ELOOP-04**: 4GB 記憶體驗證閘——三引擎鏈於真機同時載入的峰值 < 4GB 並留 headroom（含 `n_ctx` 收斂）
 
-- **EDGE-01**: MediaTek Genio 520 NPU 實機部署（ALSA 直接擷取 16kHz mono WAV，移除 ffmpeg / WebM 依賴）
-- **EDGE-02**: LLM `n_ctx` 降至 512 並重新驗證 prompts / 測試假設
+### EDGE — 裝置 runtime + 部署管線
 
-### Scale & Sync
+- [ ] **EDGE-01**: Day-0 零硬體風險整備——`n_ctx` 改 config-driven（edge=512）、移除 ffmpeg/WebM 子行程轉檔，改 ALSA 直接擷取 16kHz mono（退既有技術債）
+- [ ] **EDGE-02**: Board bring-up spike——嘗試燒官方 IoT Yocto v25.1（Genio Tools v1.7+）到 Hti G520 第三方載板；~2 天內未過則 fallback Android 14 並記錄新增成本（Java/NDK shim）——go/no-go 決策點
+- [ ] **EDGE-03**: adb-based 部署管線（build → push → run on-device），可分攤工作丟 NB
+- [ ] **EDGE-04**: edge 產物集中於頂層 `edge/`（`edge/deploy`、`edge/models`、`edge/runtime`）+ 部署文件 `docs/DEPLOY_EDGE.md`（對稱 `docs/DEPLOY_CLOUD.md`）
 
-- **SYNC-01**: 多裝置跨機同步壓力測試（seq / device_id 去重，斷線重連）
-- **DASH-01**: 教師儀表板 WebSocket 即時推播（取代 5 秒輪詢）
+### NETCUT — 現場斷網橋段（demo 勝負手）
 
-## Out of Scope
+- [ ] **NETCUT-01**: 主持人手動 kill-switch 為主要斷網機制（非僅依賴自動網路偵測）；切斷雲端 uplink 時裝置持續離線對話（瀏覽器↔本機 server loopback 不受影響）
+- [ ] **NETCUT-02**: 縮短 / race 雲端 timeout 並暫停背景輪詢，避免斷網時多秒靜默 hang；提供可見的「offline mode」切換 UI / badge
+- [ ] **NETCUT-03**: 實體斷網彩排腳本（重複實機演練，非只自動偵測）
+
+### NPU — NPU 加速感知（加值、time-boxed、stop-loss）
+
+- [ ] **NPU-01**: spike 定案 NPU 路徑——ORT-NeuronEP（Genio 520 可能預設開啟 MDLA）vs TFLite 轉檔（NP8 Converter 公版 → Neuron Stable Delegate）；1–2 天內決策，排除 NDA-gated 路徑（ncc-tflite/DLA、GAI Toolkit）
+- [ ] **NPU-02**: ASR（SenseVoice）經 NPU delegate 加速，含 per-op 放置 logging；算子不支援時退 CPU，**不得靜默偽成功**
+- [ ] **NPU-03**: 中文 INT8 品質閘——以真實繁中決賽腳本音訊 + 母語聽測驗證 ASR/TTS 品質，防「淪為音箱」
+
+### TCLOUD — 雲端非同步教師閉環（連網加值，多為既有復用）
+
+- [ ] **TCLOUD-01**: edge→cloud 機會式上傳端點：只上傳衍生文字 / 分數（音檔不出裝置）；補上 `sync_client.push_pending()` 目前漏接的 `guardrails.deidentify()` 與 `consent_granted()`（順帶收斂 G1 consent 缺口）
+- [ ] **TCLOUD-02**: 雲端 4 維診斷經 direct `boto3 bedrock-runtime.converse()`（不走 Hermes Agent，依 2026-07-04 內部架構評審）→ 教師儀表板
+
+### NOVA — Nova Sonic 連網 S2S（最低優先，落後先砍）
+
+- [ ] **NOVA-01**: 連網時 Nova Sonic S2S 可於 demo 環境展示（staging + 最終彩排）；時間不足時為第一個可犧牲項
+
+## Out of Scope（v2）
 
 明確排除，記錄以防範圍蔓延。
 
 | Feature | Reason |
 |---------|--------|
-| Genio 520 NPU 實機部署 | 未來生產目標，尚未部署；本輪僅保留 edge profile 預留 |
-| 商業化 / 帳務 / 家長 / 學校帳號系統 | 研究原型階段不需要 |
-| espeak-ng-data GPL 殘留清除 | 授權整備工作，非本輪交付範圍（列為技術債） |
-| 音訊 / 影像稽核錄製 | 與「音檔不落地」隱私原則衝突，需另行政策討論 |
+| on-device 音素級發音評分 | 沿用 28 天 MVP 砍除清單；改 LLM 整體評語或退雲端 |
+| NPU TTS 加速 | P2；ASR-on-NPU 先落地，TTS 時間有餘再做，不足則 CPU |
+| GAI Toolkit / ncc-tflite DLA 路徑（LLM 上 NPU） | NDA-gated；且 Genio 520 on-device LLM via LiteRT 官方要 Q2 2026 |
+| 三源 RAG、雙雲 LLM | 12 天內收斂風險 |
+| 裝置端多用戶、多裝置同步 | 決賽單機單使用者情境 |
+| 教師儀表板即時推播 | 現況 5 秒輪詢可接受 |
+| 自建 OS | 只用官方 Yocto BSP 映像 |
 
-## Traceability
+## Traceability（M2）
+
+由 roadmapper 於建立 roadmap 時填入。
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ASR-01 | Phase 1 | Pending |
-| ASR-02 | Phase 1 | Pending |
-| ASR-03 | Phase 1 | Pending |
-| WAKE-01 | Phase 1 | Pending |
-| WAKE-03 | Phase 1 | Pending |
-| STREAM-01 | Phase 2 | Pending |
-| STREAM-02 | Phase 2 | Pending |
-| STREAM-03 | Phase 2 | Pending |
-| STREAM-04 | Phase 2 | Pending |
-| PRIV-01 | Phase 3 | Pending |
-| PRIV-02 | Phase 3 | Pending |
-| LLM-01 | Phase 3 | Pending |
-| LLM-02 | Phase 3 | Pending |
-| TTS-01 | Phase 3 | Pending |
-| LIVE-01 | Phase 4 | Pending |
-| LIVE-02 | Phase 4 | Pending |
-| WAKE-02 | Phase 4 | Pending |
-| TEACH-01 | Phase 5 | Pending |
-| PRON-01 | Phase 5 | Pending |
-| DEPLOY-01 | Phase 6 | Pending |
-| DEPLOY-02 | Phase 6 | Pending |
+| （待 roadmapper 對應）| — | Pending |
 
 **Coverage:**
-- v1 requirements: 21 total
-- Mapped to phases: 21
-- Unmapped: 0 ✓
+- v2 requirements: 17 total
+- Mapped to phases: （待 roadmapper 填）
 
 ---
-*Requirements defined: 2026-07-18*
-*Last updated: 2026-07-18 after new-project-from-ingest bootstrap*
+
+# Milestone 1 — Delivered Baseline（歷史記錄，verified 2026-07-18）
+
+> 由 30 份既有設計/計畫文件 ingest 而成，經 2026-07-18 對照 codebase 逐 phase 驗證確認功能已實作（Phases 1–6）。缺口見 STATE.md「Known-Gaps Backlog」。此段保留為交付記錄，不再新開發。
+
+**Core Value:** 孩子能喊出「說說學伴」，進行一段自然、可即時打斷（barge-in）的口說繁體中文對話，這段對話同時教學並評估其語言能力，且自架串流路徑與即時 Nova Sonic 路徑皆能完整達成。
+
+## v1 Requirements
+
+### ASR — 繁中語音辨識基礎（共用輸入層）
+
+- [x] **ASR-01**: 以 sherpa-onnx + SenseVoice-Small int8 為主要 ASR，經 OpenCC s2twp 輸出繁體中文（台灣用語）；固定 `ASREngine` 介面與 backend factory
+- [x] **ASR-02**: 當 SenseVoice 不可用時，透過 `ASR_BACKEND` feature flag 降級到 faster-whisper 仍可辨識
+- [x] **ASR-03**: 低信心辨識時回傳友善 fallback 語句，而非錯誤逐字稿
+
+### WAKE — 喚醒層（依客戶端模式分流）
+
+- [x] **WAKE-01**: Path 1 回合式客戶端支援 Porcupine 裝置端語音喚醒 + tap-to-toggle
+- [x] **WAKE-02**: Path 2 即時客戶端以 sherpa-onnx KWS「說說學伴」進入 live 模式；告別語結束返回 IDLE
+- [x] **WAKE-03**: `/api/wake-config` 選擇 wake backend，喚醒不可用時降級手動 push-to-talk
+
+### STREAM — Path 1 自架串流全雙工對話
+
+- [x] **STREAM-01**: Pipecat 整合 spike（go/no-go）：batch SenseVoice STT + 句級可打斷 sherpa-onnx TTS
+- [x] **STREAM-02**: `StreamingTurnManager` 全雙工回合迴圈（Silero VAD barge-in + 逐句可打斷 TTS）
+- [x] **STREAM-03**: `SpeechGate` 獨立可調 barge-in 偵測器
+- [x] **STREAM-04**: 經 Pipecat LocalAudioTransport 接真實麥克風 / 喇叭（run_realwire）
+
+### PRIV — 隱私護欄（所有雲端路徑跨切面前置）
+
+- [x] **PRIV-01**: 音檔絕不持久化；上雲前對文字去識別化
+- [x] **PRIV-02**: 所有雲端路徑通過家長同意閘門 + 分層 guardrails（PDPA/COPPA）
+
+### LLM — 雲端大腦（Path 1）
+
+- [x] **LLM-01**: 雲端 LLM 經 Bedrock Converse 推論，EdgeLLM-compatible 契約、8.0s timeout SLO、優雅降級
+- [x] **LLM-02**: 可改走自架 Anthropic-compatible relay（含 consent / 去識別化 / guardrails / cloud→edge→scaffold 降級）
+
+### TTS — 雲端情感語音（Path 1）
+
+- [x] **TTS-01**: 雲端 TTS 導向 ElevenLabs 情感中文語音，靜默降級 edge Piper；WAV 22050Hz/16-bit/mono
+
+### LIVE — Path 2 即時 Nova Sonic S2S
+
+- [x] **LIVE-01**: `/ws/live` 提供 Nova Sonic 全雙工中文 S2S（bidi、AudioWorklet PCM、transcript 持久化）
+- [x] **LIVE-02**: Nova Sonic 由 hold-to-talk 升級 hands-free 全雙工（native VAD + barge-in + AEC）
+
+### TEACH / PRON — 教學迴圈與發音評估
+
+- [x] **TEACH-01**: lesson.py 選材 + live coach follow-along 迴圈（B1/B3），收尾寫回 diagnosis
+- [x] **PRON-01**: 本地聲學發音評分（wav2vec2 phoneme）掛 /ws/live PCM tee buffer，不持久化原始音檔
+
+### DEPLOY — 跨平台雲端部署
+
+- [x] **DEPLOY-01**: 雲端 VM 部署（env、啟動、TLS/WSS reverse proxy、demo seed 帳號）— 🟡 proxy 僅文件化
+- [x] **DEPLOY-02**: `TALKYBUDDY_PIPELINE_PROFILE`（edge/cloud）切換 + edge doll sync
+
+---
+*Requirements defined: M1 2026-07-18；M2 2026-07-19*
+*Last updated: 2026-07-19 — 定義 Milestone 2（Genio 520 決賽 Edge MVP）需求*
