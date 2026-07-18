@@ -11,7 +11,7 @@
   "perplexity": false,
   "jina": false,
   "git": {
-    "branching_strategy": "none",
+    "branching_strategy": "milestone",
     "create_tag": true,
     "phase_branch_template": "gsd/phase-{phase}-{slug}",
     "milestone_branch_template": "gsd/{milestone}-{slug}",
@@ -64,7 +64,7 @@
     "source_grounding_authority": "grep"
   },
   "mode": "yolo",
-  "granularity": "coarse",
+  "granularity": "standard",
   "quick_branch_template": null,
   "response_language": "zh-TW"
 }
