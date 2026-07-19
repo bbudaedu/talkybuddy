@@ -1,19 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: 2
-milestone_name: Genio 520 決賽 Edge MVP
+milestone_name: — Genio 520 決賽 Edge MVP
 current_phase: 07
 current_phase_name: Day-0 Config Hardening & Board Bring-Up Spike
 status: executing
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-07-19T12:58:14.166Z"
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-07-19T13:03:17.782Z"
 last_activity: 2026-07-19
 last_activity_desc: Phase 07 execution started
 progress:
   total_phases: 12
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-18)
 ## Current Position
 
 Phase: 07 (Day-0 Config Hardening & Board Bring-Up Spike) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-07-19 — Phase 07 execution started
 
@@ -58,6 +58,7 @@ Last activity: 2026-07-19 — Phase 07 execution started
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 07 P01 | 20min | 2 tasks | 3 files |
+| Phase 07 P02 | 15min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Recent decisions affecting current work:
 - **[M2] Roadmap 排序（2026-07-19）**：Phase 7（config/board bring-up spike）→ 8（CPU-only 離線迴路，決賽存亡關鍵）→ 9（斷網橋段硬化）→ 10／11（NPU 加速、雲端教師閉環，可平行、屬加值/可犧牲軌道，不阻擋彼此）→ 12（Nova Sonic staging，最低優先，依賴 9，進度落後時第一個整體犧牲）
 - [Phase ?]: LLM_N_CTX profile-driven（edge=512/cloud=1024，TALKYBUDDY_LLM_N_CTX 可覆寫，覆寫優先於 profile）
 - [Phase ?]: pipeline RIFF-sniff fast path：原生 16k mono WAV 走 soundfile 直讀零 ffmpeg；規格不符於 edge 明確 raise WavSpecMismatchError，不靜默偽成功
+- [Phase ?]: run_edge.sh 以 BASH_SOURCE 自身位置相對定位部署根目錄，不硬編個人 home 絕對路徑（D-02）
+- [Phase ?]: edge/deploy push.sh/run.sh 的裝置端 proot rootfs 與部署目標路徑用環境變數宣告預設值並可覆寫，待真機驗證後調整
 
 ### Pending Todos
 
@@ -105,6 +108,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-07-19T12:58:14.161Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-07-19T13:03:17.778Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
