@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import io
 import itertools
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -54,22 +56,56 @@ def _now_iso_taipei() -> str:
     return datetime.datetime.now(tz).isoformat(timespec="seconds")
 
 
-def _webm_to_wav(webm_bytes: bytes) -> str | None:
-    """把 webm/ogg 錄音 bytes 轉成 16kHz mono wav 暫存檔，回傳 wav 路徑。
+def _is_wav_riff(header: bytes) -> bool:
+    """判斷前 12 bytes 是否為 RIFF/WAVE magic（WAV 容器）。
 
-    以 subprocess 呼叫 ffmpeg（-loglevel error，timeout=10s），
-    失敗（ffmpeg 不存在 / 轉檔錯誤 / 逾時）回 None，由呼叫端走兜底路徑。
+    只讀取固定前 12 bytes（offset 0 為 ``RIFF``、offset 8 為 ``WAVE``），
+    不對整段音訊內容做假設；命中才進一步交給 soundfile 解析。
+    """
+    return len(header) >= 12 and header[0:4] == b"RIFF" and header[8:12] == b"WAVE"
+
+
+class WavSpecMismatchError(ValueError):
+    """WAV bytes 的取樣率/聲道不符 16kHz mono，且目前環境無法走 ffmpeg fallback。"""
+
+
+def _webm_to_wav(webm_bytes: bytes) -> str | None:
+    """把錄音 bytes 轉成 16kHz mono wav 暫存檔，回傳 wav 路徑。
+
+    接受兩種輸入：
+    - 原生 16kHz mono WAV bytes（Genio 520 ALSA 直接擷取）：以 RIFF/WAVE magic
+      偵測命中後，走 soundfile 直讀 fast path，全程不呼叫 ffmpeg 子行程。
+      規格不符（非 16k mono）時：edge profile（或 ffmpeg 不可用）明確 raise
+      ``WavSpecMismatchError``，不靜默偽成功、不自作 resample；非 edge 且有
+      ffmpeg 則退回下方 ffmpeg fallback 分支處理。
+    - 瀏覽器 webm/ogg（MediaRecorder audio/webm;codecs=opus）：以 subprocess
+      呼叫 ffmpeg（-loglevel error，timeout=10s）轉檔，失敗（ffmpeg 不存在 /
+      轉檔錯誤 / 逾時）回 None，由呼叫端走兜底路徑。
+
     此函式為同步阻塞，呼叫端應以 asyncio.to_thread 執行。
 
-    PLAN.md 要求捨棄 ffmpeg、改用 Python soundfile 記憶體內解碼。
     已實測（.venv）：soundfile 0.14.0 綁定的 libsndfile 1.2.2
-    `available_formats()` 不含 WEBM/Opus（無此容器解碼器），
-    瀏覽器 MediaRecorder 錄出的 audio/webm;codecs=opus 無法直接餵給
-    soundfile，故 PC 原型仍保留 ffmpeg subprocess 轉檔以維持可運行。
-    Genio 520 移植階段改用 ALSA 直接錄 16kHz mono wav（跳過瀏覽器
-    MediaRecorder/webm），屆時輸入本就是 wav，可直接用 soundfile
-    讀取、完全省去本函式與 ffmpeg 依賴。
+    `available_formats()` 不含 WEBM/Opus（無此容器解碼器），故非 WAV 的瀏覽器
+    輸入仍無法直接餵給 soundfile，PC 原型保留 ffmpeg subprocess 轉檔以維持
+    可運行。
     """
+    if _is_wav_riff(webm_bytes[:12]):
+        import soundfile as sf  # lazy import，同 asr_sensevoice._read_wav 慣例
+
+        samples, sample_rate = sf.read(io.BytesIO(webm_bytes), dtype="float32", always_2d=False)
+        channels = 1 if getattr(samples, "ndim", 1) <= 1 else samples.shape[1]
+        if sample_rate == 16000 and channels == 1:
+            fd, fast_wav_path = tempfile.mkstemp(suffix=".wav")
+            os.close(fd)
+            sf.write(fast_wav_path, samples, sample_rate, subtype="PCM_16")
+            return fast_wav_path
+        # WAV 但規格不符 16k mono：edge（或無 ffmpeg）明確 raise，不靜默偽成功
+        if config.PIPELINE_PROFILE == "edge" or shutil.which("ffmpeg") is None:
+            raise WavSpecMismatchError(
+                "WAV 音訊規格不符：需 16kHz mono，收到取樣率/聲道不符的輸入"
+            )
+        # 非 edge 且有 ffmpeg → 落回下方既有 ffmpeg fallback 分支
+
     webm_path = None
     wav_path = None
     try:
