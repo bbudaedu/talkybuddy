@@ -115,7 +115,10 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
   3. 頂層 `edge/`（`edge/deploy`、`edge/models`、`edge/runtime`）資料夾骨架與對稱 `docs/DEPLOY_EDGE.md` 已建立並可被後續 phase 直接使用
   4. adb build → push → run 部署迴圈已在板卡（Android 14 或已燒錄的 Yocto 映像）上完整跑過一次
   5. 已產出一份有日期的 go/no-go 決策紀錄：Yocto BSP 燒錄是否成功、後續走 Yocto 或 fallback Android 14（含新增成本，如 Java/NDK shim）
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 07-01-PLAN.md — Config 退債（EDGE-01）：LLM_N_CTX profile-driven（edge=512）+ pipeline RIFF-sniff WAV fast path（Wave 1）
+- [ ] 07-02-PLAN.md — edge/ 骨架 + adb 部署腳本 + docs/DEPLOY_EDGE.md（EDGE-03、EDGE-04，Wave 1）
+- [ ] 07-03-PLAN.md — Board bring-up spike + adb 跑一次 health check + 有日期 go/no-go 決策紀錄（EDGE-02、EDGE-03，Wave 2）
 
 ### Phase 8: CPU-Only Offline Edge Turn Loop
 **Goal**: 在 Genio 520 真機上，全 CPU 引擎（不倚賴 NPU）即可離線跑完一次完整聽ASR→想LLM→說TTS 的中英雙語鷹架帶讀對話，且速度落在舞台可接受範圍內——這是決賽全案存亡的關鍵一步，若淪為音箱則全案失敗。
@@ -189,7 +192,7 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
 | 4. Live Nova Sonic S2S Conversation (Path 2) | baseline | Delivered | 2026-07-18 (verified) |
 | 5. Adaptive Teaching Loop & Pronunciation Assessment | baseline | Delivered | 2026-07-18 (verified) |
 | 6. Cross-Platform Cloud Deployment | baseline | Delivered w/ gap | 2026-07-18 (verified) |
-| 7. Day-0 Config Hardening & Board Bring-Up Spike | 0/? | Not started | - |
+| 7. Day-0 Config Hardening & Board Bring-Up Spike | 0/3 | Not started | - |
 | 8. CPU-Only Offline Edge Turn Loop | 0/? | Not started | - |
 | 9. Network-Cut Demo Hardening | 0/? | Not started | - |
 | 10. NPU-Accelerated Perception | 0/? | Not started | - |
