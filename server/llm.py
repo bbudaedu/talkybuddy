@@ -83,15 +83,16 @@ class EdgeLLM:
                 return None
             try:
                 from llama_cpp import Llama  # lazy import 重依賴
+                from server import config
                 gguf = _get_gguf_path()
                 if gguf is None or not gguf.exists():
                     EdgeLLM._model_failed = True
                     return None
                 EdgeLLM._model = Llama(
                     model_path=str(gguf),
-                    # PC 原型記憶體充足，維持 1024；PLAN.md 要求 Genio 520 板上
-                    # 移植時應降為 512 tokens，避免 CPU 端 LLM context 過大導致 OOM 崩潰。
-                    n_ctx=1024,
+                    # context 視窗已 profile 化，值取自 config.LLM_N_CTX：
+                    # edge=512（避免 Genio 520 CPU OOM）、cloud/PC=1024，env 可覆寫。
+                    n_ctx=config.LLM_N_CTX,
                     n_threads=4,
                     verbose=False,
                 )

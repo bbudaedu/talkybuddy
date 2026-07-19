@@ -133,6 +133,12 @@ CLOUD_TTS_SPEED: float = float(os.environ.get("CLOUD_TTS_SPEED", "0.90"))
 # ---------------------------------------------------------------------------
 PIPELINE_PROFILE: str = os.environ.get("TALKYBUDDY_PIPELINE_PROFILE", "edge")
 
+# LLM_N_CTX：llama.cpp context 視窗大小，依 PIPELINE_PROFILE 決定預設值。
+# edge=512 避免 CPU OOM（Genio 520 弱腦、無 GPU）、cloud/PC=1024 記憶體充足維持較大視窗；
+# TALKYBUDDY_LLM_N_CTX 可強制覆寫，優先於 profile 預設。
+_LLM_N_CTX_DEFAULT = 512 if PIPELINE_PROFILE == "edge" else 1024
+LLM_N_CTX: int = int(os.environ.get("TALKYBUDDY_LLM_N_CTX", str(_LLM_N_CTX_DEFAULT)))
+
 
 def default_network_mode() -> str:
     """cloud profile 預設走雲端管線（ElevenLabs TTS 等）；否則邊緣。"""
