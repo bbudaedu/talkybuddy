@@ -1,19 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: 2
-milestone_name: — Genio 520 決賽 Edge MVP
-current_phase: 7
+milestone_name: Genio 520 決賽 Edge MVP
+current_phase: 07
 current_phase_name: Day-0 Config Hardening & Board Bring-Up Spike
-status: planning
-stopped_at: Phase 7 context gathered
-last_updated: "2026-07-19T10:43:15.475Z"
+status: executing
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-07-19T12:58:14.166Z"
 last_activity: 2026-07-19
-last_activity_desc: Milestone 2 roadmap created (Phase 7–12)
+last_activity_desc: Phase 07 execution started
 progress:
   total_phases: 12
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
   percent: 0
 ---
 
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-18)
 
 **Core value:** 孩子能喊「說說學伴」進行自然、可 barge-in 的口說繁中對話，同時教學並評估，且自架串流與 Nova Sonic 兩路徑皆能達成。
-**Current focus:** Milestone 2（Genio 520 決賽 Edge MVP）roadmap 已建立（Phase 7–12，17/17 需求覆蓋）；下一步規劃 Phase 7
+**Current focus:** Phase 07 — Day-0 Config Hardening & Board Bring-Up Spike
 
 ## Current Position
 
-Phase: Phase 7 (Day-0 Config Hardening & Board Bring-Up Spike) — not started
-Plan: —
-Status: Roadmap ready — awaiting /gsd-plan-phase 7
-Last activity: 2026-07-19 — Milestone 2 roadmap created (Phase 7–12)
+Phase: 07 (Day-0 Config Hardening & Board Bring-Up Spike) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-07-19 — Phase 07 execution started
 
 ## Performance Metrics
 
@@ -53,6 +53,11 @@ Last activity: 2026-07-19 — Milestone 2 roadmap created (Phase 7–12)
 - Trend: -
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 07 P01 | 20min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -65,6 +70,8 @@ Recent decisions affecting current work:
 - 喚醒引擎依客戶端模式分流：Porcupine（Path 1）/ sherpa-onnx KWS「說說學伴」（Path 2）
 - Route A（/ws/live 為發音評估主線）、ElevenLabs 情感 TTS + 靜默降級、Nova Sonic Phase 1 vertical slice 皆為 proposed（未鎖定 ADR）
 - **[M2] Roadmap 排序（2026-07-19）**：Phase 7（config/board bring-up spike）→ 8（CPU-only 離線迴路，決賽存亡關鍵）→ 9（斷網橋段硬化）→ 10／11（NPU 加速、雲端教師閉環，可平行、屬加值/可犧牲軌道，不阻擋彼此）→ 12（Nova Sonic staging，最低優先，依賴 9，進度落後時第一個整體犧牲）
+- [Phase ?]: LLM_N_CTX profile-driven（edge=512/cloud=1024，TALKYBUDDY_LLM_N_CTX 可覆寫，覆寫優先於 profile）
+- [Phase ?]: pipeline RIFF-sniff fast path：原生 16k mono WAV 走 soundfile 直讀零 ffmpeg；規格不符於 edge 明確 raise WavSpecMismatchError，不靜默偽成功
 
 ### Pending Todos
 
@@ -98,6 +105,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-07-19T10:43:15.470Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-day-0-config-hardening-board-bring-up-spike/07-CONTEXT.md
+Last session: 2026-07-19T12:58:14.161Z
+Stopped at: Completed 07-01-PLAN.md
+Resume file: None

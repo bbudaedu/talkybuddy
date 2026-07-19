@@ -137,10 +137,10 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
   4. adb build → push → run 部署迴圈已在板卡（Android 14 或已燒錄的 Yocto 映像）上完整跑過一次
   5. 已產出一份有日期的 go/no-go 決策紀錄：Yocto BSP 燒錄是否成功、後續走 Yocto 或 fallback Android 14（含新增成本，如 Java/NDK shim）
 
-**Plans**: 3 plans
+**Plans**: 1/3 plans executed
 **Wave 1**
 
-- [ ] 07-01-PLAN.md — Config 退債（EDGE-01）：LLM_N_CTX profile-driven（edge=512）+ pipeline RIFF-sniff WAV fast path（Wave 1）
+- [x] 07-01-PLAN.md — Config 退債（EDGE-01）：LLM_N_CTX profile-driven（edge=512）+ pipeline RIFF-sniff WAV fast path（Wave 1）
 - [ ] 07-02-PLAN.md — edge/ 骨架 + adb 部署腳本 + docs/DEPLOY_EDGE.md（EDGE-03、EDGE-04，Wave 1）
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -234,7 +234,7 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
 | 4. Live Nova Sonic S2S Conversation (Path 2) | baseline | Delivered | 2026-07-18 (verified) |
 | 5. Adaptive Teaching Loop & Pronunciation Assessment | baseline | Delivered | 2026-07-18 (verified) |
 | 6. Cross-Platform Cloud Deployment | baseline | Delivered w/ gap | 2026-07-18 (verified) |
-| 7. Day-0 Config Hardening & Board Bring-Up Spike | 0/3 | Not started | - |
+| 7. Day-0 Config Hardening & Board Bring-Up Spike | 1/3 | In Progress|  |
 | 8. CPU-Only Offline Edge Turn Loop | 0/? | Not started | - |
 | 9. Network-Cut Demo Hardening | 0/? | Not started | - |
 | 10. NPU-Accelerated Perception | 0/? | Not started | - |
