@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-19T13:37:14.009Z",
+  "phase": "07",
+  "phase_name": "Day-0 Config Hardening & Board Bring-Up Spike",
+  "phase_dir": ".planning/phases/07-day-0-config-hardening-board-bring-up-spike",
+  "plan": 3,
+  "task": 1,
+  "total_tasks": 3,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": "07-01", "name": "Config & 音訊技術債清償 (EDGE-01)", "status": "done", "commit": "8ee2aac"},
+    {"id": "07-02", "name": "Edge 骨架 + adb 部署腳本 (EDGE-03/04)", "status": "done", "commit": "60017bb"}
+  ],
+  "remaining_tasks": [
+    {"id": "07-03", "name": "Board bring-up spike + go/no-go 決策紀錄 (EDGE-02/03)", "status": "blocked_on_hardware"}
+  ],
+  "blockers": [
+    {"description": "07-03 兩個 gate=blocking 硬體檢查點需實體 Hti G520 板卡 + 真實 adb health-check 輸出；plan 明訂『不靜默偽成功』，不可自動核准/偽造", "type": "human_action", "workaround": "使用者/同仁在 out-of-band 燒板並跑 health-check，回報實測結果後才收尾"}
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {"action": "燒 IoT Yocto v25.1.1 (eMMC image genio-720-evk_private_260313072212.tar.gz, MD5 055f7332564f2af2fde0ce6e106b0fae) 到 Genio 520；genio-tools>=1.7", "context": "板卡只能 eMMC boot；Yocto 尚未成功，同仁測試中", "blocking": true},
+    {"action": "選定 OS 後 provision proot-distro Debian → edge/deploy adb build→push→run → 對 port 8787 做 health check，貼回實際 curl 輸出", "context": "07-03 checkpoint 2，success criteria #4", "blocking": true}
+  ],
+  "decisions": [
+    {"decision": "Worktree 隔離自動降級為 sequential", "rationale": "origin/HEAD 無法解析 (milestone 分支未合併, #683)，避免 base mismatch", "phase": "07"},
+    {"decision": "決賽 MVP 主線用 CPU-only LLM (llama.cpp GGUF)，不排 NPU LLM 進關鍵路徑", "rationale": "NPU LLM (GAI Toolkit/ncc-tflite) 需 MediaTek Online/Direct Customer 帳號存取，非公開下載；M2 已列 Phase 10 可犧牲軌道", "phase": "07"},
+    {"decision": "Yocto 燒錄用 v25.1.1 而非 v25.1", "rationale": "bootloader/ATF/OP-TEE 不變（燒法相同），但含 Neuron runtime 穩定性修復，利於 Phase 10 NPU", "phase": "07"}
+  ],
+  "uncommitted_files": [".planning/phases/07-day-0-config-hardening-board-bring-up-spike/07-PATTERNS.md"],
+  "next_action": "取得硬體實測結果後：/gsd-execute-phase 7（自動跳過 07-01/02，從 07-03 續），或直接把 adb+health-check log 貼給 Claude 收尾 07-03",
+  "context_notes": "Wave 1 (07-01+07-02) 全綠已提交；Phase 7 卡在 07-03 硬體 spike。使用者正在 out-of-band 燒板（Yocto 未成功，Android 14 可用 SP Flash 當 fallback）。Claude 不會在無真實 health-check 下標 Phase 7 完成或 auto-advance。兩件待辦：① 把『NPU LLM 需 MOL/GAI Toolkit 存取閘』記進 Phase 10 決策；② 07-03 依實測結果收尾。"
+}
