@@ -224,6 +224,100 @@ async def test_llm_timeout_falls_back_to_scaffold_text(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# 3b. 今日課程（lesson）接線：push-to-talk 這條批次路徑也要跟著課程走
+# ---------------------------------------------------------------------------
+
+async def test_scaffold_only_reply_follows_lesson_target_when_no_vocab_hit():
+    """無 LLM 加值、句子又無詞庫命中時，scaffold 應改引導今日課程目標句，
+    而不是固定的通用預設句（否則 push-to-talk 這條主線會完全忽略課程進度）。
+    """
+    from server import lesson as lesson_mod
+
+    store.add_diagnosis({
+        "date": "2026-07-01",
+        "scores": {"pronunciation": 60, "fluency": 60, "vocabulary": 60, "grammar": 60},
+        "strengths": ["願意開口"],
+        "weaknesses": ["句子偏短"],
+        "emotional_status": "穩定",
+        "instructions": {"classroom": "a", "device": "b", "peer": "c"},
+        "level_state": {"topic": "color", "target_form": "單字 / 名詞片語（an apple）"},
+    })
+    expected_target = lesson_mod.pick_target_sentence("color", None)
+
+    events: list[dict] = []
+    emit = await _collecting_emit(events)
+    vp = VoicePipeline(StubASR(), StubLLM(available=False), StubTTS())
+
+    result = await vp.run_turn_text("今天心情很好", emit)  # 純中文、無詞庫命中詞
+
+    assert result.fallback is False
+    assert expected_target in result.reply_text
+
+
+async def test_stuck_streak_switches_to_fallback_prompt_after_two_misses():
+    """連續兩輪都沒命中詞庫時，第三輪應改用 companion_directive 的
+    fallback_prompt 簡化提示，而不是一直重複同一句完整目標句
+    （見 server/scaffold.py 的 stuck_hint / matched 機制）。
+    """
+    store.add_diagnosis({
+        "date": "2026-07-02",
+        "scores": {"pronunciation": 60, "fluency": 60, "vocabulary": 60, "grammar": 60},
+        "strengths": ["願意開口"],
+        "weaknesses": ["冠詞使用不穩定"],
+        "emotional_status": "穩定",
+        "instructions": {"classroom": "a", "device": "b", "peer": "c"},
+        "companion_directive": {
+            "level": "L2", "difficulty": "hold",
+            "next_goal": "冠詞 a/an 穩定使用", "topic": "食物與水果",
+            "example_questions": ["Do you want an apple?"],
+            "fallback_hint": "若學生困惑，退回二選一：Is it a or an?",
+            "fallback_prompt": "Is it a or an?",
+        },
+    })
+
+    events: list[dict] = []
+    emit = await _collecting_emit(events)
+    vp = VoicePipeline(StubASR(), StubLLM(available=False), StubTTS())
+
+    r1 = await vp.run_turn_text("今天心情很好", emit)   # miss 1
+    r2 = await vp.run_turn_text("今天天氣很好", emit)   # miss 2
+    r3 = await vp.run_turn_text("我心情真的很好", emit)  # miss 3 → 應觸發簡化提示
+
+    assert "Is it a or an?" not in r1.reply_text
+    assert "Is it a or an?" not in r2.reply_text
+    assert "Is it a or an?" in r3.reply_text
+
+
+async def test_stuck_streak_resets_after_a_hit():
+    """卡關中途一旦命中詞庫，streak 應歸零，之後不該再收到簡化提示。"""
+    store.add_diagnosis({
+        "date": "2026-07-03",
+        "scores": {"pronunciation": 60, "fluency": 60, "vocabulary": 60, "grammar": 60},
+        "strengths": ["願意開口"],
+        "weaknesses": ["冠詞使用不穩定"],
+        "emotional_status": "穩定",
+        "instructions": {"classroom": "a", "device": "b", "peer": "c"},
+        "companion_directive": {
+            "level": "L2", "difficulty": "hold",
+            "next_goal": "冠詞 a/an 穩定使用", "topic": "食物與水果",
+            "example_questions": ["Do you want an apple?"],
+            "fallback_hint": "若學生困惑，退回二選一：Is it a or an?",
+            "fallback_prompt": "Is it a or an?",
+        },
+    })
+
+    events: list[dict] = []
+    emit = await _collecting_emit(events)
+    vp = VoicePipeline(StubASR(), StubLLM(available=False), StubTTS())
+
+    await vp.run_turn_text("今天心情很好", emit)         # miss 1
+    await vp.run_turn_text("我要一個蘋果", emit)          # hit → streak 歸零
+    r3 = await vp.run_turn_text("今天天氣很好", emit)     # miss，但只是第 1 次，不該簡化
+
+    assert "Is it a or an?" not in r3.reply_text
+
+
+# ---------------------------------------------------------------------------
 # 4. 半雙工：併發重入 → busy
 # ---------------------------------------------------------------------------
 

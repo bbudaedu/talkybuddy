@@ -288,6 +288,25 @@ async def api_interactions(limit: int = 50, student: str | None = None,
     return store.list_interactions(limit=limit, student_id=sid)
 
 
+@app.get("/api/lesson")
+async def api_lesson(student: str | None = None,
+                     authorization: str | None = Header(default=None)):
+    """今日課程（主題／目標句／語言難度）：開口前的事前鷹架提示用。
+
+    與 /ws/live 用的是同一份 lesson.build_lesson 邏輯，只是這裡給的是
+    push-to-talk 學生端在開口「前」看的提示（今天練什麼、範例句長怎樣），
+    而不是等學生講完才被動糾正。build_lesson 全程安全退化，永不擋頁面。
+    """
+    claims = identity_from_header(authorization)
+    sid = _resolve_student(claims, student)
+    lp = lesson.build_lesson(store.list_diagnoses(student_id=sid), store.get_profile(student_id=sid))
+    return {
+        "topic": lp.topic,
+        "target_sentence": lp.target_sentence,
+        "target_form": lp.target_form,
+    }
+
+
 @app.get("/api/diagnoses")
 async def api_diagnoses(student: str | None = None,
                         authorization: str | None = Header(default=None)):

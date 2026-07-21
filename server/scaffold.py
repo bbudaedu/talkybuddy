@@ -26,6 +26,7 @@ class ScaffoldResult:
     scores: dict = field(default_factory=dict)         # {"fluency","vocabulary","grammar"} 各 0-100
     safety_triggered: bool = False
     target_sentence: str | None = None       # 要學生跟讀的英文句
+    matched: bool = True                     # 這輪是否真的命中詞庫/正確英文（供 pipeline 追蹤連續卡關）
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +149,28 @@ _PRAISE_EN_GOOD = [
     "說得真好，給你一個讚！",
 ]
 
+# 純英文有修正時的糾錯型態輪替（依 turn_index，呼應 Lyster & Ranta 糾錯回饋分類）：
+# recast（示範正確講法）/ metalinguistic（點出文法規則再帶讀）/
+# clarification（先確認理解再示範），比起永遠只用同一種「直接改好」更像真人老師。
+_FEEDBACK_STYLES = ["recast", "metalinguistic", "clarification"]
+
+_METALINGUISTIC_HINTS = {
+    "article": "文法小提醒：母音開頭的字前面要用 an 喔！",
+    "plural": "文法小提醒：講到兩個以上記得要加 s 喔！",
+}
+_CLARIFICATION_LEADS = [
+    "你是說這個意思嗎？我們可以這樣說更清楚：",
+    "我確認一下你的意思，可以這樣說：",
+    "你想說的應該是這樣，對嗎？我們這樣說：",
+]
+
+# 學生連續卡關（同一目標連續答不出來）時的簡化開場，取代一直重複同一句完整目標句。
+_PRAISE_STUCK = [
+    "沒關係，我們簡單一點：",
+    "別擔心，換個方式練習：",
+    "來，我們慢慢來，你可以先試試看：",
+]
+
 # 純英文無誤時的延伸問句（依分類）
 _EXTENSION_QUESTIONS = {
     "food":   "What is your favorite food?",
@@ -207,19 +230,22 @@ def _pluralize(word: str) -> str:
     return word + "s"
 
 
-def _polish_english(text: str) -> tuple[str, int]:
-    """對英文句做簡單修正，回傳（修正後句子, 實質修正數）。
+def _polish_english(text: str) -> tuple[str, int, list[str]]:
+    """對英文句做簡單修正，回傳（修正後句子, 實質修正數, 修正類型標籤）。
 
-    實質修正：a/an 錯用、數詞後漏複數、獨立小寫 i。
-    非實質（不計數）：首字大寫、句尾補句點、空白整理。
+    實質修正：a/an 錯用（標籤 "article"）、數詞後漏複數（標籤 "plural"）、
+    獨立小寫 i（標籤 "cap_i"）。非實質（不計數、不標籤）：首字大寫、句尾補句點、
+    空白整理。標籤供 _respond_pure_en 挑選對應的文法提示（metalinguistic 回饋）。
     """
     fixes = 0
+    tags: list[str] = []
     s = re.sub(r"\s+", " ", text).strip()
 
     # 獨立小寫 i → I
     s2 = re.sub(r"\bi\b", "I", s)
     if s2 != s:
         fixes += 1
+        tags.append("cap_i")
     s = s2
 
     # a/an 修正（依下一個單字的母音發音）
@@ -229,6 +255,7 @@ def _polish_english(text: str) -> tuple[str, int]:
         want = _article_for(nxt)
         if art.lower() != want:
             fixes += 1
+            tags.append("article")
             return (want.capitalize() if art[0].isupper() else want) + " " + nxt
         return m.group(0)
 
@@ -240,6 +267,7 @@ def _polish_english(text: str) -> tuple[str, int]:
         num, noun = m.group(1), m.group(2)
         if noun.lower() in _EN_NOUNS:
             fixes += 1
+            tags.append("plural")
             return num + " " + _pluralize(noun)
         return m.group(0)
 
@@ -253,7 +281,7 @@ def _polish_english(text: str) -> tuple[str, int]:
         s = s[0].upper() + s[1:]
     if s and s[-1] not in ".!?":
         s += "."
-    return s, fixes
+    return s, fixes, tags
 
 
 def _find_zh_vocab(text: str) -> list[str]:
@@ -363,9 +391,9 @@ def compute_scores(student_text: str) -> dict:
     }
 
 
-def _pick(lines: list[str], seed_text: str) -> str:
-    """依輸入內容做確定性輪替，避免每次都同一句。"""
-    return lines[sum(ord(c) for c in seed_text) % len(lines)]
+def _pick(lines: list[str], turn_index: int) -> str:
+    """依對話輪次做確定性輪替，避免學生講很像的話時鼓勵語卡在同一句。"""
+    return lines[turn_index % len(lines)]
 
 
 _DETERMINERS = r"(?:a|an|the|my|your|his|her|our|their|this|that|some)"
@@ -391,46 +419,103 @@ def _substitute_zh(text: str) -> str:
     return s
 
 
-def _respond_mixed(text: str) -> tuple[str, str]:
-    """中英夾雜：替換中文詞產完整英文句。回（鼓勵語, 英文句）。"""
+def _respond_mixed(
+    text: str,
+    turn_index: int,
+    lesson_target_sentence: str | None,
+    stuck_hint: str | None = None,
+) -> tuple[str, str, bool]:
+    """中英夾雜：替換中文詞產完整英文句。回（鼓勵語, 英文句, 是否命中）。"""
     replaced = _substitute_zh(text)
     replaced = _strip_zh(replaced)  # 清掉詞庫外的殘餘中文
-    sentence, _ = _polish_english(replaced)
+    sentence, _, _ = _polish_english(replaced)
     if len(re.findall(r"[A-Za-z]+", sentence)) < 2:
         # 替換後太破碎，退回純中文路徑的邏輯
-        return _respond_pure_zh(text)
-    return _pick(_PRAISE_MIXED, text), sentence
+        return _respond_pure_zh(text, turn_index, lesson_target_sentence, stuck_hint)
+    return _pick(_PRAISE_MIXED, turn_index), sentence, True
 
 
-def _respond_pure_zh(text: str) -> tuple[str, str]:
-    """純中文：找詞庫詞給鼓勵＋整句英文；找不到給通用引導句。"""
+def _respond_pure_zh(
+    text: str,
+    turn_index: int,
+    lesson_target_sentence: str | None,
+    stuck_hint: str | None = None,
+) -> tuple[str, str, bool]:
+    """純中文：找詞庫詞給鼓勵＋整句英文；找不到時優先用今日課程目標句引導，
+    完全沒有課程資訊（lesson_target_sentence 為 None）才退回通用引導句。
+
+    stuck_hint（可選）：pipeline 偵測到學生連續兩輪都沒命中詞庫時傳入的簡化
+    提示（見 diagnose.py 的 fallback_prompt）。有給時優先用它取代常態的
+    lesson_target_sentence／通用句，並換一組「我們簡單一點」的開場，
+    避免學生一直卡住還被塞同一句完整目標句。回傳的 matched 一律 False
+    （這個分支代表這一輪學生沒有真正命中任何詞庫內容）。
+    """
     matches = _find_zh_vocab(text)
     if matches:
         # 優先選最長的詞（名詞多為雙字，資訊量較高）
         key = max(matches, key=len)
         entry = VOCAB[key]
-        praise = f"你說到「{key}」！它的英文是 {entry['en']} 喔。" + _pick(_PRAISE_ZH, text)
-        return praise, entry["sent"]
-    return "我聽到了！我們一起用英文說說看，跟我唸：", "How are you today?"
+        praise = f"你說到「{key}」！它的英文是 {entry['en']} 喔。" + _pick(_PRAISE_ZH, turn_index)
+        return praise, entry["sent"], True
+    if stuck_hint:
+        return _pick(_PRAISE_STUCK, turn_index), stuck_hint, False
+    fallback_sentence = lesson_target_sentence or "How are you today?"
+    return "我聽到了！我們一起用英文說說看，跟我唸：", fallback_sentence, False
 
 
-def _respond_pure_en(text: str) -> tuple[str, str]:
-    """純英文：簡單文法修正或稱讚＋延伸問句。回（鼓勵語, 目標英文句）。"""
-    sentence, fixes = _polish_english(text)
+def _respond_pure_en(
+    text: str, turn_index: int, lesson_topic: str | None
+) -> tuple[str, str, bool]:
+    """純英文：簡單文法修正或稱讚＋延伸問句。回（鼓勵語, 目標英文句, 是否命中）。
+
+    延伸問句優先依這句話裡命中的詞彙分類；完全沒命中時改用今日課程主題
+    （lesson_topic），比起固定的 _EXTENSION_DEFAULT 更貼近今天在練的內容。
+    有實質修正時依 turn_index 輪替糾錯型態（recast/metalinguistic/
+    clarification），而不是每次都用同一種「直接改好」的說法。
+    純英文一律視為 matched=True——學生本來就在嘗試用英文表達，即使還有錯，
+    這不算「卡關」（卡關特指完全沒有用英文/詞庫內容回應的情況）。
+    """
+    sentence, fixes, tags = _polish_english(text)
     if fixes > 0:
-        return _pick(_PRAISE_EN_FIX, text), sentence
+        style = _FEEDBACK_STYLES[turn_index % len(_FEEDBACK_STYLES)]
+        if style == "metalinguistic":
+            hint = next((_METALINGUISTIC_HINTS[t] for t in tags if t in _METALINGUISTIC_HINTS), None)
+            lead = hint if hint else _pick(_PRAISE_EN_FIX, turn_index)
+        elif style == "clarification":
+            lead = _pick(_CLARIFICATION_LEADS, turn_index)
+        else:
+            lead = _pick(_PRAISE_EN_FIX, turn_index)
+        return lead, sentence, True
     # 無誤：稱讚＋依詞彙分類給延伸問句
     low_words = {w.lower() for w in re.findall(r"[A-Za-z]+", text)}
-    question = _EXTENSION_DEFAULT
+    question = None
     for v in VOCAB.values():
         if v["en"] in low_words:
             question = _EXTENSION_QUESTIONS.get(v["cat"], _EXTENSION_DEFAULT)
             break
-    return _pick(_PRAISE_EN_GOOD, text) + "再回答我一個問題：", question
+    if question is None:
+        question = _EXTENSION_QUESTIONS.get(lesson_topic, _EXTENSION_DEFAULT)
+    return _pick(_PRAISE_EN_GOOD, turn_index) + "再回答我一個問題：", question, True
 
 
-def respond(student_text: str) -> ScaffoldResult:
-    """鷹架引擎主入口：安全檢查 → 路徑分流 → 組回應。"""
+def respond(
+    student_text: str,
+    turn_index: int = 0,
+    lesson_topic: str | None = None,
+    lesson_target_sentence: str | None = None,
+    stuck_hint: str | None = None,
+) -> ScaffoldResult:
+    """鷹架引擎主入口：安全檢查 → 路徑分流 → 組回應。
+
+    turn_index：本次連線內的對話輪次（由 pipeline 傳入），供鼓勵語輪替，
+    避免學生講很像的話時鼓勵語卡在同一句；預設 0（向後相容）。
+    lesson_topic / lesson_target_sentence：由 server/lesson.py 依當前診斷/
+    profile 選出的「今日主題」與「今日目標句」；只在學生輸入完全無詞庫命中
+    時作為引導依據，不覆蓋既有規則。兩者皆為 None 時行為與現況完全一致。
+    stuck_hint：pipeline 偵測到學生連續兩輪都沒命中（見 ScaffoldResult.matched）
+    時傳入的簡化提示句，只在純中文無詞庫命中的分支生效；None 時行為與現況
+    完全一致（向後相容）。
+    """
     text = (student_text or "").strip()
 
     # 空輸入：直接兜底
@@ -442,6 +527,7 @@ def respond(student_text: str) -> ScaffoldResult:
             scores={"fluency": 0, "vocabulary": 0, "grammar": 0},
             safety_triggered=False,
             target_sentence=None,
+            matched=False,
         )
 
     # 禁詞：回安撫話術，不給學習目標句
@@ -453,15 +539,16 @@ def respond(student_text: str) -> ScaffoldResult:
             scores=compute_scores(text),
             safety_triggered=True,
             target_sentence=None,
+            matched=True,  # 安撫話術不算「卡關」，不應觸發降階提示
         )
 
     has_zh, has_en = _has_zh(text), _has_en(text)
     if has_zh and has_en:
-        praise, target = _respond_mixed(text)
+        praise, target, matched = _respond_mixed(text, turn_index, lesson_target_sentence, stuck_hint)
     elif has_zh:
-        praise, target = _respond_pure_zh(text)
+        praise, target, matched = _respond_pure_zh(text, turn_index, lesson_target_sentence, stuck_hint)
     else:
-        praise, target = _respond_pure_en(text)
+        praise, target, matched = _respond_pure_en(text, turn_index, lesson_topic)
 
     reply = praise + " " + target
     return ScaffoldResult(
@@ -470,6 +557,7 @@ def respond(student_text: str) -> ScaffoldResult:
         scores=compute_scores(text),
         safety_triggered=False,
         target_sentence=target,
+        matched=matched,
     )
 
 

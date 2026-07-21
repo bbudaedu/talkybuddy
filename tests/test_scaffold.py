@@ -120,6 +120,105 @@ def test_split_tts_segments_pure_english():
     assert segments[0][0] == "en"
 
 
+def test_respond_pure_zh_no_vocab_hit_prefers_lesson_target_sentence():
+    """純中文無詞庫命中時，若有今日課程目標句，應優先引導該句而非通用預設句。"""
+    result = scaffold.respond("今天心情很好", lesson_target_sentence="I see a big dog.")
+    assert result.target_sentence == "I see a big dog."
+
+
+def test_respond_pure_zh_no_vocab_hit_falls_back_when_no_lesson():
+    """沒有課程資訊（lesson_target_sentence=None）時，行為與現況一致。"""
+    result = scaffold.respond("今天心情很好")
+    assert result.target_sentence == "How are you today?"
+
+
+def test_respond_pure_en_correct_no_vocab_hit_uses_lesson_topic_question():
+    """純英文正確、句中無詞庫詞可判斷分類時，延伸問句改依今日課程主題。"""
+    result = scaffold.respond("I am happy today.", lesson_topic="color")
+    assert result.target_sentence == scaffold._EXTENSION_QUESTIONS["color"]
+
+
+def test_respond_turn_index_rotates_praise_without_repeating():
+    """同一句輸入在不同輪次（turn_index）應輪替到不同鼓勵語，避免卡在同一句。"""
+    replies = {
+        scaffold.respond("我要一個蘋果", turn_index=i).reply_text
+        for i in range(len(scaffold._PRAISE_ZH))
+    }
+    assert len(replies) == len(scaffold._PRAISE_ZH)
+
+
+# ---------------------------------------------------------------------------
+# matched 欄位 + stuck_hint 降階提示（pipeline 連續卡關偵測用）
+# ---------------------------------------------------------------------------
+
+def test_respond_matched_true_when_zh_vocab_hit():
+    """純中文命中詞庫 → matched=True（不算卡關）。"""
+    result = scaffold.respond("我要一個蘋果")
+    assert result.matched is True
+
+
+def test_respond_matched_false_when_zh_no_vocab_hit():
+    """純中文完全沒命中詞庫 → matched=False，供 pipeline 累加卡關輪次。"""
+    result = scaffold.respond("今天心情很好")
+    assert result.matched is False
+
+
+def test_respond_matched_true_for_pure_english_even_with_fixes():
+    """純英文一律 matched=True，即使還需要文法修正——這不算「卡關」。"""
+    result = scaffold.respond("I eat a apple")
+    assert result.matched is True
+
+
+def test_respond_stuck_hint_used_when_no_vocab_hit():
+    """有 stuck_hint 時，純中文無詞庫命中應改用 stuck_hint 當目標句，並換一組簡化開場。"""
+    result = scaffold.respond("今天心情很好", stuck_hint="Is it a or an?")
+    assert result.target_sentence == "Is it a or an?"
+    assert any(lead in result.reply_text for lead in scaffold._PRAISE_STUCK)
+    assert result.matched is False
+
+
+def test_respond_stuck_hint_ignored_when_vocab_hit():
+    """就算帶了 stuck_hint，只要這輪命中詞庫，就不該用簡化提示蓋掉正常回覆。"""
+    result = scaffold.respond("我要一個蘋果", stuck_hint="Is it a or an?")
+    assert result.target_sentence == "I want to eat an apple."
+    assert result.matched is True
+
+
+def test_respond_empty_input_matched_false():
+    """空輸入視為沒命中（matched=False），但不影響現行的兜底話術行為。"""
+    result = scaffold.respond("")
+    assert result.matched is False
+    assert result.target_sentence is None
+
+
+def test_respond_safety_triggered_matched_true():
+    """安撫話術不算卡關，matched 應為 True（避免誤觸發降階提示）。"""
+    result = scaffold.respond("我要殺人")
+    assert result.safety_triggered is True
+    assert result.matched is True
+
+
+# ---------------------------------------------------------------------------
+# 純英文糾錯型態輪替（Lyster & Ranta：recast / metalinguistic / clarification）
+# ---------------------------------------------------------------------------
+
+def test_respond_pure_en_feedback_style_rotates_by_turn_index():
+    """同一個有 a/an 錯誤的句子，在不同 turn_index 應輪替出不同的糾錯型態開場。"""
+    leads = {
+        scaffold._respond_pure_en("I eat a apple", i, None)[0]
+        for i in range(len(scaffold._FEEDBACK_STYLES))
+    }
+    assert len(leads) == len(scaffold._FEEDBACK_STYLES)
+
+
+def test_respond_pure_en_metalinguistic_style_names_article_rule():
+    """輪到 metalinguistic 型態、且錯誤是 a/an 時，應該講出文法規則本身。"""
+    idx = scaffold._FEEDBACK_STYLES.index("metalinguistic")
+    lead, _sentence, matched = scaffold._respond_pure_en("I eat a apple", idx, None)
+    assert lead == scaffold._METALINGUISTIC_HINTS["article"]
+    assert matched is True
+
+
 def test_compute_scores_range_and_keys():
     """compute_scores 回傳三維分數，皆在 0-100 範圍內。"""
     for text in ["", "我要吃蘋果", "I have a dog.", "我想吃apple and drink milk"]:

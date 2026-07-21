@@ -360,32 +360,41 @@ def _build_companion_directive(flags: dict, scores: dict, prev: dict | None) -> 
         difficulty = "hold"
 
     # goal / topic / questions 由最高優先旗標決定
+    # fallback_hint 是給 LLM 讀的完整中文提示句；fallback_prompt 是同一個退階策略
+    # 抽出來、scaffold.py 規則引擎可以直接讀給學生聽的英文短句/單字（見 B-mini：
+    # 學生同一目標連續卡兩輪時，pipeline 會把這個字串當 stuck_hint 傳進
+    # scaffold.respond()，取代原本一直重複同一句的固定兜底）。
     if flags["article_correction"]:
         goal = "冠詞 a/an 穩定使用（母音開頭名詞前用 an）"
         topic = "食物與水果"
         questions = ["Do you want an apple?", "Is it an egg or a banana?"]
         fb = "若學生困惑，退回二選一：Is it a or an?"
+        fallback_prompt = "Is it a or an?"
     elif flags["high_chinese_ratio"]:
         goal = "整句英文輸出、減少中文替代"
         topic = "今天的一天"
         questions = ["What did you eat today?", "How are you today?"]
         fb = "若學生說中文，退回單字引導：先說一個英文單字就好。"
+        fallback_prompt = "apple"
     elif flags["short_sentences"]:
         goal = "把句子講長、加上形容詞或地點"
         topic = "顏色與數量"
         questions = ["What color is it?", "How many do you have?"]
         fb = "若學生只說單字，退回二選一：Is it big or small?"
+        fallback_prompt = "Is it big or small?"
     elif difficulty == "up":
         goal = "升級句型：用 and / because 造複合句"
         topic = "喜歡的事物與原因"
         questions = ["What do you like and why?"]
         fb = "若學生卡住，退回單句：What do you like?"
+        fallback_prompt = "What do you like?"
     else:
         low_dim = min(_DIM_KEYS, key=lambda d: scores[d])
         goal = f"鞏固{_DIM_ZH[low_dim]}：多做成功經驗"
         topic = "日常問候與自我介紹"
         questions = ["What is your name?", "How old are you?"]
-        fb = "若學生困惑，退回二選一。"
+        fb = "若學生困惑，退回二選一：What is your name?"
+        fallback_prompt = "What is your name?"
 
     return {
         "level": _level_for(scores),
@@ -394,6 +403,7 @@ def _build_companion_directive(flags: dict, scores: dict, prev: dict | None) -> 
         "topic": topic,
         "example_questions": questions,
         "fallback_hint": fb,
+        "fallback_prompt": fallback_prompt,
     }
 
 
@@ -411,6 +421,9 @@ def _normalize_directive(cd) -> dict | None:
             "topic": str(cd.get("topic", "")).strip(),
             "example_questions": qs,
             "fallback_hint": str(cd.get("fallback_hint", "")).strip(),
+            # 真雲端 API 診斷目前不會產這個欄位（prompt 未要求），正規化後就是空字串，
+            # pipeline 端會把空字串視同沒有、優雅退化成沒有 stuck_hint 的舊行為。
+            "fallback_prompt": str(cd.get("fallback_prompt", "")).strip(),
         }
         if not (out["next_goal"] and out["topic"]):
             return None
