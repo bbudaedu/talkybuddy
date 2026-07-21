@@ -100,10 +100,13 @@ class SenseVoiceASREngine:
             samples, sample_rate = _read_wav(wav_path)
             if getattr(samples, "ndim", 1) > 1:
                 samples = samples[:, 0]  # 多聲道取第一聲道
-            stream = recognizer.create_stream()
-            stream.accept_waveform(sample_rate, samples)
-            recognizer.decode_stream(stream)
-            text = (stream.result.text or "").strip()
+            # decode_stream 呼叫進 sherpa_onnx native 層；多連線併發呼叫同一個
+            # recognizer 單例時用鎖序列化，避免併發 native 呼叫（見 server/llm.py 同款註解）。
+            with self._lock:
+                stream = recognizer.create_stream()
+                stream.accept_waveform(sample_rate, samples)
+                recognizer.decode_stream(stream)
+                text = (stream.result.text or "").strip()
             if not text:
                 return ("", 0.0)
             cc = self._ensure_opencc()
