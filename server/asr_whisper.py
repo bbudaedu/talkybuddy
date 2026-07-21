@@ -59,11 +59,14 @@ class WhisperASREngine:
         if model is None:
             return ("", 0.0)
         try:
-            segments, _info = model.transcribe(
-                wav_path,
-                language=None,
-                beam_size=1,
-            )
+            # 併發呼叫同一個 model 單例的 transcribe 用鎖序列化（見 server/llm.py 同款註解）。
+            with self._lock:
+                segments, _info = model.transcribe(
+                    wav_path,
+                    language=None,
+                    beam_size=1,
+                )
+                segments = list(segments)  # 在鎖內耗盡 generator，避免鎖外才觸發真正解碼
             texts: list[str] = []
             logprobs: list[float] = []
             for seg in segments:

@@ -118,6 +118,14 @@ a.teacher-link{
   text-align:center;
 }
 .hold-hint.disabled{color:#9a3412;background:#ffe4d6;border-color:#f5a06e;}
+/* 開口前的鷹架提示：今日主題 + 目標句範例（事前鷹架，非事後糾正） */
+.lesson-banner{
+  display:none;margin:8px 12px 0;padding:10px 14px;border-radius:16px;
+  background:#eef7f2;border:2px solid #bfe6d2;text-align:center;
+}
+.lesson-topic{font-size:12px;font-weight:800;color:#0e7a55;margin-bottom:2px;}
+.lesson-target{font-size:14px;color:var(--ink);}
+.lesson-target b{color:#0e7a55;}
 /* ============ 對話氣泡串 ============ */
 main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:column;gap:10px;}
 .bubble{
@@ -277,6 +285,11 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
   <div class="hold-hint" id="holdHint">&#128070; 點一下企鵝開始說話，說完再點一下（或喊喚醒詞）</div>
 </div>
 
+<div class="lesson-banner" id="lessonBanner">
+  <div class="lesson-topic" id="lessonTopic"></div>
+  <div class="lesson-target">📣 今天試著說說看：<b id="lessonTarget"></b></div>
+</div>
+
 <main id="chat" aria-live="polite"></main>
 
 <div class="quickbar">
@@ -308,6 +321,9 @@ var penguinWrap = document.getElementById("penguinWrap");
 var stateHint = document.getElementById("stateHint");
 var holdHint = document.getElementById("holdHint");
 var toastEl = document.getElementById("toast");
+var lessonBanner = document.getElementById("lessonBanner");
+var lessonTopicEl = document.getElementById("lessonTopic");
+var lessonTargetEl = document.getElementById("lessonTarget");
 
 /* ---------- 全域狀態 ---------- */
 var ws = null;
@@ -681,6 +697,26 @@ penguinWrap.addEventListener("click", function (e) {
   window._wakeController.triggerPush();
 });
 
+/* ---------- 開口前的鷹架提示：今日主題 + 目標句範例 ---------- */
+/* 先降低任務難度再邀請輸出：開口前就讓學生知道「今天在練什麼、可以怎麼說」，
+ * 而不是只有講完之後被動糾正。與 /ws/live 共用同一份 server/lesson.py 邏輯。 */
+var TOPIC_LABELS = {
+  animal: "🐾 今天主題：動物", food: "🍎 今天主題：食物", color: "🎨 今天主題：顏色",
+  family: "👪 今天主題：家人", school: "🏫 今天主題：學校", action: "🏃 今天主題：動作"
+};
+
+function fetchLesson() {
+  fetch("/api/lesson", { headers: authHeaders() })
+    .then(function (r) { if (!r.ok) { throw new Error("no lesson"); } return r.json(); })
+    .then(function (lp) {
+      if (!lp || !lp.target_sentence) { return; }
+      lessonTopicEl.textContent = TOPIC_LABELS[lp.topic] || ("今天主題：" + (lp.topic || ""));
+      lessonTargetEl.textContent = lp.target_sentence;
+      lessonBanner.style.display = "block";
+    })
+    .catch(function () { /* 拿不到就不顯示提示，不影響既有對話流程 */ });
+}
+
 /* ---------- /api/status 輪詢（每 5 秒） ---------- */
 function refreshStatus() {
   fetch("/api/status").then(function (r) { return r.json(); }).then(function (st) {
@@ -995,6 +1031,7 @@ function boot() {
   initMic();
   initModes();   /* 取代 connectWS + initWakeLayer：依 live_s2s 決定 live 或半雙工（半雙工分支仍走 sherpa KWS） */
   refreshStatus();
+  fetchLesson();
   setInterval(refreshStatus, 5000);
   /* 開場招呼 */
   addBubble("penguin", "嘿！我是你的說說學伴！點一下我的肚子開始說話，或喊喚醒詞叫我，也可以點下面的快速語句試試看～", {});

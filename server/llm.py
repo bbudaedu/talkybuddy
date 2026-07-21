@@ -133,14 +133,18 @@ class EdgeLLM:
                 "請照規則回覆：先一句繁體中文稱讚鼓勵，"
                 "再用「跟我說一遍：<英文句>」帶讀目標英文句。"
             )
-            result = model.create_chat_completion(
-                messages=[
-                    {"role": "system", "content": self._SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=120,
-                temperature=0.7,
-            )
+            # llama.cpp 的單一 context 不能被兩個執行緒同時呼叫 create_chat_completion
+            # （曾實測併發下 native 層直接 segfault）；多連線共用同一個 EdgeLLM 單例時
+            # 靠這把鎖把生成呼叫序列化，逾時放棄的舊執行緒仍會跑完但不會跟新請求並發衝突。
+            with EdgeLLM._lock:
+                result = model.create_chat_completion(
+                    messages=[
+                        {"role": "system", "content": self._SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    max_tokens=120,
+                    temperature=0.7,
+                )
             if time.monotonic() - start > _GENERATE_TIMEOUT_S:
                 return None
 

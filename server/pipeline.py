@@ -21,7 +21,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 
-from server import config, guardrails, scaffold, store
+from server import config, guardrails, lesson, scaffold, store
 
 # LLM 加值生成的逾時秒數（契約：>8s 即降級用 scaffold 結果；測試可 monkeypatch）
 LLM_TIMEOUT_S: float = 8.0
@@ -31,6 +31,10 @@ FFMPEG_TIMEOUT_S: float = 10.0
 
 # 每 N 個「成功回合」觸發一次背景導師更新（回寫 companion_directive）
 DIRECTIVE_REFRESH_EVERY: int = 5
+
+# 連續幾輪沒命中（scaffold matched=False）才觸發降階簡化提示
+# （「連續兩輪答不出來」= 第 3 輪才簡化，而不是第一次沒答對就馬上介入）
+STUCK_STREAK_THRESHOLD: int = 2
 
 
 @dataclass
@@ -52,6 +56,22 @@ def _now_iso_taipei() -> str:
     """回傳台北時區（UTC+8）的 ISO8601 時間字串。"""
     tz = datetime.timezone(datetime.timedelta(hours=8))
     return datetime.datetime.now(tz).isoformat(timespec="seconds")
+
+
+def _extract_fallback_prompt(diagnoses: list[dict]) -> str | None:
+    """從診斷清單（依 date 升冪，最後一筆最新）取出最新的 fallback_prompt。
+
+    真雲端 API 診斷目前不產這個欄位、正規化後是空字串；空字串／缺欄／任何
+    格式問題一律回 None，讓呼叫端優雅退化成沒有 stuck_hint 的舊行為。
+    """
+    if not diagnoses:
+        return None
+    try:
+        cd = diagnoses[-1].get("companion_directive") or {}
+        fp = cd.get("fallback_prompt")
+        return fp if isinstance(fp, str) and fp.strip() else None
+    except Exception:
+        return None
 
 
 def _webm_to_wav(webm_bytes: bytes) -> str | None:
@@ -134,8 +154,21 @@ class VoicePipeline:
         self._fallback_cycle = itertools.cycle(scaffold.FALLBACK_LINES)
         # B1 雙 Agent 閉環：已格式化的陪聊策略字串（即時路徑只讀這個，零 DB/網路）
         self._directive: str | None = None
-        # 累計「成功回合」數，用於每 N 輪觸發背景導師更新
+        # 今日課程（見 server/lesson.py）：主題／目標句，讓 push-to-talk 這條
+        # 批次路徑也跟著課程進度走，而不是只反應學生剛剛講的那句話。
+        self._lesson_topic: str | None = None
+        self._lesson_target: str | None = None
+        # 累計「成功回合」數，用於每 N 輪觸發背景導師更新；同時也是 scaffold
+        # 鼓勵語輪替的 turn_index，避免同句話卡在同一句鼓勵語。
         self._turn_count: int = 0
+        # 連續「沒命中」輪次計數（scaffold.ScaffoldResult.matched=False）；
+        # 達門檻時把 _fallback_prompt 當 stuck_hint 傳給 scaffold.respond()，
+        # 讓學生連續卡關時自動降階成簡化提示，而不是一直重複同一句完整目標句。
+        # 命中一次就歸零；見 _process_text 尾端的更新邏輯。
+        self._stuck_streak: int = 0
+        # 今日 companion_directive 的簡化提示（見 diagnose.py 的 fallback_prompt），
+        # 跟 _directive 同一批背景刷新；None 表示還沒有可用的診斷資料。
+        self._fallback_prompt: str | None = None
         # 背景刷新防重入旗標
         self._directive_refreshing: bool = False
 
@@ -211,7 +244,24 @@ class VoicePipeline:
         # 階段：thinking（鷹架 + LLM）
         await self._emit_state(emit, result, "thinking")
         scaffold.safety_check(result.asr_text)  # 禁詞檢查（respond 內部亦會處理安撫話術）
-        sc = scaffold.respond(result.asr_text)
+        self._ensure_lesson()
+        # 連續卡關達門檻才把簡化提示傳下去；平常（streak 未達門檻）維持現行行為。
+        stuck_hint = (
+            self._fallback_prompt
+            if self._stuck_streak >= STUCK_STREAK_THRESHOLD
+            else None
+        )
+        sc = scaffold.respond(
+            result.asr_text,
+            turn_index=self._turn_count,
+            lesson_topic=self._lesson_topic,
+            lesson_target_sentence=self._lesson_target,
+            stuck_hint=stuck_hint,
+        )
+        # 命中就歸零、沒命中就累加；LLM 加值（下面）會沿用 sc.target_sentence，
+        # 所以就算換成 LLM 生成的文字，簡化後的目標句一樣會被帶到（見 llm.py
+        # generate() 的「目標英文句一定出現在回覆中」護欄）。
+        self._stuck_streak = 0 if sc.matched else self._stuck_streak + 1
         result.reply_text = sc.reply_text
         result.scores = dict(sc.scores)
         segments = list(sc.tts_segments)
@@ -280,10 +330,28 @@ class VoicePipeline:
         await self._emit_state(emit, result, "idle")
         return result
 
-    async def _refresh_directive(self) -> None:
-        """背景更新 directive：讀 DB→產診斷→存 DB→更新記憶體快取。
+    def _ensure_lesson(self) -> None:
+        """首次通話前確保有今日課程可用（主題／目標句）；安全退化，永不擋對話。
 
-        全程在 asyncio.to_thread 執行，導師絕不進即時路徑；失敗維持舊 directive。
+        只在尚未取得課程時才讀 DB（同步、輕量的本機 SQLite 讀取，與既有
+        ``store.add_interaction`` 同步呼叫風格一致）；之後的更新交給
+        ``_refresh_directive`` 背景刷新，避免每輪都重算。
+        """
+        if self._lesson_target is not None:
+            return
+        try:
+            diagnoses = store.list_diagnoses()
+            lp = lesson.build_lesson(diagnoses, store.get_profile())
+            self._lesson_topic = lp.topic
+            self._lesson_target = lp.target_sentence
+            self._fallback_prompt = _extract_fallback_prompt(diagnoses)
+        except Exception:
+            pass
+
+    async def _refresh_directive(self) -> None:
+        """背景更新 directive + 今日課程：讀 DB→產診斷→存 DB→更新記憶體快取。
+
+        全程在 asyncio.to_thread 執行，導師絕不進即時路徑；失敗維持舊快取。
         """
         if self._directive_refreshing:
             return
@@ -298,12 +366,21 @@ class VoicePipeline:
                 diag = diagnose.generate_diagnosis(recent, prev)
                 store.add_diagnosis(diag)  # 持久化（含 companion_directive）
                 # B3 接法 A：帶 level_state，CEFR 難度/語言形式折進注入字串
-                return diagnose.format_directive_for_prompt(
+                directive = diagnose.format_directive_for_prompt(
                     diag.get("companion_directive"), diag.get("level_state"))
+                # 診斷更新後，今日課程（主題/目標句）也可能跟著換一階/換主題
+                lp = lesson.build_lesson(store.list_diagnoses(), store.get_profile())
+                fallback_prompt = _extract_fallback_prompt([diag])
+                return directive, lp.topic, lp.target_sentence, fallback_prompt
 
-            self._directive = await asyncio.to_thread(_work)
+            (
+                self._directive,
+                self._lesson_topic,
+                self._lesson_target,
+                self._fallback_prompt,
+            ) = await asyncio.to_thread(_work)
         except Exception:
-            pass  # 更新失敗維持舊 directive（或 None），即時路徑不受影響
+            pass  # 更新失敗維持舊快取（directive/lesson 皆不變），即時路徑不受影響
         finally:
             self._directive_refreshing = False
 
