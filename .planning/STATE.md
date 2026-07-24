@@ -4,17 +4,17 @@ milestone: 2
 milestone_name: Genio 520 決賽 Edge MVP
 current_phase: 07
 current_phase_name: Day-0 Config Hardening & Board Bring-Up Spike
-status: executing
-stopped_at: context exhaustion at 75% (2026-07-19)
-last_updated: "2026-07-19T13:34:46.428Z"
-last_activity: 2026-07-19
-last_activity_desc: Phase 07 execution started
+status: complete
+stopped_at: null
+last_updated: "2026-07-25T16:30:00.000Z"
+last_activity: 2026-07-25
+last_activity_desc: Phase 07 complete — Yocto board bring-up GO, real health-check pass, ready for Phase 8
 progress:
   total_phases: 12
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 0
+  completed_plans: 3
+  percent: 8
 ---
 
 # Project State
@@ -86,7 +86,7 @@ Recent decisions affecting current work:
 
 | # | Phase | 缺口 | 嚴重度 | 證據 |
 |---|-------|------|--------|------|
-| G1 | 3 | cloud-TTS 合成點缺 `consent_granted()` 檢查：cloud-profile 開機 + consent=false 仍會呼叫 ElevenLabs（家長同意可被繞過） | 🔴 高（兒童隱私） | server/pipeline.py:321-326；config.py:137-139；app.py:61 |
+| ~~G1~~ | 3 | ~~cloud-TTS 合成點缺 `consent_granted()` 檢查~~ — **已修復（2026-07-20，out-of-band）**：`_synth_tts` 雲端分支補上 `guardrails.consent_granted()` 守門，比照既有 LLM 分支 pattern；新增回歸測試 `test_cloud_mode_without_consent_never_calls_cloud_tts` | ✅ 已解 | server/pipeline.py:357-363（修復點）；tests/test_pipeline_cloud_tts.py（回歸測試） |
 | G2 | 2 | `run_realwire.py` build_processors 漏接 `BargeInGate` → 真實麥克風/喇叭上 barge-in 不觸發；無實機執行證據 | 🟠 中 | server/streaming/run_realwire.py:45-52 |
 | G3 | 6 | TLS/WSS reverse proxy 僅 DEPLOY_CLOUD.md 文件化，無提交的 Caddyfile/nginx 設定或 VM 實跑驗證 | 🟠 中（部署時處理） | docs/DEPLOY_CLOUD.md:35-50 |
 | G4 | 3 | 無原生 Bedrock Converse 回覆後端，只有 config 切換的 Anthropic-Messages relay（LLM-02「Bedrock/relay 切換」為 config-fronting） | 🟡 低（by-design 可接受） | server/config.py:70-71；server/anthropic_relay.py:32-55 |
@@ -108,6 +108,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-07-19T13:34:46.423Z
-Stopped at: context exhaustion at 75% (2026-07-19)
+Last session: 2026-07-21T11:51:16.494Z
+Stopped at: context exhaustion at 75% (2026-07-21)
 Resume file: None

@@ -23,8 +23,8 @@
 ### EDGE — 裝置 runtime + 部署管線
 
 - [x] **EDGE-01**: Day-0 零硬體風險整備——`n_ctx` 改 config-driven（edge=512）、移除 ffmpeg/WebM 子行程轉檔，改 ALSA 直接擷取 16kHz mono（退既有技術債）
-- [ ] **EDGE-02**: Board bring-up spike——嘗試燒官方 IoT Yocto v25.1（Genio Tools v1.7+）到 Hti G520 第三方載板；~2 天內未過則 fallback Android 14 並記錄新增成本（Java/NDK shim）——go/no-go 決策點
-- [x] **EDGE-03**: adb-based 部署管線（build → push → run on-device），可分攤工作丟 NB
+- [x] **EDGE-02**: Board bring-up spike——2026-07-25 官方 IoT Yocto v25.1.1 燒錄成功（`Rity Demo Layer 25.1.1-release scarthgap`），GO，不需 Android 14 fallback；決策紀錄見 `edge/BOARD_BRINGUP_DECISION.md`
+- [x] **EDGE-03**: SSH/rsync 部署管線（build → push → run on-device，07-03 實測改自原規劃的 adb-based，因 Yocto 板卡無 adb 介面），可分攤工作丟 NB
 - [x] **EDGE-04**: edge 產物集中於頂層 `edge/`（`edge/deploy`、`edge/models`、`edge/runtime`）+ 部署文件 `docs/DEPLOY_EDGE.md`（對稱 `docs/DEPLOY_CLOUD.md`）
 
 ### NETCUT — 現場斷網橋段（demo 勝負手）
@@ -69,7 +69,7 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | EDGE-01 | Phase 7 | Complete |
-| EDGE-02 | Phase 7 | Pending |
+| EDGE-02 | Phase 7 | Complete |
 | EDGE-03 | Phase 7 | Complete |
 | EDGE-04 | Phase 7 | Complete |
 | ELOOP-01 | Phase 8 | Pending |

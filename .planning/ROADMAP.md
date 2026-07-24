@@ -137,7 +137,7 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
   4. adb build → push → run 部署迴圈已在板卡（Android 14 或已燒錄的 Yocto 映像）上完整跑過一次
   5. 已產出一份有日期的 go/no-go 決策紀錄：Yocto BSP 燒錄是否成功、後續走 Yocto 或 fallback Android 14（含新增成本，如 Java/NDK shim）
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans executed
 **Wave 1**
 
 - [x] 07-01-PLAN.md — Config 退債（EDGE-01）：LLM_N_CTX profile-driven（edge=512）+ pipeline RIFF-sniff WAV fast path（Wave 1）
@@ -145,7 +145,7 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 07-03-PLAN.md — Board bring-up spike + adb 跑一次 health check + 有日期 go/no-go 決策紀錄（EDGE-02、EDGE-03，Wave 2）
+- [x] 07-03-PLAN.md — Board bring-up spike：2026-07-25 Yocto 燒錄成功 GO、SSH/rsync 部署迴圈跑通 health check pass、有日期 go/no-go 決策紀錄（EDGE-02、EDGE-03，Wave 2）— 見 `edge/BOARD_BRINGUP_DECISION.md`
 
 ### Phase 8: CPU-Only Offline Edge Turn Loop
 
