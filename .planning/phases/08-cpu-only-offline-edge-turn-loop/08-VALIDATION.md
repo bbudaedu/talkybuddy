@@ -41,12 +41,14 @@ created: 2026-07-25
 | 08-01-01 | 01 | TBD | ELOOP-02 | T-08-01 | `EdgeLLM.available()` 對 `/health` 逾時/連線失敗回 False，不拋例外 | unit | `pytest tests/test_llm.py::test_available_false_on_connection_error -x` | ❌ W0（新案例） | ⬜ pending |
 | 08-01-02 | 01 | TBD | ELOOP-02 | T-08-01 | `EdgeLLM.generate()` 逾時/HTTP 錯誤/safety_check 未過一律回 None | unit | `pytest tests/test_llm.py -x` | 🟡 需改寫 | ⬜ pending |
 | 08-01-03 | 01 | TBD | ELOOP-02 | — | `config.LLM_N_CTX` 正確反映到 llama-server `--ctx-size` | unit | `pytest tests/test_llm_n_ctx_profile.py -x` | 🟡 需改寫 | ⬜ pending |
-| 08-02-01 | 02 | TBD | ELOOP-01 | — | 音訊 I/O 模組擷取的 WAV bytes 符合 16k mono，命中既有 RIFF-sniff fast path | unit | `pytest tests/test_audio_io.py -x` | ❌ W0（新模組） | ⬜ pending |
-| 08-0X-XX | TBD | TBD | ELOOP-04 | T-08-02 | llama-server 綁定 `127.0.0.1`，從裝置區網 IP 連線被拒絕 | integration（需真機） | 手動 `curl` 對裝置區網 IP + llama-server 埠號，預期連線失敗 | — manual-only | ⬜ pending |
+| 08-03-01 | 03 | 1 | ELOOP-01 | T-08-03 | 音訊 I/O 模組擷取的 WAV bytes 符合 16k mono，命中既有 RIFF-sniff fast path | unit | `pytest tests/test_audio_io.py -x` | ❌ W0（新模組） | ⬜ pending |
+| 08-05-01 | 05 | 4 | ELOOP-04 | T-08-01 | 跨行程 VmHWM 加總邏輯（uvicorn + llama-server）正確，量測方法不低估 | unit | `pytest tests/test_measure_peak_rss.py -x` | ❌ W0（新工具） | ⬜ pending |
+| 08-04-CP | 04 | 3 | ELOOP-02 | T-08-01/02 | 交叉編譯 binary 在真機可執行（glibc ABI）+ run_edge.sh 起 llama-server /health 200 | integration（需真機） | checkpoint:human-verify — llama-server --version / /health 實際輸出貼回 | — manual-only | ⬜ pending |
+| 08-05-CP | 05 | 4 | ELOOP-01/03/04 | T-08-01/08/09 | 真回合延遲 go/no-go、跨行程峰值 <4GB、零雲端封包稽核、llama-server 對外綁定被拒 | integration（需真機） | checkpoint:human-verify — llama-bench/VmHWM/tcpdump/外部 curl 實際輸出貼回 | — manual-only | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
-*Exact task IDs finalized once gsd-planner writes PLAN.md wave/task numbering — this table is the requirement→test contract the planner must satisfy, not a pre-assigned task list.*
+*Task IDs 對應 gsd-planner 已寫出的 5 個 PLAN（08-01..08-05）；`-CP` 為該 plan 內的 blocking checkpoint:human-verify 任務。ELOOP-02 native binary 生成/部署/接線由 08-04 覆蓋；ELOOP-03 延遲、ELOOP-04 記憶體、ELOOP-01 零雲端與綁定驗證的真機 manual-only 項目由 08-05 覆蓋。*
 
 ---
 

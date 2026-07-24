@@ -475,17 +475,19 @@ def read_peak_rss_kb(pid: int) -> int | None:
 
 **若這張表為空：** 不適用——以上 4 項皆需 executor 在裝置實測後確認或推翻。
 
-## Open Questions
+## Open Questions (RESOLVED — 2026-07-25，規劃時採納下列答案，見 08-01/08-02/08-04/08-05)
 
-1. **PC 原型測試環境（`scripts/setup_env.sh`）是否也要移除 `llama-cpp-python`？**
+1. **PC 原型測試環境（`scripts/setup_env.sh`）是否也要移除 `llama-cpp-python`？** — **(RESOLVED)**
    - What we know：CONTEXT.md D-01 的措辭聚焦在「邊緣 LLM」，`server/llm.py::EdgeLLM` 這個類別在既有 codebase 中同時服務 PC 原型與（未來）邊緣部署——兩者共用同一份 `server/llm.py`。
-   - What's unclear：若 `EdgeLLM` 徹底改成 HTTP client，PC 開發/CI 環境的單元測試該如何驗證「真的能打通 llama-server」（而非只測 mock），是否需要在 PC 上也裝一份 llama-server 供整合測試用，或是否维持「單元測試一律 monkeypatch `_call_llama_server`，不測真連線」。
-   - Recommendation：建議 planner 明確排定「單元測試層級全部 monkeypatch（如 Pattern 2 所述），不依賴真的 llama-server 進程」，並把「PC 上也能起一份 llama-server 做手動整合驗證」列為選配的驗證步驟（而非自動化測試的必要條件），避免 CI 環境需要交叉編譯產物。
+   - What's unclear（已解）：若 `EdgeLLM` 徹底改成 HTTP client，PC 開發/CI 環境的單元測試該如何驗證，是否需要在 PC 上也裝一份 llama-server 供整合測試用。
+   - Recommendation：建議 planner 明確排定「單元測試層級全部 monkeypatch，不依賴真的 llama-server 進程」，並把「PC 上也能起一份 llama-server 做手動整合驗證」列為選配步驟。
+   - **Resolution（已採納）**：08-02 Task 1/2 明訂所有 `server/llm.py` 單元測試一律 `monkeypatch.setattr(edge, "_call_llama_server", ...)`（唯一 HTTP 呼叫點），CI/PC 不需真的 llama-server 進程、不需交叉編譯產物；`scripts/setup_env.sh` **不在本 phase 修改範圍**，PC 原型維持 mock/monkeypatch 純測試，不強制移除 `llama-cpp-python`。真連線的整合驗證改為 08-05 的真機 checkpoint（ELOOP-01/03/04），屬 manual-only，非自動化測試必要條件。
 
-2. **llama-server 的埠號與 uvicorn 是否可能衝突/需要防火牆考量？**
+2. **llama-server 的埠號與 uvicorn 是否可能衝突/需要防火牆考量？** — **(RESOLVED)**
    - What we know：uvicorn 固定用 8787（`run_edge.sh` 現況），llama-server 建議另開一個埠（如 8080，llama.cpp 預設）。
-   - What's unclear：07-03 已記錄裝置 sshd 無驗證機制的已知風險——llama-server 若綁 `0.0.0.0` 而非 `127.0.0.1`，會在同網段/tailnet 上暴露一個無驗證的 LLM 推論端點，這是本 phase 若不小心會意外擴大的攻擊面。
-   - Recommendation：llama-server 啟動指令**必須**明確指定 `--host 127.0.0.1`（本文件範例已如此），不可沿用 uvicorn 的 `--host 0.0.0.0` 慣例；PLAN.md 應把這一點寫成明確的驗證項目（如 `curl` 從裝置外部 IP 打 llama-server 埠應該連不上）。
+   - What's unclear（已解）：07-03 已記錄裝置 sshd 無驗證機制——llama-server 若綁 `0.0.0.0` 會在同網段/tailnet 暴露無驗證 LLM 推論端點。
+   - Recommendation：llama-server 啟動指令**必須**明確 `--host 127.0.0.1`，並把「從裝置外部 IP curl llama-server 埠應連不上」寫成驗證項目。
+   - **Resolution（已採納）**：llama-server 埠與 uvicorn 分離（8080 vs 8787，可經 `TALKYBUDDY_LLM_SERVER_PORT` 覆寫）。綁定 127.0.0.1 由 08-01 `build_llama_server_argv` host 預設值 + 08-04 `run_edge.sh` 不硬編對外位址共同保證；對外綁定的實測驗證（外部 IP curl 預期被拒）排入 08-05 Checkpoint D（Open Question 2 的驗收落點）。
 
 ## Environment Availability
 

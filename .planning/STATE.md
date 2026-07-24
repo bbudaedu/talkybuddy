@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: 2
 milestone_name: — Genio 520 決賽 Edge MVP
-current_phase: 07
-current_phase_name: Day-0 Config Hardening & Board Bring-Up Spike
-status: complete
-stopped_at: Phase 8 context gathered
-last_updated: "2026-07-24T16:35:19.825Z"
-last_activity: 2026-07-19
-last_activity_desc: Phase 07 execution started
+current_phase: 08
+current_phase_name: CPU-Only Offline Edge Turn Loop
+status: planned
+stopped_at: Phase 8 planned (5 plans, plan-checker passed iteration 2/3)
+last_updated: "2026-07-25T01:10:00.000Z"
+last_activity: 2026-07-25
+last_activity_desc: Phase 08 planning complete — ready to execute
 progress:
   total_phases: 12
   completed_phases: 1
-  total_plans: 3
+  total_plans: 8
   completed_plans: 3
   percent: 8
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-18)
 
 **Core value:** 孩子能喊「說說學伴」進行自然、可 barge-in 的口說繁中對話，同時教學並評估，且自架串流與 Nova Sonic 兩路徑皆能達成。
-**Current focus:** Phase 07 — Day-0 Config Hardening & Board Bring-Up Spike
+**Current focus:** Phase 08 — CPU-Only Offline Edge Turn Loop
 
 ## Current Position
 
-Phase: 07 (Day-0 Config Hardening & Board Bring-Up Spike) — EXECUTING
-Plan: 3 of 3
+Phase: 08 (CPU-Only Offline Edge Turn Loop) — PLANNED, ready to execute
+Plan: 5 plans in 4 waves (08-01/02/03/04/05)
 Status: Ready to execute
-Last activity: 2026-07-19 — Phase 07 execution started
+Last activity: 2026-07-25 — plan-phase auto chain completed (research → validation → pattern-map → plan → checker×2 → 5 plans)
 
 ## Performance Metrics
 
@@ -78,7 +78,11 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- 下一步：`/gsd-plan-phase 7`（Day-0 Config Hardening & Board Bring-Up Spike）
+- 下一步：`/gsd-execute-phase 8`（CPU-Only Offline Edge Turn Loop，5 plans / 4 waves，需真機 SSH 192.168.31.78 執行 08-04/08-05 的 checkpoint:human-verify）
+
+### Plan-Phase Overrides
+
+- **[Phase 8, 2026-07-25] Decision-coverage gate override**：`check.decision-coverage-plan` 對 `08-CONTEXT.md` 回傳 `passed:false, reason:"could-not-parse"`（parser 對 `- **D-01（鎖定）：**` 這種全形冒號+括號註記格式不相容，非內容缺口）。已人工核對 D-01~D-05 皆確實出現在 08-01~08-05 plans 中（plan-checker 兩輪皆獨立確認）；選擇「Proceed anyway」，記錄於此供 verify-phase 重新浮現。
 
 ### Known-Gaps Backlog (baseline verified 2026-07-18)
 
