@@ -6,7 +6,9 @@ importlib.reload(config) 範式，驗證：
 - 預設（未設 profile）/ edge profile → config.LLM_N_CTX == 512
 - cloud profile → config.LLM_N_CTX == 1024
 - TALKYBUDDY_LLM_N_CTX env 覆寫任何 profile 的預設值
-- server/llm.py::EdgeLLM._get_model() 以 config.LLM_N_CTX 建構 Llama 的 n_ctx 參數
+- edge/runtime/run_llama_server.py::build_llama_server_argv() 以 config.LLM_N_CTX
+  組出 --ctx-size argv（llama-server 為獨立行程，n_ctx 已從 Llama(n_ctx=) 建構參數
+  搬遷為啟動 CLI flag，見 08-01/08-02）
 """
 
 from __future__ import annotations
@@ -15,8 +17,8 @@ import importlib
 
 import pytest
 
+from edge.runtime.run_llama_server import build_llama_server_argv
 from server import config
-from server.llm import EdgeLLM
 
 
 def _reset_config_env(monkeypatch):
@@ -73,40 +75,20 @@ def test_env_override_wins_over_cloud_default(monkeypatch):
     assert config.LLM_N_CTX == 768
 
 
-class _FakeGguf:
-    """假 gguf 路徑：exists() 恆回 True，避免依賴真實模型檔。"""
-
-    def exists(self) -> bool:
-        return True
-
-    def __str__(self) -> str:
-        return "/fake/qwen2.5-1.5b-instruct-q4_k_m.gguf"
-
-
-class _FakeLlama:
-    """攔截 Llama(...) 建構參數的假類別，不真的載入權重。"""
-
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
-
-
 def test_get_model_uses_config_llm_n_ctx(monkeypatch):
-    """EdgeLLM._get_model() 建構 Llama 時的 n_ctx 參數取自 config.LLM_N_CTX。"""
+    """build_llama_server_argv() 的 --ctx-size 值取自 config.LLM_N_CTX。"""
     _reset_config_env(monkeypatch)
     monkeypatch.setenv("TALKYBUDDY_PIPELINE_PROFILE", "cloud")
     monkeypatch.setenv("TALKYBUDDY_LLM_N_CTX", "999")
     importlib.reload(config)
     assert config.LLM_N_CTX == 999
 
-    from server import llm as llm_mod
+    argv = build_llama_server_argv(
+        model_path="/fake/model.gguf",
+        ctx_size=config.LLM_N_CTX,
+        host="127.0.0.1",
+        port=8080,
+        threads=4,
+    )
 
-    monkeypatch.setattr(llm_mod, "_get_gguf_path", lambda: _FakeGguf())
-    monkeypatch.setattr("llama_cpp.Llama", _FakeLlama)
-    monkeypatch.setattr(EdgeLLM, "_model", None)
-    monkeypatch.setattr(EdgeLLM, "_model_failed", False)
-
-    edge = EdgeLLM()
-    model = edge._get_model()
-
-    assert model is not None
-    assert model.kwargs["n_ctx"] == 999
+    assert argv[argv.index("--ctx-size") + 1] == "999"
