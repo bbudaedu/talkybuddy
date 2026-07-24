@@ -159,11 +159,11 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
   3. on-device 首字延遲與每回合延遲已實測，並訂出舞台可接受的 go/no-go 門檻（硬體實測數字，非假設）
   4. 三引擎鏈（ASR + LLM + TTS）於真機同時載入之峰值記憶體 < 4GB 並留有 headroom（含 `n_ctx` 收斂後的實測數字）
 
-**Plans**: 5 plans
+**Plans**: 2/5 plans executed
 **Wave 1**
 
-- [ ] 08-01-PLAN.md — config llama-server 設定 + run_llama_server.py argv builder（ELOOP-02）
-- [ ] 08-03-PLAN.md — 裝置端 ALSA audio_io + local_client 離線對話 client（ELOOP-01）
+- [x] 08-01-PLAN.md — config llama-server 設定 + run_llama_server.py argv builder（ELOOP-02）
+- [x] 08-03-PLAN.md — 裝置端 ALSA audio_io + local_client 離線對話 client（ELOOP-01）
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -251,7 +251,7 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
 | 5. Adaptive Teaching Loop & Pronunciation Assessment | baseline | Delivered | 2026-07-18 (verified) |
 | 6. Cross-Platform Cloud Deployment | baseline | Delivered w/ gap | 2026-07-18 (verified) |
 | 7. Day-0 Config Hardening & Board Bring-Up Spike | 2/3 | In Progress|  |
-| 8. CPU-Only Offline Edge Turn Loop | 0/5 | Not started | - |
+| 8. CPU-Only Offline Edge Turn Loop | 2/5 | In Progress|  |
 | 9. Network-Cut Demo Hardening | 0/? | Not started | - |
 | 10. NPU-Accelerated Perception | 0/? | Not started | - |
 | 11. Cloud Teacher Closed-Loop | 0/? | Not started | - |
