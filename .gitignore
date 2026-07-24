@@ -40,6 +40,12 @@ web/vendor/sherpa-kws/
 # gstack
 .gstack/
 
+# Phase 8 (ELOOP-02): cross-compiled llama.cpp native binaries + cloned
+# upstream source — large binaries/repo, never committed; edge/deploy/build.sh
+# regenerates both from the official ggml-org/llama.cpp repo.
+edge/deploy/bin/
+third_party/llama.cpp/
+
 # Runtime SQLite DB — seeded fresh on boot via seed_demo(); never commit demo state
 data/*.db
 # Runtime logs (server / verify / rehearsal); keep setup.log as install record
