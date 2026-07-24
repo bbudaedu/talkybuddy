@@ -117,6 +117,23 @@ async def test_cloud_unavailable_uses_edge_without_calling_synth():
     assert cloud.calls == 0          # available()=False → 不呼叫 synth
 
 
+async def test_cloud_mode_without_consent_never_calls_cloud_tts(monkeypatch):
+    """G1 回歸測試：cloud-profile + consent=False 時，雲端 TTS 不得被呼叫（家長同意繞過修補）。"""
+    from server import config
+
+    monkeypatch.setattr(config, "CONSENT_GRANTED", False)
+    edge = StubTTS(wav=b"EDGE")
+    cloud = StubCloud(wav=b"CLOUD")
+    vp = VoicePipeline(StubASR(), StubLLM(), edge, cloud_tts=cloud)
+    vp.network_mode = "cloud"
+
+    result = await vp.run_turn_text("我要一個蘋果", _emit)
+
+    assert result.tts_wav == b"EDGE"
+    assert cloud.calls == 0          # 未同意 → 絕不呼叫雲端 TTS
+    assert edge.calls == 1           # 直接降級邊緣，非因 cloud 失敗
+
+
 async def test_no_cloud_engine_defaults_to_edge():
     edge = StubTTS(wav=b"EDGE")
     vp = VoicePipeline(StubASR(), StubLLM(), edge)  # 不傳 cloud_tts → 向後相容

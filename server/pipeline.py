@@ -358,6 +358,7 @@ class VoicePipeline:
                     self.network_mode == "cloud"
                     and self.cloud_tts is not None
                     and self.cloud_tts.available()
+                    and guardrails.consent_granted()
                 ):
                     wav = await asyncio.to_thread(self.cloud_tts.synth, segments)
                 if wav is None and self.tts is not None and self.tts.available():
