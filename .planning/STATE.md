@@ -98,6 +98,7 @@ Recent decisions affecting current work:
 
 ### Blockers/Concerns
 
+- **[Phase 8, 2026-07-25，進行中]** Genio 520 板卡（`192.168.31.78`）目前連不上：`ping`/`ssh` 皆逾時。板卡經由使用者 NB/PVE 廣播的 Tailscale subnet route 才可達（見 `edge/BOARD_BRINGUP_DECISION.md`）；此路由目前似乎斷了。**卡住 08-04 checkpoint（真機交叉編譯 ABI 驗證）與整個 Wave 4（08-05：延遲/記憶體/零雲端稽核）**。開發機交叉編譯工具鏈已備妥（`gcc-aarch64-linux-gnu` 13.3.0、`cmake` 3.28.3），08-04 Task 1/2（build.sh/push.sh/run_edge.sh 腳本改寫）已完成並通過測試；一旦板卡連線恢復即可直接續跑 checkpoint，無需重新規劃或改碼。
 - 隱私為跨切面硬限制：Phase 3 起任何雲端路徑皆須先立起 consent gate + 去識別化（PRIV-01/02）
 - 既有技術債影響未來 Genio 520 移植：ffmpeg 音訊轉檔、LLM n_ctx=1024、espeak-ng-data GPL 殘留（見 .planning/codebase/CONCERNS.md）
 - 尚無 .planning/config.json：後續 GSD 工作流可能需要初始化（granularity 預設 standard、sequential 編號）
