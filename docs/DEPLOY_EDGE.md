@@ -60,13 +60,59 @@ Tailscale admin console 核准該 route；開發機同樣加入該 tailnet 後�
 
 ## 4. 驗證範圍（D-03）
 
-本 phase 「部署迴圈跑一次」的驗證範圍**只到**：
+Phase 7「部署迴圈跑一次」的驗證範圍**只到**：
 
 - server 在裝置上成功啟動（`edge/runtime/run_edge.sh` process 存活）。
 - health check 通過（`edge/deploy/run.sh` 從開發端對裝置 IP 直接 `curl`，回應成功）。
 
 **不包含**：完整聲音迴路（喚醒 → ASR → LLM → TTS 全串）、前端瀏覽器 loopback
-對話整合。這些留給 Phase 8（CPU-only 離線迴路）與後續 phase。
+對話整合。這些自 Phase 8（CPU-only 離線迴路）起補齊，見下節。
+
+## 4a. Phase 8：llama-server native binary 交叉編譯 + 部署 + 啟動接線（ELOOP-02）
+
+Phase 8 起，`edge/deploy/{build,push}.sh` 與 `edge/runtime/run_edge.sh` 額外負責把
+`server/llm.py::EdgeLLM` 呼叫的 `llama-server`（llama.cpp 內建 OpenAI-compatible
+HTTP server）native binary 生成、送上裝置並拉起：
+
+1. **`build.sh` 交叉編譯**：開發機需先裝好 aarch64 交叉工具鏈
+   （`sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake`）。
+   `build.sh` 會 clone 官方 `ggml-org/llama.cpp`（`third_party/llama.cpp/`，不使用
+   任何第三方 fork/預編譯 binary），以 build flag `-march=armv8.2-a+dotprod+i8mm`
+   `-DGGML_NATIVE=OFF`（D-02；`armv8.7-a`/`GGML_NATIVE=ON` 會編出 Cortex-A78 不
+   支援的 ISA，runtime SIGILL）交叉編譯出 `llama-server`/`llama-bench`/
+   `llama-cli`，產物置於 `edge/deploy/bin/`，並記錄編譯的 commit hash到
+   `edge/deploy/bin/LLAMACPP_COMMIT.txt`。
+   **D-03 交叉工具鏈 fallback**：若真機 `--version`/`ldd` 顯示 glibc ABI 不相容
+   （版本落差造成動態連結失敗），立即改用 `~/hackathon/` 的 Genio Yocto BSP SDK
+   官方 cross-toolchain 重編一次（`TALKYBUDDY_CROSS_CC`/`TALKYBUDDY_CROSS_CXX`
+   環境變數覆寫），不要在 apt 路徑上反覆嘗試超過一次修正。
+2. **`push.sh` 推送 binary + GGUF 模型**：除既有 `server/`、`edge/runtime`、
+   `web/` 外，另 rsync `edge/deploy/bin/`（含 `LLAMACPP_COMMIT.txt`）到裝置
+   `${TARGET_ROOT}/edge/deploy/bin/` 並 `chmod +x`，以及 GGUF 模型
+   `models/qwen2.5-1.5b-instruct-q4_k_m.gguf` 到 `${TARGET_ROOT}/models/`
+   （與 `server/config.py::LLM_GGUF` 裝置端解析路徑一致）。若來源缺失
+   （尚未跑過 `build.sh`，或 repo `models/` 無 GGUF 檔）會明確報錯，不靜默略過。
+3. **`run_edge.sh` 啟動序列**：在 `exec uvicorn` 之前，先以
+   `python -m edge.runtime.run_llama_server` 背景啟動 llama-server（該模組
+   `os.execv` 換成真正的 native binary，`--host` 一律預設 `127.0.0.1`／
+   loopback，`--ctx-size`/`--port`/`--threads` 讀 `server/config.py` 的
+   `LLM_N_CTX`/`LLM_SERVER_PORT`/`LLM_THREADS`），以 `curl` 迴圈輪詢
+   `http://127.0.0.1:${TALKYBUDDY_LLM_SERVER_PORT:-8080}/health` 最多 30 秒。
+   逾時仍未就緒**不會**中止 uvicorn 啟動——`EdgeLLM.available()` 的短逾時設計
+   本來就容忍 llama-server 稍晚就緒，pipeline 會走 scaffold-only 降級、不 crash。
+4. **綁定範圍**：llama-server 一律綁 `127.0.0.1`（不對外可路由），與 uvicorn
+   既有的 `0.0.0.0:8787`（07-03 已接受風險）完全無關；對外綁定驗證由後續
+   phase 從裝置外部 IP curl llama-server 埠執行（預期連線被拒）。
+
+**新增環境變數**（皆可覆寫，預設值見腳本內註解）：
+
+| 變數 | 用途 | 預設 |
+| --- | --- | --- |
+| `TALKYBUDDY_CROSS_CC` / `TALKYBUDDY_CROSS_CXX` | `build.sh` 交叉編譯器（D-03 fallback 切 Yocto SDK 時覆寫） | `aarch64-linux-gnu-gcc` / `aarch64-linux-gnu-g++` |
+| `TALKYBUDDY_LLAMACPP_SRC` | llama.cpp 原始碼路徑（不存在則 clone 官方 repo） | `third_party/llama.cpp` |
+| `TALKYBUDDY_LLM_SERVER_HOST` | llama-server 綁定位址（不可對外可路由） | `127.0.0.1` |
+| `TALKYBUDDY_LLM_SERVER_PORT` | llama-server 埠號（與 uvicorn 8787 分開） | `8080` |
+| `TALKYBUDDY_LLM_THREADS` | llama-server `--threads`（佔位，待 ELOOP-03 以 llama-bench 實測覆寫） | `4` |
 
 ## 5. 裝置端 Python 環境 provisioning
 

@@ -28,4 +28,28 @@ else
   PYTHON_BIN="python3"
 fi
 
+# Phase 8（ELOOP-02，Blocker 4）：先背景拉起 llama-server（edge/runtime/
+# run_llama_server.py main()，內部 os.execv 換成交叉編譯出的 native binary，
+# host 一律經該模組預設 127.0.0.1／loopback，本腳本不硬編任何對外位址），
+# 等其 /health 就緒後才 exec uvicorn。llama-server 綁定範圍與 uvicorn 的
+# 0.0.0.0（既有、已接受風險）完全無關，不得修改下方 uvicorn 啟動行。
+"${PYTHON_BIN}" -m edge.runtime.run_llama_server &
+LLAMA_SERVER_PID=$!
+
+LLAMA_SERVER_HEALTH_PORT="${TALKYBUDDY_LLM_SERVER_PORT:-8080}"
+LLAMA_SERVER_HEALTH_URL="http://127.0.0.1:${LLAMA_SERVER_HEALTH_PORT}/health"
+
+for i in $(seq 1 30); do
+  curl -sf "${LLAMA_SERVER_HEALTH_URL}" >/dev/null 2>&1 && break
+  sleep 1
+done
+
+if ! curl -sf "${LLAMA_SERVER_HEALTH_URL}" >/dev/null 2>&1; then
+  # 逾時不中止 uvicorn 啟動：EdgeLLM.available() 的短逾時設計本來就容忍
+  # llama-server 稍晚/未就緒，pipeline 會走 scaffold-only 降級，不 crash
+  # （T-08-07；RESEARCH.md Pattern 3 trade-off）。
+  echo "WARN: llama-server（PID ${LLAMA_SERVER_PID}）未在 30 秒內於 ${LLAMA_SERVER_HEALTH_URL} 回應 /health，" >&2
+  echo "      仍繼續啟動 uvicorn；本輪對話將走 scaffold-only 降級，直到 llama-server 就緒。" >&2
+fi
+
 exec "${PYTHON_BIN}" -m uvicorn server.app:app --host 0.0.0.0 --port 8787

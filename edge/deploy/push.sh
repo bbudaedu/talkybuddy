@@ -33,10 +33,31 @@ rsync -az --exclude='__pycache__' --exclude='*.pyc' edge/runtime/ "${SSH_TARGET}
 echo "  - rsync web/ -> ${TARGET_ROOT}/web"
 rsync -az --exclude='__pycache__' --exclude='*.pyc' web/ "${SSH_TARGET}:${TARGET_ROOT}/web/"
 
+echo "  - 建立裝置端 llama-server binary / GGUF 模型目標目錄"
+ssh "${SSH_TARGET}" "mkdir -p '${TARGET_ROOT}/edge/deploy/bin' '${TARGET_ROOT}/models'"
+
+echo "  - rsync edge/deploy/bin/ -> ${TARGET_ROOT}/edge/deploy/bin（交叉編譯產物 + LLAMACPP_COMMIT.txt）"
+if [ ! -e "edge/deploy/bin/llama-server" ]; then
+  echo "ERROR: 找不到 edge/deploy/bin/llama-server，請先執行 edge/deploy/build.sh 交叉編譯" >&2
+  exit 1
+fi
+rsync -az edge/deploy/bin/ "${SSH_TARGET}:${TARGET_ROOT}/edge/deploy/bin/"
+
+echo "  - chmod +x llama-server/llama-bench（裝置端可執行位元）"
+ssh "${SSH_TARGET}" "chmod +x '${TARGET_ROOT}/edge/deploy/bin/llama-server' '${TARGET_ROOT}/edge/deploy/bin/llama-bench'"
+
+GGUF_MODEL="models/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+echo "  - rsync ${GGUF_MODEL} -> ${TARGET_ROOT}/models/（GGUF 模型，與 config.LLM_GGUF 裝置端路徑一致）"
+if [ ! -e "${GGUF_MODEL}" ]; then
+  echo "ERROR: 找不到 ${GGUF_MODEL}，請先準備 GGUF 模型檔於 repo models/ 目錄再重跑 push.sh" >&2
+  exit 1
+fi
+rsync -az "${GGUF_MODEL}" "${SSH_TARGET}:${TARGET_ROOT}/models/"
+
 # 裝置端 Python 相依（venv + pip 套件）provisioning：edge/runtime/provision_device.sh
 # 已隨 edge/runtime 推送到裝置；SSH 進裝置後於 ${TARGET_ROOT} 手動執行一次：
 #   cd "${TARGET_ROOT}" && ./edge/runtime/provision_device.sh
 # （沿用 scripts/setup_env.sh 之 M1 已審釘版清單子集，見該腳本註解；本 phase
 # 不新增未釘版套件，見 edge/deploy/README.md）。
 
-echo "=== push 完成：server/、edge/runtime、web 已送達裝置 ${SSH_TARGET}:${TARGET_ROOT} ==="
+echo "=== push 完成：server/、edge/runtime、web、edge/deploy/bin/、models/*.gguf 已送達裝置 ${SSH_TARGET}:${TARGET_ROOT} ==="
