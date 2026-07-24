@@ -139,6 +139,14 @@ PIPELINE_PROFILE: str = os.environ.get("TALKYBUDDY_PIPELINE_PROFILE", "edge")
 _LLM_N_CTX_DEFAULT = 512 if PIPELINE_PROFILE == "edge" else 1024
 LLM_N_CTX: int = int(os.environ.get("TALKYBUDDY_LLM_N_CTX", str(_LLM_N_CTX_DEFAULT)))
 
+# llama-server 連線設定：llama-server 為獨立 OS 行程（非 in-process Llama 物件），
+# 這些值供 edge/runtime/run_llama_server.py 組出啟動 argv（--host/--port/--threads）。
+# host 預設 loopback 127.0.0.1（不可對外可路由，見 threat_model T-08-01）。
+# LLM_THREADS 預設 4 僅為佔位，最佳值待 ELOOP-03 以 llama-bench 實測後覆寫。
+LLM_SERVER_HOST: str = os.environ.get("TALKYBUDDY_LLM_SERVER_HOST", "127.0.0.1")
+LLM_SERVER_PORT: int = int(os.environ.get("TALKYBUDDY_LLM_SERVER_PORT", "8080"))
+LLM_THREADS: int = int(os.environ.get("TALKYBUDDY_LLM_THREADS", "4"))
+
 
 def default_network_mode() -> str:
     """cloud profile 預設走雲端管線（ElevenLabs TTS 等）；否則邊緣。"""
