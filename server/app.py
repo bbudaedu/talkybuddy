@@ -204,13 +204,20 @@ async def api_login(body: LoginBody):
 
 
 @app.post("/api/network_mode")
-async def api_network_mode(body: NetworkModeBody):
-    """切換網路模式。
+async def api_network_mode(body: NetworkModeBody,
+                           authorization: str | None = Header(default=None)):
+    """切換網路模式（D-01 的 kill-switch）。
 
     - edge：只更新模式。
     - cloud：mark_all_synced() → 近 10 筆互動 generate_diagnosis（prev=最新
       診斷）→ add_diagnosis → 回 {"synced": n, "new_diagnosis": {...}}。
+
+    此端點是主持人宣稱「現在完全離線」的操作者可觀察保證，而 uvicorn 綁
+    0.0.0.0（見 edge/runtime/run_edge.sh:63，既有已接受風險）——同網段任何
+    裝置都能打到這個埠，因此需要有效 JWT 才能翻轉；不限角色（student/
+    tutor/device 皆可，D-04 鎖定主持人就用學生畫面上的按鈕）。
     """
+    identity_from_header(authorization)  # 只需要「已驗證」，不需要 claims 內容
     mode = body.mode
     if mode not in ("edge", "cloud"):
         raise HTTPException(status_code=400, detail="mode 必須是 'edge' 或 'cloud'")
