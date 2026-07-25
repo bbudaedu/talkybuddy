@@ -14,7 +14,7 @@ def test_cloud_tts_defaults_present():
     # 模型預設 eleven_v3（情緒表現最強；驗證 v3 忽略 speed，改用情緒參數）。
     assert config.ELEVENLABS_MODEL == "eleven_v3"
     assert isinstance(config.CLOUD_TTS_TIMEOUT_S, float)
-    assert config.CLOUD_TTS_TIMEOUT_S == 6.0
+    assert config.CLOUD_TTS_TIMEOUT_S == 1.5
     # v3 voice_settings 情緒參數（取代無效的 speed）。
     assert isinstance(config.ELEVENLABS_STABILITY, float)
     assert config.ELEVENLABS_STABILITY == 0.5

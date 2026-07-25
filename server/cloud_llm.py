@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import urllib.error
 import urllib.request
 
@@ -17,8 +18,16 @@ from server import anthropic_relay, guardrails
 
 _log = logging.getLogger(__name__)
 
-# 雲端呼叫逾時（秒）；與 pipeline 外層 LLM_TIMEOUT_S 對齊，雙保險。
-_TIMEOUT_S = 8.0
+# 雲端 LLM 呼叫逾時（秒）；斷網示範（NETCUT-02／D-03）的快速失敗上界——
+# 中途斷網時，降級到 edge 引擎的等待時間就是這個值。
+# 刻意「不」與 server/pipeline.py::LLM_TIMEOUT_S 對齊：後者是 cloud/edge
+# 共用的外層包裝，必須維持寬鬆才能撐住 edge 引擎的真機生成時間，兩者是
+# 刻意解耦的（內層短、外層寬）。
+# 預設 1.5s 是為了滿足 ROADMAP「恢復 <1–2 秒」門檻而選的偏緊值，代價是
+# 真正連線良好時雲端 LLM 也可能來不及回覆而降級到 edge 品質——現場若要
+# 換回品質優先，設環境變數 CLOUD_LLM_TIMEOUT_S=4 即可，最終值待 09-04
+# 彩排實測確認。
+_TIMEOUT_S: float = float(os.environ.get("CLOUD_LLM_TIMEOUT_S", "1.5"))
 _MAX_TOKENS = 160
 
 # 台灣國小英語鷹架家教 system prompt（安全條款重用 guardrails 共用常數）

@@ -25,7 +25,14 @@ from dataclasses import dataclass, field
 
 from server import config, guardrails, scaffold, store
 
-# LLM 加值生成的逾時秒數（契約：>8s 即降級用 scaffold 結果；測試可 monkeypatch）
+# LLM 加值生成的逾時秒數（契約：>8s 即降級用 scaffold 結果；測試可 monkeypatch）。
+# 此常數套用在 _process_text() 的 `for engine in engines:` 迴圈的**每一個**
+# 引擎（cloud 與 edge 皆然），故它實際上是 **edge 引擎的安全邊界**——Phase 8
+# 真機實測 edge LLM 單階段可達 4170ms（見 edge/EDGE_TURN_LOOP_VALIDATION.md）。
+# 雲端的快速降級改由各雲端引擎自己的內層 urlopen 逾時負責
+# （server/cloud_llm.py::_TIMEOUT_S、server/config.py::CLOUD_TTS_TIMEOUT_S）；
+# 不要為了縮短雲端降級時間而調降這個值（NETCUT-02／D-03 的調和，見 09-RESEARCH.md
+# Pitfall 2）。
 LLM_TIMEOUT_S: float = 8.0
 
 # ffmpeg 轉檔逾時秒數

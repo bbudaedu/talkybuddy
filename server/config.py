@@ -108,8 +108,9 @@ ELEVENLABS_API_KEY: str = os.environ.get("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID: str = os.environ.get("ELEVENLABS_VOICE_ID", "Xb7hH8MSUJpSbSDYk0k2")
 # 合成模型：eleven_v3 情緒表現最強（真 API 驗證確認 v3 忽略 speed，改用下列情緒參數）。
 ELEVENLABS_MODEL: str = os.environ.get("ELEVENLABS_MODEL", "eleven_v3")
-# 雲端合成逾時（秒）；逾時即降級回邊緣。
-CLOUD_TTS_TIMEOUT_S: float = float(os.environ.get("CLOUD_TTS_TIMEOUT_S", "6.0"))
+# 雲端合成逾時（秒）；逾時即靜默降級回邊緣 TTS。1.5s 為斷網示範（NETCUT-02／
+# D-03）選定值，可經同名環境變數覆寫。
+CLOUD_TTS_TIMEOUT_S: float = float(os.environ.get("CLOUD_TTS_TIMEOUT_S", "1.5"))
 # 發音評測（B 軸背景，見 server/pronunciation.py）逾時（秒）；含首輪模型載入。
 # 逾時→該輪 pron=None 照寫 transcript，避免分數與 interaction 脫鉤。
 PRON_SCORE_TIMEOUT_S: float = float(os.environ.get("PRON_SCORE_TIMEOUT_S", "15.0"))
