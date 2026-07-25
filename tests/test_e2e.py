@@ -90,7 +90,7 @@ async def test_get_api_interactions_empty_when_no_data():
 async def test_post_network_mode_edge_returns_no_diagnosis():
     """POST /api/network_mode mode=edge → 只切模式，不觸發同步/診斷。"""
     async with await _client() as client:
-        resp = await client.post("/api/network_mode", json={"mode": "edge"})
+        resp = await client.post("/api/network_mode", json={"mode": "edge"}, headers=_STUDENT_AUTH)
     assert resp.status_code == 200
     body = resp.json()
     assert body == {"network_mode": "edge", "synced": 0, "new_diagnosis": None}
@@ -101,7 +101,7 @@ async def test_post_network_mode_cloud_returns_new_diagnosis():
     回應必須含非 None 的 new_diagnosis（符合 diagnosis dict 契約欄位）。
     """
     async with await _client() as client:
-        resp = await client.post("/api/network_mode", json={"mode": "cloud"})
+        resp = await client.post("/api/network_mode", json={"mode": "cloud"}, headers=_STUDENT_AUTH)
     assert resp.status_code == 200
     body = resp.json()
     assert body["network_mode"] == "cloud"
@@ -139,7 +139,7 @@ async def test_post_network_mode_cloud_marks_pending_interactions_synced():
     assert store.pending_count() == 1
 
     async with await _client() as client:
-        resp = await client.post("/api/network_mode", json={"mode": "cloud"})
+        resp = await client.post("/api/network_mode", json={"mode": "cloud"}, headers=_STUDENT_AUTH)
     body = resp.json()
     assert body["synced"] == 1
     assert body["new_diagnosis"] is not None
@@ -149,8 +149,28 @@ async def test_post_network_mode_cloud_marks_pending_interactions_synced():
 async def test_post_network_mode_invalid_mode_returns_400():
     """mode 不是 edge/cloud → 400。"""
     async with await _client() as client:
-        resp = await client.post("/api/network_mode", json={"mode": "wifi"})
+        resp = await client.post("/api/network_mode", json={"mode": "wifi"}, headers=_STUDENT_AUTH)
     assert resp.status_code == 400
+
+
+async def test_post_network_mode_requires_token():
+    """無 Authorization header → 401，且不改變 pipeline.network_mode。"""
+    pipeline.network_mode = "cloud"  # 先設一個非目標值，確認 401 請求完全不動它
+    async with await _client() as client:
+        resp = await client.post("/api/network_mode", json={"mode": "edge"})
+    assert resp.status_code == 401
+    assert pipeline.network_mode == "cloud"  # 未被改動
+
+
+async def test_post_network_mode_invalid_token_returns_401():
+    """格式錯誤/無效 token → 401。"""
+    async with await _client() as client:
+        resp = await client.post(
+            "/api/network_mode",
+            json={"mode": "edge"},
+            headers={"Authorization": "Bearer not-a-real-token"},
+        )
+    assert resp.status_code == 401
 
 
 def test_ws_talk_text_input_full_flow(monkeypatch):

@@ -12,7 +12,9 @@ from __future__ import annotations
 from starlette.testclient import TestClient
 
 from server import app as app_mod
-from server import config, diagnose, store
+from server import auth, config, diagnose, store
+
+_AUTH = {"Authorization": f"Bearer {auth.issue_token('STUDENT-AMING-004', 'student')}"}
 
 
 # ---------------------------------------------------------------------------
@@ -26,7 +28,7 @@ def test_switch_cloud_denied_without_consent(monkeypatch):
     monkeypatch.setattr(app_mod.pipeline, "_directive", None)
     client = TestClient(app_mod.app)
 
-    resp = client.post("/api/network_mode", json={"mode": "cloud"})
+    resp = client.post("/api/network_mode", json={"mode": "cloud"}, headers=_AUTH)
 
     assert resp.status_code == 200
     body = resp.json()
@@ -47,7 +49,7 @@ def test_switch_cloud_allowed_with_consent(monkeypatch):
     monkeypatch.setattr(app_mod.pipeline, "_directive", None)
     client = TestClient(app_mod.app)
 
-    resp = client.post("/api/network_mode", json={"mode": "cloud"})
+    resp = client.post("/api/network_mode", json={"mode": "cloud"}, headers=_AUTH)
 
     assert resp.status_code == 200
     body = resp.json()

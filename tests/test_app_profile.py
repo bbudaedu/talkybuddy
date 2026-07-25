@@ -6,7 +6,9 @@ from __future__ import annotations
 from starlette.testclient import TestClient
 
 from server import app as app_mod
-from server import store
+from server import auth, store
+
+_AUTH = {"Authorization": f"Bearer {auth.issue_token('STUDENT-AMING-004', 'student')}"}
 
 
 def test_switch_cloud_builds_and_saves_profile():
@@ -19,7 +21,7 @@ def test_switch_cloud_builds_and_saves_profile():
     })
     client = TestClient(app_mod.app)
 
-    resp = client.post("/api/network_mode", json={"mode": "cloud"})
+    resp = client.post("/api/network_mode", json={"mode": "cloud"}, headers=_AUTH)
 
     assert resp.status_code == 200
     prof = store.get_profile()
@@ -33,6 +35,6 @@ def test_switch_edge_does_not_build_profile():
     """切回 edge → 不建 profile（保持異步、只在 cloud 時機更新）。"""
     client = TestClient(app_mod.app)
 
-    client.post("/api/network_mode", json={"mode": "edge"})
+    client.post("/api/network_mode", json={"mode": "edge"}, headers=_AUTH)
 
     assert store.get_profile() is None

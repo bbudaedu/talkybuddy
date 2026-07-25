@@ -6,6 +6,9 @@ from __future__ import annotations
 from starlette.testclient import TestClient
 
 from server import app as app_mod
+from server import auth
+
+_AUTH = {"Authorization": f"Bearer {auth.issue_token('STUDENT-AMING-004', 'student')}"}
 
 
 def test_switch_cloud_populates_pipeline_directive(monkeypatch):
@@ -13,7 +16,7 @@ def test_switch_cloud_populates_pipeline_directive(monkeypatch):
     monkeypatch.setattr(app_mod.pipeline, "_directive", None)
     client = TestClient(app_mod.app)
 
-    resp = client.post("/api/network_mode", json={"mode": "cloud"})
+    resp = client.post("/api/network_mode", json={"mode": "cloud"}, headers=_AUTH)
 
     assert resp.status_code == 200
     assert resp.json()["network_mode"] == "cloud"
@@ -29,6 +32,6 @@ def test_switch_edge_does_not_touch_directive(monkeypatch):
     monkeypatch.setattr(app_mod.pipeline, "_directive", "舊策略")
     client = TestClient(app_mod.app)
 
-    client.post("/api/network_mode", json={"mode": "edge"})
+    client.post("/api/network_mode", json={"mode": "edge"}, headers=_AUTH)
 
     assert app_mod.pipeline._directive == "舊策略"
