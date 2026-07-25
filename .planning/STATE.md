@@ -5,8 +5,8 @@ milestone_name: — Genio 520 決賽 Edge MVP
 current_phase: 08
 current_phase_name: CPU-Only Offline Edge Turn Loop
 status: executing
-stopped_at: Phase 9 context gathered
-last_updated: "2026-07-25T11:13:26.150Z"
+stopped_at: Phase 9 UI-SPEC approved
+last_updated: "2026-07-25T11:24:08.899Z"
 last_activity: 2026-07-25
 last_activity_desc: 08-05 checkpoint closed (A/B/C/D real-hardware PASS/GO), worktree merged into gsd/2-genio-520-edge-mvp and removed
 progress:
@@ -116,6 +116,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-07-25T11:13:26.145Z
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-network-cut-demo-hardening/09-CONTEXT.md
+Last session: 2026-07-25T11:24:08.894Z
+Stopped at: Phase 9 UI-SPEC approved
+Resume file: .planning/phases/09-network-cut-demo-hardening/09-UI-SPEC.md
