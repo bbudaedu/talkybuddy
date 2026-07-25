@@ -30,7 +30,7 @@
 ### NETCUT — 現場斷網橋段（demo 勝負手）
 
 - [x] **NETCUT-01**: 主持人手動 kill-switch 為主要斷網機制（非僅依賴自動網路偵測）；切斷雲端 uplink 時裝置持續離線對話（瀏覽器↔本機 server loopback 不受影響）
-- [ ] **NETCUT-02**: 縮短 / race 雲端 timeout 並暫停背景輪詢，避免斷網時多秒靜默 hang；提供可見的「offline mode」切換 UI / badge
+- [x] **NETCUT-02**: 縮短 / race 雲端 timeout 並暫停背景輪詢，避免斷網時多秒靜默 hang；提供可見的「offline mode」切換 UI / badge
 - [ ] **NETCUT-03**: 實體斷網彩排腳本（重複實機演練，非只自動偵測）
 
 ### NPU — NPU 加速感知（加值、time-boxed、stop-loss）
@@ -77,7 +77,7 @@
 | ELOOP-03 | Phase 8 | Pending |
 | ELOOP-04 | Phase 8 | Pending |
 | NETCUT-01 | Phase 9 | Complete |
-| NETCUT-02 | Phase 9 | Pending |
+| NETCUT-02 | Phase 9 | Complete |
 | NETCUT-03 | Phase 9 | Pending |
 | NPU-01 | Phase 10 | Pending |
 | NPU-02 | Phase 10 | Pending |
