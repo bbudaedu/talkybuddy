@@ -334,11 +334,17 @@ class VoicePipeline:
         try:
             from server import diagnose
 
+            # 09-RESEARCH.md Pitfall 4 的側通道閘門：在進入背景任務當下就把
+            # network_mode 取出成區域變數，讓閉包捕捉的是確定值而非執行緒
+            # 執行時才讀屬性；edge 模式下不得觸發雲端出境（consent 之外的
+            # 第三道閘門），但本地規則式刷新仍要跑，不整段跳過。
+            allow_cloud = self.network_mode == "cloud"
+
             def _work():
                 recent = store.list_interactions(limit=10)
                 diagnoses = store.list_diagnoses()
                 prev = diagnoses[-1] if diagnoses else None
-                diag = diagnose.generate_diagnosis(recent, prev)
+                diag = diagnose.generate_diagnosis(recent, prev, allow_cloud=allow_cloud)
                 store.add_diagnosis(diag)  # 持久化（含 companion_directive）
                 # B3 接法 A：帶 level_state，CEFR 難度/語言形式折進注入字串
                 return diagnose.format_directive_for_prompt(

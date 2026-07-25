@@ -608,17 +608,24 @@ def _call_anthropic_api(interactions: list[dict], prev: dict | None, cfg: dict) 
 # ---------------------------------------------------------------------------
 
 def generate_diagnosis(interactions: list[dict], prev: dict | None,
-                       profile: dict | None = None) -> dict:
+                       profile: dict | None = None, allow_cloud: bool = True) -> dict:
     """產生今日學習診斷 dict（欄位契約見 CONTRACTS.md）。
 
     偵測到雲端腦憑證時（見 _resolve_api_config，支援官方金鑰或自架中轉）
     先嘗試真 API，任何失敗即靜默 fallback 到規則式 mock —— mock 是 demo 主線。
+
+    allow_cloud：第三道出境閘門（預設 True，向後相容既有呼叫端）。
+    network_mode 為 edge（D-01 kill-switch 已切斷雲端）時，呼叫端須傳入
+    allow_cloud=False——構成 consent 之外的第三道出境閘門，見
+    VoicePipeline._refresh_directive（09-RESEARCH.md Pitfall 4）。
     """
     cfg = anthropic_relay.resolve_config()
     result = None
     # B4-5 consent gate：真正的雲端資料出境 chokepoint。未取得家長同意時，
     # 即使有憑證也不上雲，改走本地規則式（背景 _refresh_directive 亦涵蓋）。
-    if cfg and guardrails.consent_granted():
+    # allow_cloud 放最前面短路：network_mode 為 edge 時連 resolve_config 的
+    # 結果都不看，直接跳過雲端分支。
+    if allow_cloud and cfg and guardrails.consent_granted():
         try:
             result = _call_anthropic_api(interactions, prev, cfg)
         except Exception:

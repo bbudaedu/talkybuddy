@@ -134,7 +134,9 @@ async def test_refresh_directive_updates_cache(monkeypatch):
             "fallback_hint": "退回單句",
         },
     }
-    monkeypatch.setattr(diagnose, "generate_diagnosis", lambda recent, prev: fake_diag)
+    monkeypatch.setattr(
+        diagnose, "generate_diagnosis", lambda recent, prev, **kwargs: fake_diag
+    )
 
     vp = VoicePipeline(asr=None, llm=CapturingLLM(), tts=StubTTS())
     await vp._refresh_directive()
@@ -164,7 +166,9 @@ async def test_refresh_directive_folds_level_state_cefr(monkeypatch):
             "prompt_strength": "maintain",
         },
     }
-    monkeypatch.setattr(diagnose, "generate_diagnosis", lambda recent, prev: fake_diag)
+    monkeypatch.setattr(
+        diagnose, "generate_diagnosis", lambda recent, prev, **kwargs: fake_diag
+    )
 
     vp = VoicePipeline(asr=None, llm=CapturingLLM(), tts=StubTTS())
     await vp._refresh_directive()
