@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: 2
 milestone_name: Genio 520 決賽 Edge MVP
-current_phase: 08
-current_phase_name: CPU-Only Offline Edge Turn Loop
+current_phase: 09
+current_phase_name: Network-Cut Demo Hardening
 status: executing
-stopped_at: 08-04 checkpoint resolved on real hardware (i8mm SIGILL found+fixed); next is 08-05
-last_updated: "2026-07-25T07:55:00.000Z"
+stopped_at: Phase 8 delivered (08-05 real-hardware A/B/C/D checkpoint PASS/GO, merged to gsd/2-genio-520-edge-mvp); worktree merged & removed; Phase 9 not yet planned
+last_updated: "2026-07-25T09:10:00.000Z"
 last_activity: 2026-07-25
-last_activity_desc: Board reachable again; resolved 08-04 checkpoint with real-device llama-server inference (root-caused+fixed a +i8mm SIGILL crash)
+last_activity_desc: Phase 8 收尾——worktree agent-a176e55c40c497977 已合併並移除，ROADMAP/STATE 更新反映 5/5 plans delivered
 progress:
   total_phases: 12
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 8
-  completed_plans: 3
-  percent: 8
+  completed_plans: 8
+  percent: 17
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-18)
 
 ## Current Position
 
-Phase: 08 (CPU-Only Offline Edge Turn Loop) — EXECUTING
-Plan: 4 of 5 done (checkpoint resolved), next: 08-05 (延遲/記憶體/零雲端稽核)
-Status: Executing Phase 08
-Last activity: 2026-07-25 — 08-04 checkpoint resolved on real Genio 520 hardware (see 08-04-SUMMARY.md)
+Phase: 08 (CPU-Only Offline Edge Turn Loop) — DELIVERED
+Plan: 5 of 5 done. Next: Phase 09 (Network-Cut Demo Hardening) — not yet planned
+Status: Phase 08 complete; Phase 09 awaiting discuss/plan
+Last activity: 2026-07-25 — 08-05 checkpoint closed (A/B/C/D real-hardware PASS/GO), worktree merged into gsd/2-genio-520-edge-mvp and removed
 
 ## Performance Metrics
 
@@ -79,7 +79,8 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- 下一步：`/gsd-execute-phase 8`（08-05：延遲/記憶體/零雲端稽核，最後一個 wave；08-04 checkpoint 已於 2026-07-25 真機解決）
+- 下一步：`/gsd-discuss-phase 9`（Network-Cut Demo Hardening — 主持人手動斷網後裝置持續離線對話，決賽創意/可行性評分最高槓桿）
+- 待議（非阻擋）：08-05 殘留缺口——暖身後冷啟動首句仍 5.85s（NO-GO，門檻 3–4s）；根因是固定回覆規則尾巴文字在 user_prompt 尾巴、暖身焐熱不到，若要壓進門檻需將該段移入 `_SYSTEM_PROMPT` 並重新真機驗證（估計再省 1–1.5 秒）；現場暫以「主持人先暖場一輪」規避
 
 ### Plan-Phase Overrides
 
@@ -115,6 +116,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-07-25T07:55:00.000Z
-Stopped at: 08-04 checkpoint resolved on real hardware; ready to start 08-05
-Resume file: .planning/phases/08-cpu-only-offline-edge-turn-loop/08-05-PLAN.md
+Last session: 2026-07-25T09:10:00.000Z
+Stopped at: Phase 8 fully delivered and merged; worktree cleaned up; Phase 9 not yet discussed/planned
+Resume file: .planning/phases/08-cpu-only-offline-edge-turn-loop/08-05-SUMMARY.md (Phase 8 closed); next resume point is `/gsd-discuss-phase 9`

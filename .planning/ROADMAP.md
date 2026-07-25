@@ -30,8 +30,8 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
 
 ### Milestone 2 — Genio 520 決賽 Edge MVP (in progress)
 
-- [ ] **Phase 7: Day-0 Config Hardening & Board Bring-Up Spike** - 結清 n_ctx/ffmpeg 等技術債、立起 edge/ 骨架與 adb 部署管線，並對 Yocto vs Android 14 做出 go/no-go 決策
-- [ ] **Phase 8: CPU-Only Offline Edge Turn Loop** - 全 CPU 引擎在真機跑出完整離線聽→想→說中英雙語鷹架帶讀迴圈（決賽存亡關鍵）
+- [x] **Phase 7: Day-0 Config Hardening & Board Bring-Up Spike** - 結清 n_ctx/ffmpeg 等技術債、立起 edge/ 骨架與 adb 部署管線，並對 Yocto vs Android 14 做出 go/no-go 決策
+- [x] **Phase 8: CPU-Only Offline Edge Turn Loop** - 全 CPU 引擎在真機跑出完整離線聽→想→說中英雙語鷹架帶讀迴圈（決賽存亡關鍵）
 - [ ] **Phase 9: Network-Cut Demo Hardening** - 主持人手動斷網後裝置持續離線對話，無多秒靜默 hang
 - [ ] **Phase 10: NPU-Accelerated Perception** - ASR 經 NPU delegate 加速並通過繁中品質閘，含停損機制可退回 CPU 基線
 - [ ] **Phase 11: Cloud Teacher Closed-Loop** - 邊緣衍生文字/分數機會式同步上雲，經 direct Bedrock Converse 產出診斷並顯示於教師儀表板
@@ -159,7 +159,7 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
   3. on-device 首字延遲與每回合延遲已實測，並訂出舞台可接受的 go/no-go 門檻（硬體實測數字，非假設）
   4. 三引擎鏈（ASR + LLM + TTS）於真機同時載入之峰值記憶體 < 4GB 並留有 headroom（含 `n_ctx` 收斂後的實測數字）
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans executed
 **Wave 1**
 
 - [x] 08-01-PLAN.md — config llama-server 設定 + run_llama_server.py argv builder（ELOOP-02）
@@ -175,7 +175,7 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 08-05-PLAN.md — 真機延遲 go/no-go + 跨行程記憶體峰值 + 零雲端稽核 + 綁定驗證（ELOOP-01/03/04）
+- [x] 08-05-PLAN.md — 真機延遲 go/no-go + 跨行程記憶體峰值 + 零雲端稽核 + 綁定驗證（ELOOP-01/03/04）：A（延遲）GO 穩態 2.96–2.99s／冷啟動暖身後 5.85s 仍 NO-GO（根因已查明，殘餘缺口列 Phase 9 前待辦）；B（記憶體）PASS ≈2723MB／33.5% 餘裕；C（零雲端）PASS；D（綁定）PASS
 
 ### Phase 9: Network-Cut Demo Hardening
 
@@ -250,8 +250,8 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
 | 4. Live Nova Sonic S2S Conversation (Path 2) | baseline | Delivered | 2026-07-18 (verified) |
 | 5. Adaptive Teaching Loop & Pronunciation Assessment | baseline | Delivered | 2026-07-18 (verified) |
 | 6. Cross-Platform Cloud Deployment | baseline | Delivered w/ gap | 2026-07-18 (verified) |
-| 7. Day-0 Config Hardening & Board Bring-Up Spike | 2/3 | In Progress|  |
-| 8. CPU-Only Offline Edge Turn Loop | 4/5 | In Progress|  |
+| 7. Day-0 Config Hardening & Board Bring-Up Spike | 3/3 | Delivered | 2026-07-25 |
+| 8. CPU-Only Offline Edge Turn Loop | 5/5 | Delivered | 2026-07-25 |
 | 9. Network-Cut Demo Hardening | 0/? | Not started | - |
 | 10. NPU-Accelerated Perception | 0/? | Not started | - |
 | 11. Cloud Teacher Closed-Loop | 0/? | Not started | - |
