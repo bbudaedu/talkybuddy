@@ -190,3 +190,71 @@ def test_ws_talk_text_input_full_flow(monkeypatch):
             assert reply_msg["fallback"] is False
             assert reply_msg["seq"] >= 1
             assert set(reply_msg["scores"].keys()) == {"fluency", "vocabulary", "grammar"}
+
+
+class _CountingLLM:
+    """可區分雲端/邊緣回覆的計數 stub，符合 EdgeLLM/CloudLLM 的 available()/generate() 契約。"""
+
+    def __init__(self, label: str):
+        self.label = label
+        self.calls = 0
+
+    def available(self) -> bool:
+        return True
+
+    def generate(self, student_text, scaffold_result, directive=None):
+        self.calls += 1
+        return f"{self.label}回覆：跟我說一遍：I see a cat"
+
+
+def test_network_mode_switch_affects_live_ws_session(monkeypatch):
+    """NETCUT-01 活體 WS 回歸測試：不重整頁面、不重連 WS，切換飛航模式後下一回合真的走 edge。
+
+    修復前（conn_pipe.network_mode 只在連線當下複製一次）此測試必為 RED——第二回合
+    仍會呼叫 cloud stub；修復後（每回合 dispatch 前重新從全域 pipeline.network_mode
+    同步）轉 GREEN。
+    """
+    from starlette.testclient import TestClient
+
+    from server import app as app_module
+
+    cloud_stub = _CountingLLM("雲端")
+    edge_stub = _CountingLLM("邊緣")
+    monkeypatch.setattr(app_module, "cloud_llm_engine", cloud_stub)
+    monkeypatch.setattr(app_module, "llm_engine", edge_stub)
+    monkeypatch.setattr(app_module.tts_engine, "available", lambda: False)
+
+    tok = auth.issue_token("STUDENT-AMING-004", "student")
+    auth_headers = {"Authorization": f"Bearer {tok}"}
+
+    with TestClient(app_module.app) as client:
+        # 先切 cloud，開 WS，跑第一回合
+        resp = client.post("/api/network_mode", json={"mode": "cloud"}, headers=auth_headers)
+        assert resp.status_code == 200
+
+        with client.websocket_connect(f"/ws/talk?token={tok}") as ws:
+            ws.send_json({"type": "text_input", "text": "我要一個蘋果"})
+            for _ in range(6):
+                data = ws.receive_json()
+                if data["type"] in ("tts_audio", "tts_unavailable"):
+                    break
+            assert cloud_stub.calls == 1
+            assert edge_stub.calls == 0
+
+            # 不關閉這條 WS，切到 edge（在 WS session 開著時發第二個 POST；starlette
+            # TestClient 的 websocket portal 支援此併發，見 09-RESEARCH.md Code Examples）
+            resp2 = client.post("/api/network_mode", json={"mode": "edge"}, headers=auth_headers)
+            assert resp2.status_code == 200
+
+            # 同一條 WS 上送第二次 text_input：應改走 edge，cloud 不再被呼叫
+            ws.send_json({"type": "text_input", "text": "我要一個蘋果"})
+            for _ in range(6):
+                data = ws.receive_json()
+                if data["type"] in ("tts_audio", "tts_unavailable"):
+                    break
+
+    assert cloud_stub.calls == 1  # 沒有再被呼叫
+    assert edge_stub.calls >= 1
+
+    rows = store.list_interactions(limit=10)
+    assert rows[0]["network_mode"] == "edge"  # 第二回合寫入的那筆
