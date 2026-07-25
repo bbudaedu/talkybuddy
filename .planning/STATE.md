@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: 2
 milestone_name: — Genio 520 決賽 Edge MVP
-current_phase: 08
-current_phase_name: CPU-Only Offline Edge Turn Loop
+current_phase: 09
+current_phase_name: Network-Cut Demo Hardening
 status: executing
-stopped_at: Phase 9 UI-SPEC approved
-last_updated: "2026-07-25T11:24:08.899Z"
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-07-25T12:18:19.017Z"
 last_activity: 2026-07-25
-last_activity_desc: 08-05 checkpoint closed (A/B/C/D real-hardware PASS/GO), worktree merged into gsd/2-genio-520-edge-mvp and removed
+last_activity_desc: "09-01 executed: fixed NETCUT-01 core bug (conn_pipe.network_mode was never re-synced from the global on an already-open /ws/talk session) + added JWT gate to POST /api/network_mode; full test suite green (333 passed)"
 progress:
   total_phases: 12
   completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
-  percent: 17
+  total_plans: 12
+  completed_plans: 9
+  percent: 75
 ---
 
 # Project State
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-18)
 
 **Core value:** 孩子能喊「說說學伴」進行自然、可 barge-in 的口說繁中對話，同時教學並評估，且自架串流與 Nova Sonic 兩路徑皆能達成。
-**Current focus:** Phase 08 — CPU-Only Offline Edge Turn Loop
+**Current focus:** Phase 09 — Network-Cut Demo Hardening
 
 ## Current Position
 
-Phase: 08 (CPU-Only Offline Edge Turn Loop) — DELIVERED
-Plan: 5 of 5 done. Next: Phase 09 (Network-Cut Demo Hardening) — not yet planned
-Status: Phase 08 complete; Phase 09 awaiting discuss/plan
-Last activity: 2026-07-25 — 08-05 checkpoint closed (A/B/C/D real-hardware PASS/GO), worktree merged into gsd/2-genio-520-edge-mvp and removed
+Phase: 09 (Network-Cut Demo Hardening) — IN PROGRESS
+Plan: 1 of 4 done. Next: Phase 09 Plan 02 (timeout hardening — see 09-02-PLAN.md)
+Status: Executing — 09-01 committed, ready to continue with 09-02
+Last activity: 2026-07-25 — 09-01 executed: fixed NETCUT-01 core bug (conn_pipe.network_mode was never re-synced from the global on an already-open /ws/talk session) + added JWT gate to POST /api/network_mode; full test suite green (333 passed)
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Last activity: 2026-07-25 — 08-05 checkpoint closed (A/B/C/D real-hardware PAS
 |------|----------|-------|-------|
 | Phase 07 P01 | 20min | 2 tasks | 3 files |
 | Phase 07 P02 | 15min | 2 tasks | 9 files |
+| Phase 09 P01 | 15min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,8 @@ Recent decisions affecting current work:
 - [Phase ?]: run_edge.sh 以 BASH_SOURCE 自身位置相對定位部署根目錄，不硬編個人 home 絕對路徑（D-02）
 - [Phase ?]: edge/deploy push.sh/run.sh 的裝置端 proot rootfs 與部署目標路徑用環境變數宣告預設值並可覆寫，待真機驗證後調整
 - **[Phase 8, 2026-07-25，真機驗證修正]** D-02 的 `-march=armv8.2-a+dotprod+i8mm` 假設有誤：真機 `/proc/cpuinfo` 顯示這顆 Genio 520（6x Cortex-A55 + 2x Cortex-A78）沒有 `i8mm`，含此旗標編出的 binary 一進入推論就 SIGILL（非 D-03 預期的 glibc ABI 問題）。已移除 `+i8mm`、保留 `+dotprod`，重編重推後真機推論成功。見 `08-CONTEXT.md` D-02 修正註記與 `08-04-SUMMARY.md`。
+- [Phase 09]: NETCUT-01 修復：conn_pipe.network_mode 每回合前重新從全域 pipeline.network_mode 同步（09-01），修好 kill-switch 對已開著 WS session 無效的核心缺陷
+- [Phase 09]: POST /api/network_mode 加上 JWT 閘門（identity_from_header），收斂 uvicorn 0.0.0.0 綁定下同網段任何裝置可翻轉離線宣稱的信任邊界（09-01，T-09-02）；不限角色（D-04）
 
 ### Pending Todos
 
@@ -116,6 +119,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-07-25T11:24:08.894Z
-Stopped at: Phase 9 UI-SPEC approved
-Resume file: .planning/phases/09-network-cut-demo-hardening/09-UI-SPEC.md
+Last session: 2026-07-25T12:18:19.012Z
+Stopped at: Completed 09-01-PLAN.md
+Resume file: None
