@@ -414,6 +414,7 @@ async def ws_talk(websocket: WebSocket):
         data = bytes(audio_buffer)
         audio_buffer.clear()
         try:
+            conn_pipe.network_mode = pipeline.network_mode  # 每輪前重新承接全域模式（D-01 kill-switch 對進行中連線生效）
             result = await conn_pipe.run_turn_audio(data, emit)
             await send_turn_result(result, include_asr=True)
         except Exception:
@@ -472,6 +473,7 @@ async def ws_talk(websocket: WebSocket):
             elif mtype == "text_input":
                 text = str(payload.get("text", "") or "")
                 try:
+                    conn_pipe.network_mode = pipeline.network_mode  # 同上，第二個呼叫點
                     result = await conn_pipe.run_turn_text(text, emit)
                     await send_turn_result(result, include_asr=False)
                 except Exception:
