@@ -5,16 +5,16 @@ milestone_name: — Genio 520 決賽 Edge MVP
 current_phase: 09
 current_phase_name: Network-Cut Demo Hardening
 status: executing
-stopped_at: Completed 09-03-PLAN.md
-last_updated: "2026-07-25T12:29:29.535Z"
+stopped_at: Completed 09-04-PLAN.md
+last_updated: "2026-07-25T12:35:12.620Z"
 last_activity: 2026-07-25
 last_activity_desc: "09-01 executed: fixed NETCUT-01 core bug (conn_pipe.network_mode was never re-synced from the global on an already-open /ws/talk session) + added JWT gate to POST /api/network_mode; full test suite green (333 passed)"
 progress:
   total_phases: 12
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 12
-  completed_plans: 11
-  percent: 17
+  completed_plans: 12
+  percent: 25
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-18)
 ## Current Position
 
 Phase: 09 (Network-Cut Demo Hardening) — IN PROGRESS
-Plan: 3 of 4 done. Next: Phase 09 Plan 02 (timeout hardening — see 09-02-PLAN.md)
+Plan: 4 of 4 done. Next: Phase 09 Plan 02 (timeout hardening — see 09-02-PLAN.md)
 Status: Executing — 09-01 committed, ready to continue with 09-02
 Last activity: 2026-07-25 — 09-01 executed: fixed NETCUT-01 core bug (conn_pipe.network_mode was never re-synced from the global on an already-open /ws/talk session) + added JWT gate to POST /api/network_mode; full test suite green (333 passed)
 
@@ -62,6 +62,7 @@ Last activity: 2026-07-25 — 09-01 executed: fixed NETCUT-01 core bug (conn_pip
 | Phase 09 P01 | 15min | 2 tasks | 5 files |
 | Phase 09 P02 | 20min | 3 tasks | 8 files |
 | Phase 09 P03 | 5min | 2 tasks | 1 files |
+| Phase 09 P04 | 20min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,8 @@ Recent decisions affecting current work:
 - [Phase 09]: POST /api/network_mode 加上 JWT 閘門（identity_from_header），收斂 uvicorn 0.0.0.0 綁定下同網段任何裝置可翻轉離線宣稱的信任邊界（09-01，T-09-02）；不限角色（D-04）
 - [Phase ?]: [Phase 09] NETCUT-02 逾時硬化：LLM_TIMEOUT_S 維持 8.0（D-03 意圖優先於字面清單，執行理由記錄於 09-02-SUMMARY.md），只縮短雲端專屬內層逾時（cloud_llm._TIMEOUT_S、config.CLOUD_TTS_TIMEOUT_S 皆 1.5，可 env 覆寫）；並補上 diagnose.generate_diagnosis(allow_cloud=) 閘門，關掉背景 _refresh_directive 唯一繞過 kill-switch 的出境側通道
 - [Phase ?]: [Phase 09] Badge/toast 視覺硬化（09-03）：modeBadge padding 4px 12px、dot 12px、一次性 badgePulse 動效（僅主動切換觸發，5 秒輪詢不觸發）；toast 文案改明講「雲端已斷線」
+- [Phase ?]: M1(降級決策延遲)/M2(可聽見回覆恢復時間) 操作定義拆分：M1適用ROADMAP <1-2秒門檻(型態B理論上界3.0s)，M2不套用1-2秒門檻、繼承Phase 8已接受的edge回合預算
+- [Phase ?]: dump_recent_turns.py main() 對DB讀取失敗(含未初始化schema)一律視為無紀錄，不拋例外——彩排現場工具絕不能中斷
 
 ### Pending Todos
 
@@ -123,6 +126,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-07-25T12:29:29.530Z
-Stopped at: Completed 09-03-PLAN.md
+Last session: 2026-07-25T12:35:12.616Z
+Stopped at: Completed 09-04-PLAN.md
 Resume file: None

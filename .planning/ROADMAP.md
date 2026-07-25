@@ -32,7 +32,7 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
 
 - [x] **Phase 7: Day-0 Config Hardening & Board Bring-Up Spike** - 結清 n_ctx/ffmpeg 等技術債、立起 edge/ 骨架與 adb 部署管線，並對 Yocto vs Android 14 做出 go/no-go 決策
 - [x] **Phase 8: CPU-Only Offline Edge Turn Loop** - 全 CPU 引擎在真機跑出完整離線聽→想→說中英雙語鷹架帶讀迴圈（決賽存亡關鍵）
-- [ ] **Phase 9: Network-Cut Demo Hardening** - 主持人手動斷網後裝置持續離線對話，無多秒靜默 hang
+- [x] **Phase 9: Network-Cut Demo Hardening** - 主持人手動斷網後裝置持續離線對話，無多秒靜默 hang (completed 2026-07-25)
 - [ ] **Phase 10: NPU-Accelerated Perception** - ASR 經 NPU delegate 加速並通過繁中品質閘，含停損機制可退回 CPU 基線
 - [ ] **Phase 11: Cloud Teacher Closed-Loop** - 邊緣衍生文字/分數機會式同步上雲，經 direct Bedrock Converse 產出診斷並顯示於教師儀表板
 - [ ] **Phase 12: Nova Sonic Online Staging & Final Rehearsal** - Nova Sonic 連網 S2S staging 作為斷網橋段前導，含完整彩排與備援影片（最低優先，落後先砍）
@@ -189,14 +189,14 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
   3. UI 提供明確可見的 online/offline 狀態切換（badge），讓觀眾能親眼確認離線宣稱
   4. 斷網彩排腳本已完成 ≥3 次實體斷網重複演練（含講話中途斷網），且每次恢復時間 <1–2 秒
 
-**Plans**: 3/4 plans executed
+**Plans**: 4/4 plans complete
 
 Plans:
 
 - [x] 09-01-PLAN.md — 每回合再同步 conn_pipe.network_mode（kill-switch 對進行中連線生效）＋ /api/network_mode JWT 閘門
 - [x] 09-02-PLAN.md — 只縮短雲端專屬內層逾時（LLM/TTS 1.5s），LLM_TIMEOUT_S 保持 8.0；背景診斷出境側通道加 network_mode 閘門
 - [x] 09-03-PLAN.md — modeBadge 舞台可辨識強化（padding/色點/一次性 pulse）＋ 斷網敘事 toast 文案
-- [ ] 09-04-PLAN.md — 斷網彩排腳本（M1/M2 操作定義、兩種演練型態、結果表）＋ 裝置端量測工具
+- [x] 09-04-PLAN.md — 斷網彩排腳本（M1/M2 操作定義、兩種演練型態、結果表）＋ 裝置端量測工具
 
 **UI hint**: yes
 
@@ -265,7 +265,7 @@ Plans:
 | 6. Cross-Platform Cloud Deployment | baseline | Delivered w/ gap | 2026-07-18 (verified) |
 | 7. Day-0 Config Hardening & Board Bring-Up Spike | 3/3 | Delivered | 2026-07-25 |
 | 8. CPU-Only Offline Edge Turn Loop | 5/5 | Delivered | 2026-07-25 |
-| 9. Network-Cut Demo Hardening | 3/4 | In Progress|  |
+| 9. Network-Cut Demo Hardening | 4/4 | Complete   | 2026-07-25 |
 | 10. NPU-Accelerated Perception | 0/? | Not started | - |
 | 11. Cloud Teacher Closed-Loop | 0/? | Not started | - |
 | 12. Nova Sonic Online Staging & Final Rehearsal | 0/? | Not started | - |
