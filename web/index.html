@@ -726,10 +726,10 @@ airplaneSwitch.addEventListener("click", function () {
         playSyncFx();
         showToast("☁️ 已同步 " + (res.synced != null ? res.synced : 0) + " 筆｜Hermes Agent 已產出最新診斷", 4200);
       } else {
-        showToast("已切回雲端連線");
+        showToast("☁️ 已切回雲端連線");
       }
     } else {
-      showToast("✈️ 飛航模式開啟，改用邊緣端運算");
+      showToast("✈️ 飛航模式開啟，雲端已斷線 — 邊緣運算持續對話");
     }
     refreshStatus();
   }).catch(function () {
