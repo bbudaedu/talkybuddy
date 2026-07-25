@@ -189,8 +189,19 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
   3. UI 提供明確可見的 online/offline 狀態切換（badge），讓觀眾能親眼確認離線宣稱
   4. 斷網彩排腳本已完成 ≥3 次實體斷網重複演練（含講話中途斷網），且每次恢復時間 <1–2 秒
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — 每回合再同步 conn_pipe.network_mode（kill-switch 對進行中連線生效）＋ /api/network_mode JWT 閘門
+- [ ] 09-02-PLAN.md — 只縮短雲端專屬內層逾時（LLM/TTS 1.5s），LLM_TIMEOUT_S 保持 8.0；背景診斷出境側通道加 network_mode 閘門
+- [ ] 09-03-PLAN.md — modeBadge 舞台可辨識強化（padding/色點/一次性 pulse）＋ 斷網敘事 toast 文案
+- [ ] 09-04-PLAN.md — 斷網彩排腳本（M1/M2 操作定義、兩種演練型態、結果表）＋ 裝置端量測工具
+
 **UI hint**: yes
+
+**Planner reconciliations**（規劃期調和，執行前請確認）：
+- 成功條件 #2 的「已具備主動網路偵測」由 09-CONTEXT.md D-02（不加自動偵測安全網）取代：kill-switch 為純軟體 toggle，`pipeline.network_mode` 已是確定性的雲端呼叫閘門，無可偵測之物。本 phase 不建立偵測子系統。
+- D-03 點名的三個逾時常數中，`server/pipeline.py::LLM_TIMEOUT_S` **不縮短**（維持 8.0）：它是 cloud/edge 共用的外層包裝，Phase 8 真機實測 edge LLM 單階段可達 4170ms，縮短它會讓每次離線回覆退化成 scaffold。D-03 的意圖由兩個雲端專屬內層逾時（1.5s）達成。
 
 ### Phase 10: NPU-Accelerated Perception
 
