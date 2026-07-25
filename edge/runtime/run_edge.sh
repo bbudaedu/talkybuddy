@@ -50,6 +50,14 @@ if ! curl -sf "${LLAMA_SERVER_HEALTH_URL}" >/dev/null 2>&1; then
   # （T-08-07；RESEARCH.md Pattern 3 trade-off）。
   echo "WARN: llama-server（PID ${LLAMA_SERVER_PID}）未在 30 秒內於 ${LLAMA_SERVER_HEALTH_URL} 回應 /health，" >&2
   echo "      仍繼續啟動 uvicorn；本輪對話將走 scaffold-only 降級，直到 llama-server 就緒。" >&2
+else
+  # 08-05 checkpoint 真機實測發現：llama-server 剛起、prompt cache 全空時第一次
+  # /v1/chat/completions 要重算整段 system prompt（≈293 token，Genio 520 上 ≈7.5 秒），
+  # 把冷啟動第一輪端到端延遲推到 10 秒（超過 D-05 的 3–4 秒門檻）。這裡在 exec uvicorn
+  # 之前先送一次暖身呼叫吃下這筆成本，讓開機後現場觀眾聽到的第一句就落在門檻內。
+  # 失敗不可擋開機（warmup_llama_server.warmup 內部已吞例外回 False）。
+  echo "warming up llama-server prompt cache..."
+  "${PYTHON_BIN}" -m edge.runtime.warmup_llama_server "http://127.0.0.1:${LLAMA_SERVER_HEALTH_PORT}" || true
 fi
 
 exec "${PYTHON_BIN}" -m uvicorn server.app:app --host 0.0.0.0 --port 8787
