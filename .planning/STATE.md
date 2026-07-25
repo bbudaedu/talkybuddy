@@ -5,10 +5,10 @@ milestone_name: Genio 520 決賽 Edge MVP
 current_phase: 08
 current_phase_name: CPU-Only Offline Edge Turn Loop
 status: executing
-stopped_at: Phase 8 planned (5 plans, plan-checker passed iteration 2/3)
-last_updated: "2026-07-24T22:46:21.112Z"
+stopped_at: 08-04 checkpoint resolved on real hardware (i8mm SIGILL found+fixed); next is 08-05
+last_updated: "2026-07-25T07:55:00.000Z"
 last_activity: 2026-07-25
-last_activity_desc: Phase 08 execution started
+last_activity_desc: Board reachable again; resolved 08-04 checkpoint with real-device llama-server inference (root-caused+fixed a +i8mm SIGILL crash)
 progress:
   total_phases: 12
   completed_phases: 1
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-07-18)
 ## Current Position
 
 Phase: 08 (CPU-Only Offline Edge Turn Loop) — EXECUTING
-Plan: 1 of 5
+Plan: 4 of 5 done (checkpoint resolved), next: 08-05 (延遲/記憶體/零雲端稽核)
 Status: Executing Phase 08
-Last activity: 2026-07-25 — Phase 08 execution started
+Last activity: 2026-07-25 — 08-04 checkpoint resolved on real Genio 520 hardware (see 08-04-SUMMARY.md)
 
 ## Performance Metrics
 
@@ -75,10 +75,11 @@ Recent decisions affecting current work:
 - [Phase ?]: pipeline RIFF-sniff fast path：原生 16k mono WAV 走 soundfile 直讀零 ffmpeg；規格不符於 edge 明確 raise WavSpecMismatchError，不靜默偽成功
 - [Phase ?]: run_edge.sh 以 BASH_SOURCE 自身位置相對定位部署根目錄，不硬編個人 home 絕對路徑（D-02）
 - [Phase ?]: edge/deploy push.sh/run.sh 的裝置端 proot rootfs 與部署目標路徑用環境變數宣告預設值並可覆寫，待真機驗證後調整
+- **[Phase 8, 2026-07-25，真機驗證修正]** D-02 的 `-march=armv8.2-a+dotprod+i8mm` 假設有誤：真機 `/proc/cpuinfo` 顯示這顆 Genio 520（6x Cortex-A55 + 2x Cortex-A78）沒有 `i8mm`，含此旗標編出的 binary 一進入推論就 SIGILL（非 D-03 預期的 glibc ABI 問題）。已移除 `+i8mm`、保留 `+dotprod`，重編重推後真機推論成功。見 `08-CONTEXT.md` D-02 修正註記與 `08-04-SUMMARY.md`。
 
 ### Pending Todos
 
-- 下一步：`/gsd-execute-phase 8`（CPU-Only Offline Edge Turn Loop，5 plans / 4 waves，需真機 SSH 192.168.31.78 執行 08-04/08-05 的 checkpoint:human-verify）
+- 下一步：`/gsd-execute-phase 8`（08-05：延遲/記憶體/零雲端稽核，最後一個 wave；08-04 checkpoint 已於 2026-07-25 真機解決）
 
 ### Plan-Phase Overrides
 
@@ -98,7 +99,8 @@ Recent decisions affecting current work:
 
 ### Blockers/Concerns
 
-- **[Phase 8, 2026-07-25，進行中]** Genio 520 板卡（`192.168.31.78`）目前連不上：`ping`/`ssh` 皆逾時。板卡經由使用者 NB/PVE 廣播的 Tailscale subnet route 才可達（見 `edge/BOARD_BRINGUP_DECISION.md`）；此路由目前似乎斷了。**卡住 08-04 checkpoint（真機交叉編譯 ABI 驗證）與整個 Wave 4（08-05：延遲/記憶體/零雲端稽核）**。開發機交叉編譯工具鏈已備妥（`gcc-aarch64-linux-gnu` 13.3.0、`cmake` 3.28.3），08-04 Task 1/2（build.sh/push.sh/run_edge.sh 腳本改寫）已完成並通過測試；一旦板卡連線恢復即可直接續跑 checkpoint，無需重新規劃或改碼。
+- ~~**[Phase 8, 2026-07-25]** Genio 520 板卡連不上（Tailscale subnet route 斷線）~~ — **已解決（2026-07-25）**：路由恢復，SSH 已確認可連。08-04 checkpoint 已在真機上執行完成，且過程中發現並修好一個真的問題（見下一項），非單純「連得上就過」。
+- **[Phase 8, 2026-07-25，已解決]** D-02 的 `+i8mm` build flag 在這顆 Genio 520 上會 SIGILL（CPU 無 i8mm 指令集，只有 dotprod）——已修正 `edge/deploy/build.sh` 移除 `+i8mm`，真機重測 `/v1/chat/completions` 推論成功。**若未來換板卡/重新燒錄，務必重新核對 `/proc/cpuinfo` Features 再決定 march 旗標，不可沿用假設。**
 - 隱私為跨切面硬限制：Phase 3 起任何雲端路徑皆須先立起 consent gate + 去識別化（PRIV-01/02）
 - 既有技術債影響未來 Genio 520 移植：ffmpeg 音訊轉檔、LLM n_ctx=1024、espeak-ng-data GPL 殘留（見 .planning/codebase/CONCERNS.md）
 - 尚無 .planning/config.json：後續 GSD 工作流可能需要初始化（granularity 預設 standard、sequential 編號）
@@ -113,6 +115,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-07-24T16:35:19.820Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-cpu-only-offline-edge-turn-loop/08-CONTEXT.md
+Last session: 2026-07-25T07:55:00.000Z
+Stopped at: 08-04 checkpoint resolved on real hardware; ready to start 08-05
+Resume file: .planning/phases/08-cpu-only-offline-edge-turn-loop/08-05-PLAN.md

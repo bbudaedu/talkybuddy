@@ -67,7 +67,19 @@ echo "  - llama.cpp commit：${LLAMACPP_COMMIT}"
 BUILD_DIR="${LLAMACPP_SRC}/build-aarch64"
 BIN_DIR="${REPO_ROOT}/edge/deploy/bin"
 
-echo "  - cmake configure（-march=armv8.2-a+dotprod+i8mm，GGML_NATIVE=OFF；D-02，絕不用 armv8.7-a）"
+echo "  - cmake configure（-march=armv8.2-a+dotprod，GGML_NATIVE=OFF；D-02 修正版，絕不用 armv8.7-a）"
+# 近期 llama.cpp 預設把 server/cli/bench 邏輯拆進共享函式庫（libggml*.so、
+# libllama*.so、libllama-server-impl.so 等），跟執行檔一起放在 build 輸出的
+# bin/ 目錄。CMAKE_BUILD_RPATH='$ORIGIN' 讓執行檔在執行時從自己所在目錄找這些
+# .so，而不是連結時寫死的開發機絕對路徑（裝置上不存在該路徑，會導致
+# "cannot open shared object file"）。
+#
+# D-02 修正（2026-07-25，真機驗證後）：原旗標含 +i8mm，但真機 /proc/cpuinfo
+# 對全部 8 核心（6x Cortex-A55 CPU part 0xd05、2x Cortex-A78 CPU part 0xd41）
+# 皆只列出 asimddp（= dotprod），沒有 i8mm——一啟動推論就 SIGILL（kernel audit
+# 記錄 sig=4）。這不是 D-03 預期的 glibc ABI 不相容，是純粹的 CPU 指令集不支援，
+# 移除 +i8mm、保留 +dotprod 後修復。若日後換板卡型號，重新確認
+# /proc/cpuinfo Features 是否真的含 i8mm 再考慮加回。
 cmake -B "${BUILD_DIR}" -S "${LLAMACPP_SRC}" \
   -DCMAKE_SYSTEM_NAME=Linux \
   -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
@@ -75,9 +87,10 @@ cmake -B "${BUILD_DIR}" -S "${LLAMACPP_SRC}" \
   -DCMAKE_CXX_COMPILER="${CROSS_CXX}" \
   -DCMAKE_BUILD_TYPE=Release \
   -DGGML_NATIVE=OFF \
-  -DCMAKE_C_FLAGS="-march=armv8.2-a+dotprod+i8mm" \
-  -DCMAKE_CXX_FLAGS="-march=armv8.2-a+dotprod+i8mm" \
-  -DGGML_OPENMP=OFF
+  -DCMAKE_C_FLAGS="-march=armv8.2-a+dotprod" \
+  -DCMAKE_CXX_FLAGS="-march=armv8.2-a+dotprod" \
+  -DGGML_OPENMP=OFF \
+  -DCMAKE_BUILD_RPATH='$ORIGIN'
 
 echo "  - cmake build（--target llama-server llama-bench llama-cli）"
 cmake --build "${BUILD_DIR}" --config Release -j"$(nproc)" --target llama-server llama-bench llama-cli
@@ -92,6 +105,19 @@ for bin in llama-server llama-bench llama-cli; do
   cp -f "${SRC_BIN}" "${BIN_DIR}/${bin}"
   echo "  - ${BIN_DIR}/${bin} (OK)"
 done
+
+echo "  - 複製共享函式庫依賴（libggml*.so / libllama*.so / libllama-server-impl.so 等，與執行檔同目錄，供 \$ORIGIN RPATH 尋得）"
+shopt -s nullglob
+SO_FILES=("${BUILD_DIR}/bin/"*.so*)
+shopt -u nullglob
+if [ "${#SO_FILES[@]}" -eq 0 ]; then
+  echo "ERROR: 交叉編譯後找不到任何 .so 依賴於 ${BUILD_DIR}/bin/（預期至少 libggml-base.so 等）" >&2
+  exit 1
+fi
+for so in "${SO_FILES[@]}"; do
+  cp -f "${so}" "${BIN_DIR}/"
+done
+echo "  - 已複製 ${#SO_FILES[@]} 個 .so 檔到 ${BIN_DIR}/"
 
 echo "  - file 快篩：確認產物為 aarch64 ELF（非開發機 x86-64）"
 FILE_OUT="$(file "${BIN_DIR}/llama-server")"

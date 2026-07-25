@@ -25,6 +25,7 @@
 ### LLM 服務化架構（ELOOP-02，已由 REQUIREMENTS.md 鎖定，非本輪討論）
 - **D-01（鎖定）：** llama.cpp 改 native binary（`llama-server`，llama.cpp 內建的 OpenAI-compatible HTTP server）over `localhost`，取代 in-process `llama-cpp-python`。`server/llm.py::EdgeLLM` 改為 HTTP client（`requests`/`httpx` 呼叫 `http://127.0.0.1:<port>/completion` 或 `/v1/chat/completions`），保留現有 `available()`/`generate()` 契約與逾時、safety_check、降級語意不變。
 - **D-02（鎖定）：** build flag 固定 `-march=armv8.2-a+dotprod+i8mm`（`.planning/research/STACK.md`、`PITFALLS.md` 已詳列理由：`armv8.7a` 隱含 A78 不支援的 ISA 特徵，會 runtime SIGILL）。
+- **D-02 修正（2026-07-25，真機驗證後）：** 上述 `+i8mm` 假設本身也錯了——真機 `/proc/cpuinfo` 對全部 8 核心（6x Cortex-A55 `CPU part 0xd05`、2x Cortex-A78 `CPU part 0xd41`）皆只列出 `asimddp`（= dotprod），**沒有 `i8mm`**。含 `+i8mm` 編出的 binary 一進入推論就 SIGILL（kernel audit `sig=4`），不是先前假設的 glibc ABI 問題（D-03 fallback 對此無效）。修正為 `-march=armv8.2-a+dotprod`（移除 `+i8mm`），重編後真機 `/v1/chat/completions` 推論成功（見 `08-04-SUMMARY.md` 補記）。`edge/deploy/build.sh` 已同步更新並附上此發現的註解。
 
 ### 交叉編譯工具鏈取得方式（新缺口 — 07-03 實測發現裝置無 gcc/cmake）
 - **D-03（auto 選定，可回頭調整）：**
