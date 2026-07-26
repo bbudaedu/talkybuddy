@@ -75,3 +75,30 @@ __DAY1_PROBE_EXIT_CODE__=1
 真機確實有 NeuronEP、Neuron runtime 與 `mtk-mdla`，但在此已校驗的 SenseVoice fixed-shape 模型上，兩種 provider options 都無法完成 ORT session 初始化，故實際 NPU placement 是 **0/X**（probe 輸出為 `0/0`，原因是初始化失敗而未能產生可 partition 的 session）。這不滿足 D-02 的「至少一個算子落到 NPU」條件。
 
 **停止條件已觸發：** 不將 NPU 宣稱為可用能力；不實作或驗證 `server/asr_npu.py` 路徑；收斂並維持 Phase 8 CPU-only offline baseline。後續書面決策見 [`ADR-npu-path.md`](ADR-npu-path.md)。
+
+## 5. 可達性恢復後的重驗
+
+**重驗時間：** 2026-07-26 07:55–07:56 UTC  
+**裝置可達性：** ICMP `2/2` 回覆、`0% packet loss`；SSH 成功連至 `genio-520-evk`。
+
+在執行前，真機再次完成不可跳過的完整性閘門：
+
+```text
+MODEL_STAT_BYTES=239233683
+MODEL_SHA256=d9c5d2cef743268156768786bae155a5da777cc1791dac2e08cb896765948049
+PROBE_EXISTS=yes
+PLACEMENT_EXISTS=yes
+```
+
+模型與 probe 檔案均通過後，才以第 2 節的相同命令執行 raw NeuronEP probe。完整 stdout/stderr 與本機捕獲的 exit code 保存於 [`DAY1-RAW-OUTPUT-20260726T0755Z.txt`](DAY1-RAW-OUTPUT-20260726T0755Z.txt)：
+
+```text
+355808 bytes
+SHA-256: fbeaffb4185e5e1fe32c490a3f9f4c0cebbc50073f385cade540ce1bf0529647
+NPU: OFF, 0/0 ops accelerated
+DAY1_NPU_PROBE: FAIL 0/0 ops on NeuronExecutionProvider
+__DAY1_PROBE_EXIT_CODE__=1
+```
+
+兩輪仍均在 session 初始化報 `Exception during initialization: unordered_map::at`。這是同一個已校驗模型的可重現真機 FAIL，不是網路中斷，也不改變第 4 節的 D-02 stop-loss 結論。
+
