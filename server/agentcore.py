@@ -35,6 +35,9 @@ import uuid
 # 呼叫端會很自然地傳「turn-12」這種短字串，故由本層負責補齊。
 _SESSION_ID_MIN_LEN = 33
 
+# 上限沿用先前實作的保守值（文件未載明，取 64 不會踩到 API 限制）。
+_SESSION_ID_MAX_LEN = 64
+
 # AgentCore 服務所在 region。見上方模組說明：台北無此服務。
 DEFAULT_REGION = "ap-southeast-1"
 
@@ -115,19 +118,30 @@ def _build_client(region: str, timeout_s: float):
     )
 
 
-def _normalize_session_id(session_id: str | None) -> str:
-    """把呼叫端給的 session id 正規化成 API 可接受的長度。
+def _normalize_session_id(session_id: str | None, actor_id: str | None = None) -> str:
+    """把呼叫端給的 session id 正規化成 API 可接受的長度，並綁上學生維度。
 
     補齊必須是**決定性**的：同一個教學循環（診斷→決策→派作業→週報）的多次
     呼叫要落在同一個 session，Harness 的短期記憶才連貫。若每次補出不同值，
     記憶就斷了，等於白接 Memory。
+
+    學生維度必須在這一層加，不能靠呼叫端自律：呼叫端傳的是「orch-turn-4」
+    「hw-2026-07-20」這種只描述「第幾回合／哪一天」的字串，**任何孩子**跑到
+    第 4 回合都會落在同一個 runtime session，短期記憶跨童串接。那是決定性的
+    碰撞，不是機率問題。actor 前綴用雜湊：runtimeSessionId 同樣會被雲端保存，
+    明文 student_id 進去等於繞過 ``_hash_actor`` 的努力。
     """
-    if not session_id:
-        return f"tb-{uuid.uuid4()}"
-    if len(session_id) >= _SESSION_ID_MIN_LEN:
-        return session_id
-    digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
-    return f"tb-{session_id}-{digest}"[:64]
+    scope = _hash_actor(actor_id)[:18] if actor_id else "anon"
+    base = (session_id or "").strip() or uuid.uuid4().hex
+    sid = f"tb-{scope}-{base}"
+    if len(sid) > _SESSION_ID_MAX_LEN:
+        # 過長時只壓縮 base（保留 actor 前綴），仍是決定性的
+        digest = hashlib.sha256(base.encode("utf-8")).hexdigest()[:24]
+        sid = f"tb-{scope}-{digest}"
+    if len(sid) < _SESSION_ID_MIN_LEN:
+        # 補齊到 API 下限；用自身雜湊填充，同一輸入永遠補出同一個值
+        sid = (sid + "-" + hashlib.sha256(sid.encode("utf-8")).hexdigest())[:_SESSION_ID_MAX_LEN]
+    return sid
 
 
 def _hash_actor(student_id: str) -> str:
@@ -206,7 +220,7 @@ def invoke(
     client = _build_client(cfg["region"], timeout_s)
     params: dict = {
         "harnessArn": cfg["harness_arn"],
-        "runtimeSessionId": _normalize_session_id(session_id),
+        "runtimeSessionId": _normalize_session_id(session_id, actor_id),
         "messages": [{"role": "user", "content": [{"text": user_message}]}],
     }
     params["actorId"] = _hash_actor(actor_id)

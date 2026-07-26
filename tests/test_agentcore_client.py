@@ -175,6 +175,62 @@ def test_different_short_session_ids_do_not_collide(_clean_env, monkeypatch):
     assert seen[0].captured["runtimeSessionId"] != seen[1].captured["runtimeSessionId"]
 
 
+def test_session_id_is_scoped_per_student(_clean_env, monkeypatch):
+    """B2：同一個 session key、不同學生，必須落在不同 runtime session。
+
+    呼叫端傳的是「orch-turn-4」「hw-2026-07-20」這種不含學生維度的字串——
+    任何孩子跑到第 4 回合都會共用同一個 session，短期記憶跨童串接。
+    這不是機率性碰撞，是決定性的、每次都發生。
+    """
+    seen = []
+
+    def _spy(region, timeout_s):
+        c = _FakeClient(_ok("ok"))
+        seen.append(c)
+        return c
+
+    monkeypatch.setattr(agentcore, "_build_client", _spy)
+    cfg = {"region": "r", "harness_arn": "a", "memory_arn": "m"}
+    agentcore.invoke(cfg, "1", session_id="orch-turn-4", actor_id="STUDENT-A")
+    agentcore.invoke(cfg, "2", session_id="orch-turn-4", actor_id="STUDENT-B")
+
+    assert seen[0].captured["runtimeSessionId"] != seen[1].captured["runtimeSessionId"], \
+        "不同學生的同名 session 必須分開"
+
+
+def test_session_id_stays_stable_for_same_student(_clean_env, monkeypatch):
+    """加上學生維度後，同一個孩子的同一個教學循環仍要落在同一 session。"""
+    seen = []
+
+    def _spy(region, timeout_s):
+        c = _FakeClient(_ok("ok"))
+        seen.append(c)
+        return c
+
+    monkeypatch.setattr(agentcore, "_build_client", _spy)
+    cfg = {"region": "r", "harness_arn": "a", "memory_arn": "m"}
+    agentcore.invoke(cfg, "1", session_id="orch-turn-4", actor_id="STUDENT-A")
+    agentcore.invoke(cfg, "2", session_id="orch-turn-4", actor_id="STUDENT-A")
+
+    assert seen[0].captured["runtimeSessionId"] == seen[1].captured["runtimeSessionId"]
+
+
+def test_session_id_does_not_leak_student_id(_clean_env, monkeypatch):
+    """學生維度用雜湊帶入：runtimeSessionId 同樣會被雲端保存，不得含明文 id。"""
+    fake = _FakeClient(_ok("ok"))
+    monkeypatch.setattr(agentcore, "_build_client", lambda region, timeout_s: fake)
+
+    agentcore.invoke(
+        {"region": "r", "harness_arn": "a", "memory_arn": "m"},
+        "hi", session_id="hw-2026-07-20", actor_id="STUDENT-AMING-004",
+    )
+    sid = fake.captured["runtimeSessionId"]
+    assert "STUDENT-AMING-004" not in sid, sid
+    assert "AMING" not in sid, sid
+    # 長度仍須符合 API 下限
+    assert 33 <= len(sid) <= 64, len(sid)
+
+
 def test_concatenates_multiple_text_blocks(_clean_env, monkeypatch):
     payload = {"output": {"message": {"content": [{"text": "前"}, {"text": "後"}]}}}
     monkeypatch.setattr(
