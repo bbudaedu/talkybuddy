@@ -166,6 +166,22 @@ Paste the `NEURON_EP:` line, the full graph IO table, the custom metadata table,
 - 10-03 (raw NeuronEP session) and 10-05 (`server/asr_npu.py`) can proceed once the device verification above is captured — until then, Open Question 1 (does this specific flashed image actually have `NeuronExecutionProvider`) remains formally unanswered, per RESEARCH.md Assumption A1.
 - No risk introduced to the Phase 8 CPU-only baseline: this plan touched no files under `server/`, only added new isolated `edge/npu_spike/` scripts and their tests.
 
+## Self-Check: PASSED
+
+All claimed files verified present on disk:
+- FOUND: edge/npu_spike/__init__.py
+- FOUND: edge/npu_spike/inspect_model.py
+- FOUND: edge/npu_spike/fix_shape.py
+- FOUND: tests/test_npu_spike_tools.py
+- FOUND: .planning/phases/10-npu-accelerated-perception/deferred-items.md
+
+All claimed commit hashes verified present in `git log`:
+- FOUND: e5ea06b (test: RED, Task 1)
+- FOUND: 28968f6 (feat: GREEN, Task 1)
+- FOUND: 89a7dc4 (test: RED, Task 2)
+- FOUND: 85a161d (feat: GREEN, Task 2)
+- FOUND: e757f78 (docs: deferred-items log)
+
 ---
 *Phase: 10-npu-accelerated-perception*
 *Completed: 2026-07-26*
