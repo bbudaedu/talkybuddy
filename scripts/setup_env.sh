@@ -68,6 +68,18 @@ else
   echo "SenseVoice 已存在，略過下載"
 fi
 
+# tarball 裡附的 test_wavs/ 是 streaming 測試（VAD / barge-in / realwire）的
+# 唯一音檔來源。上面那道 guard 只看 model.int8.onnx，所以模型在、音檔被清掉
+# 的機器會靜默少掉三條測試——而且錯誤訊息是 FileNotFoundError，看不出是環境
+# 缺件還是程式壞了。單獨補一個 178KB 的檔，不必為此重抓 226MB 的 tarball。
+if [ ! -f "$SENSEVOICE_DIR/test_wavs/zh.wav" ]; then
+  echo "  補回 streaming 測試音檔 test_wavs/zh.wav"
+  mkdir -p "$SENSEVOICE_DIR/test_wavs"
+  curl -fsSL -o "$SENSEVOICE_DIR/test_wavs/zh.wav" \
+    "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/test_wavs/zh.wav" \
+    || echo "  WARN: 音檔下載失敗，streaming 的 3 條音訊測試會失敗（不影響 runtime）"
+fi
+
 echo "=== [4/4] 編譯安裝 llama-cpp-python（最耗時，失敗不擋整體）==="
 .venv/bin/pip install llama-cpp-python 2>&1 | tail -3 || echo "WARN: llama-cpp-python 安裝失敗，系統將以規則式鷹架引擎運行（介面已預留降級）"
 
