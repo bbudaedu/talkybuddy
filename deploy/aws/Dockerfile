@@ -1,0 +1,57 @@
+# 說說學伴 — 雲端主線容器（cloud profile）
+#
+# 設計原則：容器內**絕不放 AWS 金鑰**。憑證一律走 boto3 標準鏈，
+# 在 EC2 上由附掛的 IAM Instance Profile 自動提供 —— 這是「無腦搬遷」的核心：
+# 同一個 image 在任何 AWS 帳號、任何 region 都能跑，只換環境變數。
+#
+# build（在 repo 根目錄執行）：
+#   docker build -f deploy/aws/Dockerfile -t talkybuddy:cloud .
+# run：
+#   docker run -d --name talkybuddy -p 8000:8000 \
+#     -e BEDROCK_REGION=us-west-2 \
+#     -e BEDROCK_MODEL_ID=<以 python -m server.bedrock_converse 查到的值> \
+#     -e TALKYBUDDY_CLOUD_PROVIDER=bedrock \
+#     -e TALKYBUDDY_JWT_SECRET=<隨機值> \
+#     -v talkybuddy-data:/app/data \
+#     talkybuddy:cloud
+
+FROM python:3.12-slim
+
+# ffmpeg：pipeline 把瀏覽器 webm 轉 16k mono wav（有 RIFF fast path，但
+# 瀏覽器來源一律需要它）。libsndfile1：soundfile 讀 wav 的系統相依。
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libsndfile1 \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 依賴先裝，讓 layer cache 在改程式碼時不失效
+COPY deploy/aws/requirements-cloud.txt /app/deploy/aws/requirements-cloud.txt
+RUN pip install --no-cache-dir -U pip \
+    && pip install --no-cache-dir -r /app/deploy/aws/requirements-cloud.txt
+
+# 模型下載獨立一層（~580MB，最慢，最不常變）
+COPY deploy/aws/fetch_models.py /app/deploy/aws/fetch_models.py
+RUN pip install --no-cache-dir huggingface_hub \
+    && python /app/deploy/aws/fetch_models.py --models-dir /app/models \
+    && pip uninstall -y huggingface_hub \
+    && rm -rf /root/.cache/huggingface
+
+# 應用程式碼放最後：改 code 只重建這層
+COPY server/ /app/server/
+COPY web/ /app/web/
+COPY data/ /app/data/
+
+# cloud profile：開機即 network_mode=cloud，雲端腦走 Bedrock
+ENV TALKYBUDDY_PIPELINE_PROFILE=cloud \
+    TALKYBUDDY_CLOUD_PROVIDER=bedrock \
+    PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD curl -fsS http://localhost:8000/api/status || exit 1
+
+CMD ["python", "-m", "uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]

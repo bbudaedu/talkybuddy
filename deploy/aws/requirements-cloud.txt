@@ -1,0 +1,30 @@
+# 說說學伴 — 雲端主線容器依賴（cloud profile only）
+#
+# 刻意排除的重依賴，以及排除的理由：
+#   - llama-cpp-python / qwen2.5 GGUF（1.1GB）：雲端腦改走 Bedrock Converse，
+#     edge LLM 在容器內用不到。
+#   - pipecat-ai[funasr] + torch + torchaudio（~800MB）：只有 server/streaming
+#     的 A2 全雙工 real-wiring 會用；`/ws/talk` 主線走 server/pipeline.py，
+#     已實測不 import pipecat（grep pipecat server/pipeline.py server/app.py 零命中）。
+#   - faster-whisper：ASR 的 feature-flag fallback，主線走 SenseVoice。
+#
+# 版本取自 2026-07-26 已驗證的開發 venv，避免容器與本機行為分歧。
+
+# --- Web 框架 ---
+fastapi==0.139.0
+uvicorn[standard]==0.49.0
+websockets==16.0
+pydantic==2.13.4
+
+# --- AWS（Bedrock Converse；憑證走 boto3 標準鏈，容器內不放金鑰）---
+boto3==1.43.46
+
+# --- ASR：sherpa-onnx + SenseVoice-Small，OpenCC 做 s2twp 簡轉繁 ---
+sherpa-onnx==1.13.3
+onnx==1.22.0
+OpenCC==1.4.0
+numpy==2.4.6
+soundfile==0.14.0
+
+# --- 測試/驗證（preflight 用；正式跑不需要，但體積極小且方便現場除錯）---
+httpx==0.28.1
