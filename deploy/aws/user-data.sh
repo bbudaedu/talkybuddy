@@ -16,6 +16,11 @@ exec > >(tee -a /var/log/talkybuddy-bootstrap.log) 2>&1
 REPO_URL="https://github.com/YOUR_ACCOUNT/talkybuddy.git"   # ← 改成你的 repo
 BEDROCK_REGION="us-west-2"                                   # ← 已開通模型的 region
 BEDROCK_MODEL_ID=""      # ← 留空則用程式內建預設；建議填 preflight 查到的實際值
+# 選填：對話／診斷分流（延遲需求差 8 倍，見 deploy/aws/README.md 環境變數一覽）。
+# 兩者留空則各自用內建預設（chat=Haiku 4.5、diag=Sonnet 4.5）；
+# 若只填上面的 BEDROCK_MODEL_ID，兩條路徑都沿用那一顆。
+BEDROCK_MODEL_ID_CHAT=""  # ← 對話回覆，1.5s 上界，建議 haiku
+BEDROCK_MODEL_ID_DIAG=""  # ← 教師診斷，12s 上界，建議 sonnet
 # ----------------------------------------------------------------------
 
 echo "=== [1/5] 安裝 Docker + git ==="
@@ -43,6 +48,8 @@ docker run -d --name talkybuddy --restart unless-stopped \
   -p 8000:8000 \
   -e BEDROCK_REGION="$BEDROCK_REGION" \
   ${BEDROCK_MODEL_ID:+-e BEDROCK_MODEL_ID="$BEDROCK_MODEL_ID"} \
+  ${BEDROCK_MODEL_ID_CHAT:+-e BEDROCK_MODEL_ID_CHAT="$BEDROCK_MODEL_ID_CHAT"} \
+  ${BEDROCK_MODEL_ID_DIAG:+-e BEDROCK_MODEL_ID_DIAG="$BEDROCK_MODEL_ID_DIAG"} \
   -e TALKYBUDDY_CLOUD_PROVIDER=bedrock \
   -e TALKYBUDDY_PIPELINE_PROFILE=cloud \
   -e TALKYBUDDY_JWT_SECRET="$JWT_SECRET" \

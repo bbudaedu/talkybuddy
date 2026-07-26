@@ -25,7 +25,22 @@ DEFAULT_REGION = "us-west-2"
 # 預設 model：cross-region inference profile ID。**上線前務必以本檔的
 # list_models() 對實際帳號查證**——各帳號/region 可用的 profile 不同，
 # 寫死的字串很容易過期。可由 BEDROCK_MODEL_ID 覆蓋。
+# 這顆同時是「診斷路徑」與未指定 role 時的通用預設。
 DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+# 對話路徑（cloud_llm）專屬預設。兩條路徑的逾時上界差 8 倍——對話是
+# 1.5s（cloud_llm._TIMEOUT_S，斷網橋段 D-03 的驗收上界）、診斷是 12s
+# （非同步）。共用一顆大模型的話，對話路徑會穩定逾時而永遠降級回 edge，
+# 等於雲端大腦白接，故預設拆成快模型。
+# ID 取自 AWS 官方 model card 的 US geo inference ID：us-west-2（專案預設
+# region）對 Haiku 4.5 只支援 Geo、不支援 In-Region，必須帶 `us.` 前綴。
+DEFAULT_CHAT_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+
+# role → (專屬環境變數, 預設 model)
+_ROLE_MODELS = {
+    "chat": ("BEDROCK_MODEL_ID_CHAT", DEFAULT_CHAT_MODEL_ID),
+    "diag": ("BEDROCK_MODEL_ID_DIAG", DEFAULT_MODEL_ID),
+}
 
 # 呼叫逾時（秒）。診斷是非同步路徑，可寬鬆；若日後接到即時對話路徑，
 # 呼叫端應自行傳入更短的值（參考 cloud_llm._TIMEOUT_S 的 1.5s 上界）。
@@ -38,11 +53,18 @@ class BedrockResponseError(RuntimeError):
     """Bedrock 回應格式不符預期；呼叫端據此 fallback，不靜默回空字串。"""
 
 
-def resolve_config() -> dict | None:
+def resolve_config(role: str | None = None) -> dict | None:
     """由環境變數解析 Bedrock 設定；未選用 bedrock provider 時回 None。
 
     回 ``{"region": str, "model_id": str}``。憑證由 boto3 標準鏈解析
     （env / ~/.aws / IAM role），本函式不碰憑證、不觸網。
+
+    ``role``：``"chat"``（對話回覆，需快模型）或 ``"diag"``（教師診斷，
+    可用大模型）。model 優先序為 role 專屬環境變數 → 全域 ``BEDROCK_MODEL_ID``
+    → role 預設值。全域變數排在 role 預設之前是刻意的向後相容：既有部署
+    （`deploy/aws/user-data.sh`）只設 ``BEDROCK_MODEL_ID``，該值必須繼續對
+    兩條路徑生效，不可被 role 預設悄悄蓋掉。未知或未給 role 時退回通用預設
+    ——現場寧可用通用模型也不能讓整條雲端路徑因參數打錯而掛掉。
     """
     provider = (os.environ.get(_PROVIDER_ENV) or "").strip().lower()
     if provider != "bedrock":
@@ -57,7 +79,12 @@ def resolve_config() -> dict | None:
         or os.environ.get("AWS_DEFAULT_REGION")
         or DEFAULT_REGION
     )
-    model_id = os.environ.get("BEDROCK_MODEL_ID") or DEFAULT_MODEL_ID
+    role_env, role_default = _ROLE_MODELS.get(role or "", ("", DEFAULT_MODEL_ID))
+    model_id = (
+        (os.environ.get(role_env) if role_env else None)
+        or os.environ.get("BEDROCK_MODEL_ID")
+        or role_default
+    )
     return {"region": region, "model_id": model_id}
 
 

@@ -20,7 +20,8 @@ edge 線（Genio 520 / Phase 10 NPU）由 GSD pi 另一條線負責，**不要�
 | 降級鏈 Bedrock → relay → 規則式 | ✅ **實戰驗證過**（Bedrock throttle 時正確降級） |
 | Docker image（cloud-only，1.46GB） | ✅ build + run + health 全通過 |
 | EC2 部署腳本 / IAM policy / runbook | ✅ 寫好，**未在真 EC2 跑過** |
-| 測試 | ✅ 420 passed |
+| model 分流（對話 Haiku / 診斷 Sonnet） | ✅ + 測試 |
+| 測試 | ✅ 429 passed |
 
 程式碼已推送至 `origin/gsd/2-genio-520-edge-mvp`（先前整個 Milestone 2 零遠端備份，已解決）。
 
@@ -75,17 +76,22 @@ TALKYBUDDY_CLOUD_PROVIDER=bedrock .venv/bin/python scripts/aws_preflight.py
 
 ---
 
-## 已知待做（不需配額，可先做）
+## ~~已知待做~~ model 分流 — 已完成（2026-07-26）
 
-**model 分流**：對話路徑與診斷路徑目前共用同一個 `BEDROCK_MODEL_ID`，但延遲需求差 8 倍：
+對話與診斷路徑的延遲需求差 8 倍，已拆成兩顆 model：
 
-| 路徑 | 逾時上界 | 該用 |
-|---|---|---|
-| `cloud_llm`（對話回覆） | **1.5s**（斷網橋段 D-03 的驗收上界） | Haiku |
-| `diagnose`（教師診斷） | 12s（非同步） | Sonnet / Opus |
+| 路徑 | 逾時上界 | 預設 model | 專屬環境變數 |
+|---|---|---|---|
+| `cloud_llm`（對話回覆） | **1.5s**（斷網橋段 D-03 的驗收上界） | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | `BEDROCK_MODEL_ID_CHAT` |
+| `diagnose`（教師診斷） | 12s（非同步） | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | `BEDROCK_MODEL_ID_DIAG` |
 
-若統一設大模型，對話路徑會來不及回應而永遠降級，等於白接。
-需拆成 `BEDROCK_MODEL_ID_CHAT` / `BEDROCK_MODEL_ID_DIAG` 兩個環境變數。
+- 優先序：role 專屬變數 → 全域 `BEDROCK_MODEL_ID` → role 預設。
+  **向後相容**：既有只設 `BEDROCK_MODEL_ID` 的部署兩條路徑仍沿用那一顆。
+- 兩顆預設 ID 已對本帳號 `us-west-2` 實測存在於 `list_models()` 清單（非僅文件推斷）。
+- `aws_preflight.py` 同步強化：①印出兩顆 model、③兩顆都比對開通清單、
+  ④改用**對話**那顆真打並實測秒數對照 1.5s 預算（超過即列為 failure）。
+- 若兩條路徑仍共用同一顆，preflight ① 會出警告——因為它的失敗症狀是
+  「安靜降級回 edge」，現場最難察覺。
 
 ---
 

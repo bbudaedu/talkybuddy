@@ -72,7 +72,9 @@ class CloudLLM:
         ``TALKYBUDDY_CLOUD_PROVIDER=bedrock`` 才啟用，未切換時行為與過去完全一致。
         """
         try:
-            bedrock_cfg = bedrock_converse.resolve_config()
+            # role="chat"：取為 _TIMEOUT_S（1.5s）挑的快模型。若取到診斷用的
+            # 大模型，這條路徑會穩定逾時而永遠降級回 edge。
+            bedrock_cfg = bedrock_converse.resolve_config(role="chat")
             cfg = anthropic_relay.resolve_config()
             if bedrock_cfg is None and cfg is None:
                 return None

@@ -656,7 +656,9 @@ def generate_diagnosis(interactions: list[dict], prev: dict | None,
     VoicePipeline._refresh_directive（09-RESEARCH.md Pitfall 4）。
     """
     cfg = anthropic_relay.resolve_config()
-    bedrock_cfg = bedrock_converse.resolve_config()
+    # role="diag"：診斷是非同步路徑（_API_TIMEOUT_SEC=12s），可用推理品質
+    # 較好的大模型，與對話路徑的快模型分流。
+    bedrock_cfg = bedrock_converse.resolve_config(role="diag")
     result = None
     # B4-5 consent gate：真正的雲端資料出境 chokepoint。未取得家長同意時，
     # 即使有憑證也不上雲，改走本地規則式（背景 _refresh_directive 亦涵蓋）。

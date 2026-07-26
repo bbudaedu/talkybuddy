@@ -25,6 +25,13 @@ def _hr(title: str) -> None:
     print(f"\n{'=' * 62}\n{title}\n{'=' * 62}")
 
 
+def cloud_timeout() -> float:
+    """對話路徑的逾時上界（讀 cloud_llm 的實際值，避免文件與程式漂移）。"""
+    from server import cloud_llm
+
+    return cloud_llm._TIMEOUT_S
+
+
 def main() -> int:  # noqa: C901 - 線性檢查流程，拆開反而難讀
     from server import bedrock_converse
 
@@ -37,7 +44,19 @@ def main() -> int:  # noqa: C901 - 線性檢查流程，拆開反而難讀
         print(f"{BAD} TALKYBUDDY_CLOUD_PROVIDER 未設為 bedrock")
         print("   修：export TALKYBUDDY_CLOUD_PROVIDER=bedrock")
         return 1
-    print(f"{OK} provider=bedrock  region={cfg['region']}  model={cfg['model_id']}")
+    # 對話／診斷兩條路徑的 model 分流（逾時上界 1.5s vs 12s）。preflight 必須
+    # 兩顆都驗，否則對話那顆打錯會拖到現場才炸——而它的症狀是「安靜地降級回
+    # edge」，最難當場察覺。
+    chat_cfg = bedrock_converse.resolve_config(role="chat")
+    diag_cfg = bedrock_converse.resolve_config(role="diag")
+    print(f"{OK} provider=bedrock  region={cfg['region']}")
+    print(f"   對話 model（上界 {cloud_timeout()}s）＝{chat_cfg['model_id']}")
+    print(f"   診斷 model（上界 12s）＝{diag_cfg['model_id']}")
+    if chat_cfg["model_id"] == diag_cfg["model_id"]:
+        print(f"   {WARN} 兩條路徑共用同一顆 model。若它不是快模型，對話回覆會")
+        print(f"       穩定逾時而永遠降級回 edge，等於雲端大腦白接。")
+        print(f"       修：export BEDROCK_MODEL_ID_CHAT=<haiku> "
+              f"BEDROCK_MODEL_ID_DIAG=<sonnet>")
 
     _hr("② AWS 憑證（boto3 標準鏈：env → ~/.aws → EC2 IAM Role）")
     try:
@@ -65,26 +84,50 @@ def main() -> int:  # noqa: C901 - 線性檢查流程，拆開反而難讀
             failures.append("model-access")
         else:
             print(f"{OK} 可用 Anthropic model / profile 共 {len(anthropic_ids)} 個：")
-            for m in anthropic_ids[:12]:
-                mark = " ← 目前設定" if m == cfg["model_id"] else ""
+            marks = {chat_cfg["model_id"]: "對話", diag_cfg["model_id"]: "診斷"}
+            # 設定中的兩顆一定要看得見；其餘補到 12 筆當作參考清單，否則
+            # 目前設定的 model 若排在第 13 名之後，標記等於不存在。
+            shown = [m for m in anthropic_ids if m in marks]
+            shown += [m for m in anthropic_ids if m not in marks][: 12 - len(shown)]
+            for m in shown:
+                mark = f" ← 目前設定（{marks[m]}）" if m in marks else ""
                 print(f"     {m}{mark}")
-            if cfg["model_id"] not in anthropic_ids:
-                print(f"   {WARN} 目前設定的 model_id 不在清單中！")
-                print(f"   修：export BEDROCK_MODEL_ID=<上面挑一個>")
-                failures.append("model-id")
+            for role_name, role_cfg, env_name in (
+                ("對話", chat_cfg, "BEDROCK_MODEL_ID_CHAT"),
+                ("診斷", diag_cfg, "BEDROCK_MODEL_ID_DIAG"),
+            ):
+                if role_cfg["model_id"] not in anthropic_ids:
+                    print(f"   {WARN} {role_name}路徑的 model_id "
+                          f"{role_cfg['model_id']} 不在清單中！")
+                    print(f"   修：export {env_name}=<上面挑一個>")
+                    failures.append("model-id")
     except Exception as exc:
         print(f"{WARN} 列模型失敗（不一定是致命問題）：{type(exc).__name__}: {exc}")
 
-    _hr("④ 真打一次 Converse")
+    _hr("④ 真打一次 Converse（用對話路徑那顆 model）")
     try:
+        import time
+
+        budget = cloud_timeout()
+        t0 = time.monotonic()
         text = bedrock_converse.converse_text(
             "你是一個測試回應器。只回覆四個字，不要標點。",
             "請回覆：連線正常",
-            cfg=cfg,
+            cfg=chat_cfg,
             max_tokens=32,
             timeout_s=20.0,
         )
-        print(f"{OK} Bedrock 回應：{text.strip()!r}")
+        elapsed = time.monotonic() - t0
+        print(f"{OK} Bedrock 回應：{text.strip()!r}（{elapsed:.2f}s）")
+        # 這裡刻意給 20s 寬限才發請求：目的是先確認「打得通」，再單獨用實測
+        # 秒數對照 1.5s 預算。若合併成一次 1.5s 呼叫，連不通與太慢會混在一起。
+        if elapsed > budget:
+            print(f"   {WARN} 實測 {elapsed:.2f}s 超過對話路徑預算 {budget}s ——")
+            print(f"       正式跑會逾時並降級回 edge。修：換更快的 "
+                  f"BEDROCK_MODEL_ID_CHAT，或放寬 CLOUD_LLM_TIMEOUT_S。")
+            failures.append("chat-latency")
+        else:
+            print(f"   {OK} 在對話路徑 {budget}s 預算內")
     except Exception as exc:
         print(f"{BAD} Converse 失敗：{type(exc).__name__}: {exc}")
         print("   常見原因：model_id 錯（見③）／IAM 缺 bedrock:Converse／region 沒開通")

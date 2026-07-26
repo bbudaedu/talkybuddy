@@ -70,6 +70,14 @@ export BEDROCK_MODEL_ID=<清單裡挑的那個>
 export TALKYBUDDY_CLOUD_PROVIDER=bedrock
 ```
 
+對話與診斷兩條路徑的延遲需求差 8 倍（1.5s vs 12s），可分流成兩顆模型；
+只設上面那個共用變數也能跑，但對話路徑會冒著逾時降級回 edge 的風險：
+
+```bash
+export BEDROCK_MODEL_ID_CHAT=<清單裡的 haiku>    # 對話回覆，要快
+export BEDROCK_MODEL_ID_DIAG=<清單裡的 sonnet>   # 教師診斷，要準
+```
+
 看到 `✔ 全數通過` 就代表雲端主線合規成立。
 
 ---
@@ -156,7 +164,9 @@ sudo systemctl enable --now caddy
 |---|---|---|
 | `TALKYBUDDY_CLOUD_PROVIDER` | ✅ | 設 `bedrock` 才啟用原生 Converse；未設則走既有 Anthropic relay |
 | `BEDROCK_REGION` | ✅ | 已開通模型的 region。**與 Nova Sonic 共用同一變數** |
-| `BEDROCK_MODEL_ID` | 建議 | 以 preflight 第③步查到的值為準 |
+| `BEDROCK_MODEL_ID` | 建議 | 兩條路徑的共用預設；以 preflight 第③步查到的值為準 |
+| `BEDROCK_MODEL_ID_CHAT` | 選用 | **對話回覆**專用（逾時上界 1.5s，該用 Haiku 這類快模型）。未設時預設 `us.anthropic.claude-haiku-4-5-20251001-v1:0`；若有設 `BEDROCK_MODEL_ID` 則沿用它 |
+| `BEDROCK_MODEL_ID_DIAG` | 選用 | **教師診斷**專用（非同步，上界 12s，可用 Sonnet/Opus）。未設時預設 `us.anthropic.claude-sonnet-4-5-20250929-v1:0` |
 | `TALKYBUDDY_PIPELINE_PROFILE` | ✅ | 雲端設 `cloud` |
 | `TALKYBUDDY_JWT_SECRET` | ✅ | 登入 JWT 密鑰，user-data 會自動產生 |
 | `TALKYBUDDY_CONSENT_GRANTED` | ✅ | 家長同意閘門；`false` 會**強制切斷所有雲端呼叫** |
