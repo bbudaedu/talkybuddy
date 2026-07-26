@@ -130,6 +130,18 @@ def _normalize_session_id(session_id: str | None) -> str:
     return f"tb-{session_id}-{digest}"[:64]
 
 
+def _hash_actor(student_id: str) -> str:
+    """把 student_id 雜湊成 AgentCore Memory 的分群鍵。
+
+    直接把 student_id 當 actorId 送上雲是矛盾的：同一個值在 prompt 裡會經
+    guardrails.deidentify 遮罩，actorId 卻是明文，而且被 Memory **長期保存**。
+    現場的 id 真的帶可識別資訊（例如 STUDENT-AMING-004 含小名）。
+
+    用穩定雜湊：分群語意不變（同一個孩子永遠對到同一個 actor），但不可逆。
+    """
+    return "s-" + hashlib.sha256(student_id.encode("utf-8")).hexdigest()[:32]
+
+
 def _extract_text(payload: dict) -> str:
     """從 InvokeHarness 回應取出所有 text block 串接；缺 text 即拋錯。"""
     try:
@@ -186,12 +198,16 @@ def invoke(
     ``session_id`` 省略時自動產生。同一次教學循環（診斷→決策→派作業→週報）
     應傳同一個值，Harness 的短期記憶才會連貫。
     """
+    if not actor_id:
+        # 先驗參數再建 client：不可靜默略過 actorId，少了它 API 照樣成功，
+        # 但所有孩子的長期記憶會混在同一個 actor 底下。拋例外讓呼叫端的
+        # except 降級回規則式——寧可這次不用雲端，也不要製造無聲的隱私事故。
+        raise ValueError("AgentCore invoke 缺 actor_id：Memory 會跨學生混用")
     client = _build_client(cfg["region"], timeout_s)
     params: dict = {
         "harnessArn": cfg["harness_arn"],
         "runtimeSessionId": _normalize_session_id(session_id),
         "messages": [{"role": "user", "content": [{"text": user_message}]}],
     }
-    if actor_id:
-        params["actorId"] = actor_id
+    params["actorId"] = _hash_actor(actor_id)
     return _extract_text(client.invoke_harness(**params))

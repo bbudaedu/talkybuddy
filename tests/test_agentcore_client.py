@@ -118,7 +118,11 @@ def test_actor_id_is_passed_for_memory_scoping(_clean_env, monkeypatch):
         {"region": "r", "harness_arn": "a", "memory_arn": "m"},
         "hi", session_id="s", actor_id="STUDENT-AMING-004",
     )
-    assert fake.captured["actorId"] == "STUDENT-AMING-004"
+    # actorId 必須是雜湊而非明文：同一個值在 prompt 裡會被 deidentify 遮罩，
+    # actorId 卻會被 AgentCore Memory 長期保存，明文送上去是自相矛盾的。
+    sent = fake.captured["actorId"]
+    assert "STUDENT-AMING-004" not in sent, sent
+    assert sent == agentcore._hash_actor("STUDENT-AMING-004")
 
 
 def test_short_session_id_is_padded_to_api_minimum(_clean_env, monkeypatch):
@@ -132,7 +136,7 @@ def test_short_session_id_is_padded_to_api_minimum(_clean_env, monkeypatch):
 
     agentcore.invoke(
         {"region": "r", "harness_arn": "a", "memory_arn": None},
-        "hi", session_id="turn-12",
+        "hi", session_id="turn-12", actor_id="s1",
     )
     assert len(fake.captured["runtimeSessionId"]) >= 33
 
@@ -149,8 +153,8 @@ def test_same_short_session_id_maps_to_same_padded_id(_clean_env, monkeypatch):
 
     monkeypatch.setattr(agentcore, "_build_client", _spy)
     cfg = {"region": "r", "harness_arn": "a", "memory_arn": None}
-    agentcore.invoke(cfg, "1", session_id="cycle-7")
-    agentcore.invoke(cfg, "2", session_id="cycle-7")
+    agentcore.invoke(cfg, "1", session_id="cycle-7", actor_id="s1")
+    agentcore.invoke(cfg, "2", session_id="cycle-7", actor_id="s1")
 
     assert seen[0].captured["runtimeSessionId"] == seen[1].captured["runtimeSessionId"]
 
@@ -165,8 +169,8 @@ def test_different_short_session_ids_do_not_collide(_clean_env, monkeypatch):
 
     monkeypatch.setattr(agentcore, "_build_client", _spy)
     cfg = {"region": "r", "harness_arn": "a", "memory_arn": None}
-    agentcore.invoke(cfg, "1", session_id="cycle-7")
-    agentcore.invoke(cfg, "2", session_id="cycle-8")
+    agentcore.invoke(cfg, "1", session_id="cycle-7", actor_id="s1")
+    agentcore.invoke(cfg, "2", session_id="cycle-8", actor_id="s1")
 
     assert seen[0].captured["runtimeSessionId"] != seen[1].captured["runtimeSessionId"]
 
@@ -177,7 +181,8 @@ def test_concatenates_multiple_text_blocks(_clean_env, monkeypatch):
         agentcore, "_build_client", lambda region, timeout_s: _FakeClient(payload)
     )
     out = agentcore.invoke(
-        {"region": "r", "harness_arn": "a", "memory_arn": None}, "u", session_id="s"
+        {"region": "r", "harness_arn": "a", "memory_arn": None}, "u",
+        session_id="s", actor_id="s1",
     )
     assert out == "前後"
 
@@ -190,8 +195,28 @@ def test_raises_when_no_text_block(_clean_env, monkeypatch):
     )
     with pytest.raises(agentcore.AgentCoreResponseError):
         agentcore.invoke(
-            {"region": "r", "harness_arn": "a", "memory_arn": None}, "u", session_id="s"
+            {"region": "r", "harness_arn": "a", "memory_arn": None}, "u",
+            session_id="s", actor_id="s1",
         )
+
+
+def test_missing_actor_id_raises_instead_of_silently_dropping(_clean_env, monkeypatch):
+    """actor_id 為空時必須拋錯，不可靜默略過欄位。
+
+    少了 actorId，InvokeHarness 照樣成功，但所有孩子的長期記憶會混在同一個
+    actor 底下——API 不會抱怨、日誌不會留痕，是最難察覺的隱私事故。
+    拋例外讓呼叫端降級回規則式，寧可這次不用雲端。
+    """
+    monkeypatch.setattr(
+        agentcore, "_build_client",
+        lambda region, timeout_s: pytest.fail("缺 actor_id 時不該送出請求"),
+    )
+    for bad in (None, ""):
+        with pytest.raises(ValueError):
+            agentcore.invoke(
+                {"region": "r", "harness_arn": "a", "memory_arn": None}, "u",
+                session_id="s", actor_id=bad,
+            )
 
 
 def test_module_import_does_not_load_boto3(_clean_env):

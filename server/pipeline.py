@@ -352,7 +352,10 @@ class VoicePipeline:
                 # 子專案 B/C/E：診斷產出後才做編排決策——它要看的就是這份新診斷。
                 # 整段包在自己的 try 內，agent 出事不得影響 directive 更新
                 # （directive 停更 = 導師層在現場悄悄死掉）。
-                self._run_agents(diag, diagnoses, allow_cloud=allow_cloud)
+                # diagnoses 是在 diag 產生「之前」讀的，必須補上這份新的，
+                # 否則週報永遠落後一個循環——demo 主軸是「孩子練完、家長端
+                # 立刻看到」，少這一筆首次刷新還會印「尚無任何練習紀錄」。
+                self._run_agents(diag, diagnoses + [diag], allow_cloud=allow_cloud)
                 # B3 接法 A：帶 level_state，CEFR 難度/語言形式折進注入字串
                 return diagnose.format_directive_for_prompt(
                     diag.get("companion_directive"), diag.get("level_state"))
@@ -384,6 +387,11 @@ class VoicePipeline:
             profile = store.get_profile(sid) or {}
         except Exception:
             profile = {}
+        # 學生第一次上線／DB 剛重置時 profile 是空的，而 agent 是從 profile
+        # 取 student_id 當 AgentCore Memory 的分群鍵。少了它會讓所有孩子
+        # 共用同一份長期記憶——這是隱私事故，不是功能瑕疵。sid 在這裡是
+        # 權威值，直接補進去，不要讓下游猜。
+        profile.setdefault("student_id", sid)
 
         try:
             decision = orchestrator.decide_next_actions(

@@ -529,6 +529,14 @@ def decide_next_actions(
 
         # 強制標記 source 為 cloud
         parsed["source"] = "cloud"
+        # 節流必須對雲端決策同樣生效。先前只有規則式分支過這道閘，
+        # 雲端模式下每次背景刷新都可能派新作業——把頻率控制寫在 system
+        # prompt 裡「請 LLM 自律」不是控制。兩條路徑共用同一道閘。
+        sid = (profile or {}).get("student_id")
+        kept = [a for a in parsed["actions"] if not _should_throttle(a, sid)]
+        if kept != parsed["actions"]:
+            _log.info("雲端決策經節流過濾：%s → %s", parsed["actions"], kept)
+            parsed["actions"] = kept
         return parsed
 
     except Exception:
