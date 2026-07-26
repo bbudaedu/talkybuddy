@@ -93,3 +93,6 @@ vendor/
 coverage/
 .cache/
 tmp/
+
+# Kiro IDE 自動生成的本機工具設定（LSP 等），非專案產出
+.kiro/settings/
