@@ -31,6 +31,7 @@ import logging
 import re
 
 from server import agentcore, bedrock_converse, guardrails
+from server.agents import privacy
 
 _log = logging.getLogger(__name__)
 
@@ -653,45 +654,18 @@ _MAX_TEXT_LEN = 200
 
 
 def _deidentify_profile(profile: dict) -> dict:
-    """對 profile 所有字串值去識別化；回傳新 dict，不改原物件。"""
-    if not profile:
-        return {}
-    result: dict = {}
-    for k, v in profile.items():
-        if isinstance(v, str):
-            result[k] = guardrails.deidentify(v[:_MAX_TEXT_LEN])
-        elif isinstance(v, list):
-            result[k] = [
-                guardrails.deidentify(str(item)[:_MAX_TEXT_LEN])
-                if isinstance(item, str) else item
-                for item in v
-            ]
-        else:
-            result[k] = v
-    return result
+    """profile 上雲前投影（白名單，見 agents/privacy.py）。"""
+    return privacy.safe_profile(profile)
 
 
 def _deidentify_diag(diag: dict) -> dict:
-    """對單筆 diagnosis 自由文字欄位去識別化；回傳新 dict。"""
-    if not diag:
-        return {}
-    result = dict(diag)
-    for key in ("emotional_status",):
-        if isinstance(result.get(key), str):
-            result[key] = guardrails.deidentify(result[key][:_MAX_TEXT_LEN])
-    for key in ("strengths", "weaknesses"):
-        if isinstance(result.get(key), list):
-            result[key] = [
-                guardrails.deidentify(str(s)[:_MAX_TEXT_LEN])
-                if isinstance(s, str) else s
-                for s in result[key]
-            ]
-    return result
+    """單筆 diagnosis 上雲前投影（白名單，見 agents/privacy.py）。"""
+    return privacy.safe_diagnosis(diag)
 
 
 def _deidentify_diagnoses(diagnoses: list[dict]) -> list[dict]:
-    """批次去識別化 diagnoses 列表，呼叫端再拼入 prompt。"""
-    return [_deidentify_diag(d) for d in (diagnoses or [])]
+    """批次投影 diagnoses 列表，呼叫端再拼入 prompt。"""
+    return privacy.safe_diagnoses(diagnoses)
 
 
 # ---------------------------------------------------------------------------

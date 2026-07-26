@@ -30,6 +30,7 @@ import logging
 import re
 
 from server import agentcore, bedrock_converse, guardrails
+from server.agents import privacy
 from server.scaffold import VOCAB
 
 _log = logging.getLogger(__name__)
@@ -144,41 +145,13 @@ def _safe_str(obj, max_len: int = _MAX_TEXT_LEN) -> str:
 
 
 def _deidentify_profile(profile: dict) -> dict:
-    """對 profile 所有字串值去識別化；回傳新 dict，不改原物件。"""
-    if not profile:
-        return {}
-    result: dict = {}
-    for k, v in profile.items():
-        if isinstance(v, str):
-            result[k] = guardrails.deidentify(v[:_MAX_TEXT_LEN])
-        elif isinstance(v, list):
-            result[k] = [
-                guardrails.deidentify(str(item)[:_MAX_TEXT_LEN])
-                if isinstance(item, str) else item
-                for item in v
-            ]
-        else:
-            result[k] = v
-    return result
+    """profile 上雲前投影（白名單，見 agents/privacy.py）。"""
+    return privacy.safe_profile(profile)
 
 
 def _deidentify_diagnosis(diagnosis: dict) -> dict:
-    """對 diagnosis 自由文字欄位去識別化；回傳新 dict，不改原物件。"""
-    if not diagnosis:
-        return {}
-    result: dict = dict(diagnosis)
-    # 自由文字欄位：strengths / weaknesses / emotional_status
-    for key in ("emotional_status",):
-        if isinstance(result.get(key), str):
-            result[key] = guardrails.deidentify(result[key][:_MAX_TEXT_LEN])
-    for key in ("strengths", "weaknesses"):
-        if isinstance(result.get(key), list):
-            result[key] = [
-                guardrails.deidentify(str(s)[:_MAX_TEXT_LEN])
-                if isinstance(s, str) else s
-                for s in result[key]
-            ]
-    return result
+    """diagnosis 上雲前投影（白名單，見 agents/privacy.py）。"""
+    return privacy.safe_diagnosis(diagnosis)
 
 
 # ---------------------------------------------------------------------------
