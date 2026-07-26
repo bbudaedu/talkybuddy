@@ -25,6 +25,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -158,7 +159,8 @@ def _deidentify_diagnosis(diagnosis: dict) -> dict:
 # 規則式路徑（離線 fallback，永遠可用）
 # ---------------------------------------------------------------------------
 
-def _pick_vocab_entries(dim: str, n: int = 5, due_words: list[str] | None = None) -> list[dict]:
+def _pick_vocab_entries(dim: str, n: int = 5, due_words: list[str] | None = None,
+                        rotation: int = 0) -> list[dict]:
     """從 scaffold.VOCAB 按弱項維度挑出 n 個詞條。
 
     使用 round-robin 跨分類交錯取題：每輪從各 preferred_cat 各取 1 個，
@@ -171,6 +173,11 @@ def _pick_vocab_entries(dim: str, n: int = 5, due_words: list[str] | None = None
     這個孩子上次沒說對、而且已經到了該複習的時間的詞，比「這個維度的
     第一個詞」有價值得多。到期詞不足 n 個時，其餘照原本的邏輯補。
 
+    ``rotation`` 把每個分類的起點往後推。沒有它的話，每次都從詞庫的前幾個
+    詞取題——詞庫擴到 136 個詞之後，後面九成的詞永遠出不來，等於沒擴。
+    輪轉量由呼叫端從「學生 + 日期」算出：**同一天同一個孩子拿到的題目固定**
+    （現場可重現），換一天才換一批。
+
     所有題目都來自 VOCAB，不自編。
     """
     preferred_cats = _DIM_TO_CATS.get(dim, ["food", "animal"])
@@ -180,6 +187,14 @@ def _pick_vocab_entries(dim: str, n: int = 5, due_words: list[str] | None = None
     for zh_key, info in VOCAB.items():
         if info["cat"] in cat_buckets:
             cat_buckets[info["cat"]].append({"zh_key": zh_key, **info})
+
+    # 每個分類各自輪轉。用 deque 式的切片旋轉而不是隨機取樣：
+    # 隨機的話同一份輸入會產生不同的作業，測不動也重現不了。
+    if rotation:
+        for cat, bucket in cat_buckets.items():
+            if bucket:
+                k = rotation % len(bucket)
+                cat_buckets[cat] = bucket[k:] + bucket[:k]
 
     # round-robin 交錯取題：確保各 cat 都有貢獻（D4/D5 修法核心）
     # seen_sents 對 target_en（即 sent）去重，避免同份作業出現一字不差的重複題（D6）
@@ -250,6 +265,19 @@ _FALLBACK_ITEMS: list[dict] = [
 ]
 
 
+def _rotation_for(profile: dict, diagnosis: dict) -> int:
+    """由「學生 + 診斷日期」算出取題輪轉量，決定性。
+
+    用雜湊而不是隨機或計數器：
+    - 隨機 → 同一份輸入產生不同作業，測不動，現場也重現不了
+    - 計數器 → 要多存一份狀態，而且跨程序重啟就歸零
+
+    同一天同一個孩子拿到同一份作業（可重現），換一天自然換一批詞。
+    """
+    seed = f"{(profile or {}).get('student_id') or ''}|{(diagnosis or {}).get('date') or ''}"
+    return int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:8], 16)
+
+
 def _minimal_homework() -> dict:
     """最小合法作業：所有其他路徑都失敗時的保底，永遠符合公開 schema。"""
     return {
@@ -259,9 +287,10 @@ def _minimal_homework() -> dict:
     }
 
 
-def _build_rule_items(dim: str, due_words: list[str] | None = None) -> list[dict]:
+def _build_rule_items(dim: str, due_words: list[str] | None = None,
+                      rotation: int = 0) -> list[dict]:
     """規則式產出 3-5 道習題，題目全取自 scaffold.VOCAB。"""
-    entries = _pick_vocab_entries(dim, n=5, due_words=due_words)
+    entries = _pick_vocab_entries(dim, n=5, due_words=due_words, rotation=rotation)
     why_base = _DIM_WHY_TEMPLATE.get(dim, "加強練習")
     items: list[dict] = []
     for i, entry in enumerate(entries[:5]):
@@ -314,7 +343,7 @@ def _rule_based_homework(profile: dict, diagnosis: dict) -> dict:
     focus = f"{_DIM_ZH.get(dim, dim)}（{dim}）"
     student_id = (profile or {}).get("student_id")
     due = srs.due_words(student_id, limit=5) if student_id else []
-    items = _build_rule_items(dim, due_words=due)
+    items = _build_rule_items(dim, due_words=due, rotation=_rotation_for(profile, diagnosis))
     return {
         "focus": focus,
         "items": items,

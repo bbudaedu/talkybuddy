@@ -44,6 +44,21 @@ FALLBACK_LINES: list[str] = [
 # 詞庫：中文 → (英文, 分類, 名詞片語, 目標英文句)
 # 名詞片語（np）用於中英夾雜替換；目標句（sent）用於純中文引導。
 # 分類：food / school / animal / family / action / color
+#
+# **每個 en 都必須落在教育部英語文領綱的參考字彙表內**（見
+# server/curriculum_data.py 與 data/curriculum/moe_english_2018.json）。
+# 目前 136 個詞全部在「基本 1,200 字」表內，例句用字也全部取自同一份表。
+# tests/test_curriculum_data.py 與 tests/test_scaffold_vocab.py 把這條釘成
+# 回歸守門：加了課綱外的字會當場紅，不必等到現場被問「這個字哪來的」。
+#
+# 加詞的三條規則（違反了測試會擋下來）：
+#   1. en 不得與既有詞重複——profile._EN_INFO 是 en → 詞條的反查表，
+#      重複會讓後面的蓋掉前面的（所以 orange 只當水果、fish 只當動物）
+#   2. sent 必須全域唯一——homework 出題時對 sent 去重，重複的題目會被靜默丟掉
+#   3. np 的冠詞要正確：可數用 a/an、不可數用 some，其餘用 my/the 或不加
+#
+# 中文語意與例句是依既有句型框架擴寫的（機器起草），字表本身是官方的。
+# 決賽前若有老師願意過目，優先看例句的語用自然度。
 # ---------------------------------------------------------------------------
 
 VOCAB: dict[str, dict] = {
@@ -54,8 +69,33 @@ VOCAB: dict[str, dict] = {
     "牛奶":   {"en": "milk",      "cat": "food",   "np": "some milk",     "sent": "I want to drink some milk."},
     "雞蛋":   {"en": "egg",       "cat": "food",   "np": "an egg",        "sent": "I want to eat an egg."},
     "米飯":   {"en": "rice",      "cat": "food",   "np": "some rice",     "sent": "I want to eat some rice."},
-    "水":     {"en": "water",     "cat": "food",   "np": "some water",    "sent": "I want to drink some water."},
+    "水":     {"en": "water",     "cat": "food",   "np": "some water",    "sent": "I want to drink water."},
     "橘子":   {"en": "orange",    "cat": "food",   "np": "an orange",     "sent": "I want to eat an orange."},
+    "水果":   {"en": "fruit",      "cat": "food",  "np": "some fruit",      "sent": "I want to eat some fruit."},
+    "葡萄":   {"en": "grape",      "cat": "food",  "np": "some grapes",     "sent": "I want to eat some grapes."},
+    "西瓜":   {"en": "watermelon", "cat": "food",  "np": "some watermelon", "sent": "I want to eat some watermelon."},
+    "草莓":   {"en": "strawberry", "cat": "food",  "np": "a strawberry",    "sent": "I want to eat a strawberry."},
+    "番茄":   {"en": "tomato",     "cat": "food",  "np": "a tomato",        "sent": "I want to eat a tomato."},
+    "檸檬":   {"en": "lemon",      "cat": "food",  "np": "a lemon",         "sent": "I want to eat a lemon."},
+    "蔬菜":   {"en": "vegetable",  "cat": "food",  "np": "some vegetables", "sent": "I want to eat some vegetables."},
+    "蛋糕":   {"en": "cake",       "cat": "food",  "np": "some cake",       "sent": "I want to eat some cake."},
+    "餅乾":   {"en": "cookie",     "cat": "food",  "np": "a cookie",        "sent": "I want to eat a cookie."},
+    "糖果":   {"en": "candy",      "cat": "food",  "np": "some candy",      "sent": "I want to eat some candy."},
+    "巧克力": {"en": "chocolate",  "cat": "food",  "np": "some chocolate",  "sent": "I want to eat some chocolate."},
+    "起司":   {"en": "cheese",     "cat": "food",  "np": "some cheese",     "sent": "I want to eat some cheese."},
+    "麵":     {"en": "noodle",     "cat": "food",  "np": "some noodles",    "sent": "I want to eat some noodles."},
+    "湯":     {"en": "soup",       "cat": "food",  "np": "some soup",       "sent": "I want to eat some soup."},
+    "果汁":   {"en": "juice",      "cat": "food",  "np": "some juice",      "sent": "I want to drink some juice."},
+    "茶":     {"en": "tea",        "cat": "food",  "np": "some tea",        "sent": "I want to drink some tea."},
+    "三明治": {"en": "sandwich",   "cat": "food",  "np": "a sandwich",      "sent": "I want to eat a sandwich."},
+    "漢堡":   {"en": "hamburger",  "cat": "food",  "np": "a hamburger",     "sent": "I want to eat a hamburger."},
+    "披薩":   {"en": "pizza",      "cat": "food",  "np": "some pizza",      "sent": "I want to eat some pizza."},
+    "雞肉":   {"en": "chicken",    "cat": "food",  "np": "some chicken",    "sent": "I want to eat some chicken."},
+    "冰淇淋": {"en": "ice cream",  "cat": "food",  "np": "some ice cream",  "sent": "I want to eat some ice cream."},
+    "爆米花": {"en": "popcorn",    "cat": "food",  "np": "some popcorn",    "sent": "I want to eat some popcorn."},
+    "早餐":   {"en": "breakfast",  "cat": "food",  "np": "breakfast",       "sent": "I want to eat breakfast."},
+    "午餐":   {"en": "lunch",      "cat": "food",  "np": "lunch",           "sent": "I want to eat lunch."},
+    "晚餐":   {"en": "dinner",     "cat": "food",  "np": "dinner",          "sent": "I want to eat dinner."},
     # 學校（8）
     "學校":   {"en": "school",    "cat": "school", "np": "school",        "sent": "I want to go to school."},
     "書包":   {"en": "backpack",  "cat": "school", "np": "a backpack",    "sent": "This is my backpack."},
@@ -65,6 +105,24 @@ VOCAB: dict[str, dict] = {
     "老師":   {"en": "teacher",   "cat": "school", "np": "my teacher",    "sent": "I like my teacher."},
     "同學":   {"en": "classmate", "cat": "school", "np": "my classmate",  "sent": "I play with my classmates."},
     "教室":   {"en": "classroom", "cat": "school", "np": "the classroom", "sent": "I am in the classroom."},
+    "筆":     {"en": "pen",        "cat": "school", "np": "a pen",          "sent": "This is my pen."},
+    "尺":     {"en": "ruler",      "cat": "school", "np": "a ruler",        "sent": "This is my ruler."},
+    "筆記本": {"en": "notebook",   "cat": "school", "np": "a notebook",     "sent": "This is my notebook."},
+    "字典":   {"en": "dictionary", "cat": "school", "np": "a dictionary",   "sent": "This is my dictionary."},
+    "地圖":   {"en": "map",        "cat": "school", "np": "a map",          "sent": "This is my map."},
+    "圖畫":   {"en": "picture",    "cat": "school", "np": "a picture",      "sent": "This is my picture."},
+    "黑板":   {"en": "blackboard", "cat": "school", "np": "the blackboard", "sent": "I see the blackboard."},
+    "圖書館": {"en": "library",    "cat": "school", "np": "the library",    "sent": "I want to go to the library."},
+    "操場":   {"en": "playground", "cat": "school", "np": "the playground", "sent": "I want to go to the playground."},
+    "朋友":   {"en": "friend",     "cat": "school", "np": "my friend",      "sent": "I play with my friends."},
+    "學生":   {"en": "student",    "cat": "school", "np": "a student",      "sent": "I am a student."},
+    "功課":   {"en": "homework",   "cat": "school", "np": "my homework",    "sent": "I do my homework."},
+    "考試":   {"en": "test",       "cat": "school", "np": "a test",         "sent": "I have a test."},
+    "問題":   {"en": "question",   "cat": "school", "np": "a question",     "sent": "I have a question."},
+    "故事":   {"en": "story",      "cat": "school", "np": "a story",        "sent": "I like this story."},
+    "音樂":   {"en": "music",      "cat": "school", "np": "music",          "sent": "I like music."},
+    "數學":   {"en": "math",       "cat": "school", "np": "math",           "sent": "I like math."},
+    "美術":   {"en": "art",        "cat": "school", "np": "art",            "sent": "I like art."},
     # 動物（7）
     "狗":     {"en": "dog",       "cat": "animal", "np": "a dog",         "sent": "I see a dog."},
     "貓":     {"en": "cat",       "cat": "animal", "np": "a cat",         "sent": "I see a cat."},
@@ -73,6 +131,28 @@ VOCAB: dict[str, dict] = {
     "鳥":     {"en": "bird",      "cat": "animal", "np": "a bird",        "sent": "I see a bird."},
     "魚":     {"en": "fish",      "cat": "animal", "np": "a fish",        "sent": "I see a fish."},
     "獅子":   {"en": "lion",      "cat": "animal", "np": "a lion",        "sent": "I see a lion."},
+    "熊":     {"en": "bear",      "cat": "animal", "np": "a bear",      "sent": "I see a bear."},
+    "牛":     {"en": "cow",       "cat": "animal", "np": "a cow",       "sent": "I see a cow."},
+    "鴨子":   {"en": "duck",      "cat": "animal", "np": "a duck",      "sent": "I see a duck."},
+    "青蛙":   {"en": "frog",      "cat": "animal", "np": "a frog",      "sent": "I see a frog."},
+    "馬":     {"en": "horse",     "cat": "animal", "np": "a horse",     "sent": "I see a horse."},
+    "猴子":   {"en": "monkey",    "cat": "animal", "np": "a monkey",    "sent": "I see a monkey."},
+    "老鼠":   {"en": "mouse",     "cat": "animal", "np": "a mouse",     "sent": "I see a mouse."},
+    "豬":     {"en": "pig",       "cat": "animal", "np": "a pig",       "sent": "I see a pig."},
+    "老虎":   {"en": "tiger",     "cat": "animal", "np": "a tiger",     "sent": "I see a tiger."},
+    "斑馬":   {"en": "zebra",     "cat": "animal", "np": "a zebra",     "sent": "I see a zebra."},
+    "綿羊":   {"en": "sheep",     "cat": "animal", "np": "a sheep",     "sent": "I see a sheep."},
+    "山羊":   {"en": "goat",      "cat": "animal", "np": "a goat",      "sent": "I see a goat."},
+    "狐狸":   {"en": "fox",       "cat": "animal", "np": "a fox",       "sent": "I see a fox."},
+    "螞蟻":   {"en": "ant",       "cat": "animal", "np": "an ant",      "sent": "I see an ant."},
+    "蜜蜂":   {"en": "bee",       "cat": "animal", "np": "a bee",       "sent": "I see a bee."},
+    "蝴蝶":   {"en": "butterfly", "cat": "animal", "np": "a butterfly", "sent": "I see a butterfly."},
+    "蛇":     {"en": "snake",     "cat": "animal", "np": "a snake",     "sent": "I see a snake."},
+    "蜘蛛":   {"en": "spider",    "cat": "animal", "np": "a spider",    "sent": "I see a spider."},
+    "烏龜":   {"en": "turtle",    "cat": "animal", "np": "a turtle",    "sent": "I see a turtle."},
+    "昆蟲":   {"en": "insect",    "cat": "animal", "np": "an insect",   "sent": "I see an insect."},
+    "小狗":   {"en": "puppy",     "cat": "animal", "np": "a puppy",     "sent": "I have a puppy."},
+    "寵物":   {"en": "pet",       "cat": "animal", "np": "a pet",       "sent": "I have a pet."},
     # 家庭（7）
     "媽媽":   {"en": "mom",       "cat": "family", "np": "my mom",        "sent": "I love my mom."},
     "爸爸":   {"en": "dad",       "cat": "family", "np": "my dad",        "sent": "I love my dad."},
@@ -81,15 +161,38 @@ VOCAB: dict[str, dict] = {
     "爺爺":   {"en": "grandpa",   "cat": "family", "np": "my grandpa",    "sent": "I love my grandpa."},
     "奶奶":   {"en": "grandma",   "cat": "family", "np": "my grandma",    "sent": "I love my grandma."},
     "家":     {"en": "home",      "cat": "family", "np": "home",          "sent": "I want to go home."},
+    "家人":   {"en": "family",  "cat": "family", "np": "my family",  "sent": "I love my family."},
+    "阿姨":   {"en": "aunt",    "cat": "family", "np": "my aunt",    "sent": "I love my aunt."},
+    "叔叔":   {"en": "uncle",   "cat": "family", "np": "my uncle",   "sent": "I love my uncle."},
+    "表哥":   {"en": "cousin",  "cat": "family", "np": "my cousin",  "sent": "I love my cousin."},
+    "父母":   {"en": "parent",  "cat": "family", "np": "my parents", "sent": "I love my parents."},
     # 動作（8）
     "吃":     {"en": "eat",       "cat": "action", "np": "eat",           "sent": "I want to eat."},
     "喝":     {"en": "drink",     "cat": "action", "np": "drink",         "sent": "I want to drink some water."},
-    "去":     {"en": "go",        "cat": "action", "np": "go",            "sent": "I want to go to school."},
+    "去":     {"en": "go",        "cat": "action", "np": "go",            "sent": "I want to go to the zoo."},
     "玩":     {"en": "play",      "cat": "action", "np": "play",          "sent": "I like to play."},
     "睡覺":   {"en": "sleep",     "cat": "action", "np": "sleep",         "sent": "I want to sleep."},
     "跑步":   {"en": "run",       "cat": "action", "np": "run",           "sent": "I like to run."},
     "畫畫":   {"en": "draw",      "cat": "action", "np": "draw",          "sent": "I like to draw."},
     "唱歌":   {"en": "sing",      "cat": "action", "np": "sing",          "sent": "I like to sing."},
+    "走路":   {"en": "walk",   "cat": "action", "np": "walk",   "sent": "I like to walk."},
+    "跳":     {"en": "jump",   "cat": "action", "np": "jump",   "sent": "I like to jump."},
+    "讀":     {"en": "read",   "cat": "action", "np": "read",   "sent": "I like to read."},
+    "寫":     {"en": "write",  "cat": "action", "np": "write",  "sent": "I like to write."},
+    "說話":   {"en": "talk",   "cat": "action", "np": "talk",   "sent": "I like to talk."},
+    "聽":     {"en": "listen", "cat": "action", "np": "listen", "sent": "I like to listen."},
+    "學習":   {"en": "learn",  "cat": "action", "np": "learn",  "sent": "I like to learn."},
+    "幫忙":   {"en": "help",   "cat": "action", "np": "help",   "sent": "I want to help."},
+    "笑":     {"en": "laugh",  "cat": "action", "np": "laugh",  "sent": "I like to laugh."},
+    "分享":   {"en": "share",  "cat": "action", "np": "share",  "sent": "I like to share."},
+    "游泳":   {"en": "swim",   "cat": "action", "np": "swim",   "sent": "I like to swim."},
+    "跳舞":   {"en": "dance",  "cat": "action", "np": "dance",  "sent": "I like to dance."},
+    "騎":     {"en": "ride",   "cat": "action", "np": "ride",   "sent": "I like to ride a bike."},
+    "洗":     {"en": "wash",   "cat": "action", "np": "wash",   "sent": "I wash my hands."},
+    "買":     {"en": "buy",    "cat": "action", "np": "buy",    "sent": "I want to buy a book."},
+    "做":     {"en": "make",   "cat": "action", "np": "make",   "sent": "I want to make a cake."},
+    "站":     {"en": "stand",  "cat": "action", "np": "stand",  "sent": "I stand up."},
+    "坐":     {"en": "sit",    "cat": "action", "np": "sit",    "sent": "I sit down."},
     # 顏色（6）
     "紅色":   {"en": "red",       "cat": "color",  "np": "red",           "sent": "My favorite color is red."},
     "藍色":   {"en": "blue",      "cat": "color",  "np": "blue",          "sent": "My favorite color is blue."},
@@ -97,13 +200,26 @@ VOCAB: dict[str, dict] = {
     "綠色":   {"en": "green",     "cat": "color",  "np": "green",         "sent": "My favorite color is green."},
     "黑色":   {"en": "black",     "cat": "color",  "np": "black",         "sent": "My favorite color is black."},
     "白色":   {"en": "white",     "cat": "color",  "np": "white",         "sent": "My favorite color is white."},
+    "粉紅色": {"en": "pink",   "cat": "color", "np": "pink",   "sent": "My favorite color is pink."},
+    "咖啡色": {"en": "brown",  "cat": "color", "np": "brown",  "sent": "My favorite color is brown."},
+    "紫色":   {"en": "purple", "cat": "color", "np": "purple", "sent": "My favorite color is purple."},
+    "灰色":   {"en": "gray",   "cat": "color", "np": "gray",   "sent": "My favorite color is gray."},
 }
 
 # 中文詞依長度遞減排序（先匹配長詞，避免「書包」被「書」搶先）
 _ZH_KEYS_BY_LEN = sorted(VOCAB.keys(), key=len, reverse=True)
 
-# 英文單數名詞集合（供複數修正判斷）
-_EN_NOUNS = {v["en"] for v in VOCAB.values() if v["cat"] in ("food", "school", "animal", "family")}
+# 英文單數名詞集合（供「two dog → two dogs」的複數修正）。
+#
+# 排除不可數名詞：np 以 "some " 開頭的就是不可數（bread / rice / water / milk…），
+# 把它們放進來會把 "two rice" 改成 "two rices"，教錯比不教更糟。
+# 用 np 的冠詞當判準而不是另外維護一張清單——資料已經在詞條裡了，
+# 兩份清單遲早會不同步。
+_EN_NOUNS = {
+    v["en"] for v in VOCAB.values()
+    if v["cat"] in ("food", "school", "animal", "family")
+    and not v["np"].startswith("some ")
+}
 
 
 # ---------------------------------------------------------------------------

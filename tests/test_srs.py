@@ -218,12 +218,21 @@ def test_homework_prioritises_due_words(tmp_db):
 
 
 def test_homework_falls_back_to_dimension_picks_when_nothing_is_due(tmp_db):
-    """沒有到期詞時，出題順序必須與原本完全一致（不得因為接了排程就漂掉）。"""
+    """沒有到期詞時，題目全部來自該弱項維度的分類，而且仍然合法。
+
+    （不同學生會拿到不同的一批——那是取題輪轉，見
+    test_homework_differs_between_students_on_the_same_day。這裡驗的是
+    「排程沒東西可給時，出題不會開天窗」。）
+    """
+    from server import scaffold
     from server.agents import homework
 
-    a = homework.generate_homework({}, _WEAK_GRAMMAR, allow_cloud=False)
-    b = homework.generate_homework({"student_id": "nobody"}, _WEAK_GRAMMAR, allow_cloud=False)
-    assert [i["target_en"] for i in a["items"]] == [i["target_en"] for i in b["items"]]
+    out = homework.generate_homework({"student_id": "nobody"}, _WEAK_GRAMMAR,
+                                     allow_cloud=False)
+    assert 3 <= len(out["items"]) <= 5
+    bank = {v["sent"] for v in scaffold.VOCAB.values()}
+    for item in out["items"]:
+        assert item["target_en"] in bank, f"題目不在詞庫內：{item['target_en']}"
 
 
 def test_homework_without_student_id_still_works(tmp_db):
@@ -253,3 +262,61 @@ def test_homework_survives_srs_failure(tmp_db, monkeypatch):
         allow_cloud=False,
     )
     assert 3 <= len(out["items"]) <= 5
+
+
+# ---------------------------------------------------------------------------
+# 出題輪轉：詞庫擴充後，後面的詞也要出得來
+# ---------------------------------------------------------------------------
+
+def test_homework_rotates_across_days(tmp_db):
+    """換一天要換一批詞。沒有輪轉的話，136 個詞永遠只出得到前 5 個。"""
+    from server.agents import homework
+
+    seen = []
+    for day in ("2026-07-20", "2026-07-21", "2026-07-22"):
+        out = homework.generate_homework(
+            {"student_id": "alice"}, dict(_WEAK_GRAMMAR, date=day), allow_cloud=False
+        )
+        seen.append(tuple(i["target_en"] for i in out["items"]))
+
+    assert len(set(seen)) == 3, f"三天拿到同一份作業：{seen}"
+
+
+def test_homework_is_reproducible_within_a_day(tmp_db):
+    """同一天同一個孩子拿到同一份作業——現場要能重現，不能每次刷新都變。"""
+    from server.agents import homework
+
+    args = ({"student_id": "alice"}, dict(_WEAK_GRAMMAR, date="2026-07-20"))
+    a = homework.generate_homework(*args, allow_cloud=False)
+    b = homework.generate_homework(*args, allow_cloud=False)
+    assert a["items"] == b["items"]
+
+
+def test_homework_differs_between_students_on_the_same_day(tmp_db):
+    from server.agents import homework
+
+    day = dict(_WEAK_GRAMMAR, date="2026-07-20")
+    a = homework.generate_homework({"student_id": "alice"}, day, allow_cloud=False)
+    b = homework.generate_homework({"student_id": "bob"}, day, allow_cloud=False)
+    assert a["items"] != b["items"]
+
+
+def test_rotation_eventually_reaches_the_whole_word_bank(tmp_db):
+    """跑滿一年份的輪轉，被出過的詞要涵蓋詞庫的多數。
+
+    這條是擴充詞庫的**驗收**：詞加了但出不來，等於沒加。
+    """
+    from server import scaffold
+    from server.agents import homework
+
+    used = set()
+    for day in range(1, 200):
+        items = homework._build_rule_items("grammar", rotation=day)
+        used.update(i["target_en"] for i in items)
+
+    grammar_bank = {
+        v["sent"] for v in scaffold.VOCAB.values()
+        if v["cat"] in homework._DIM_TO_CATS["grammar"]
+    }
+    covered = len(used & grammar_bank) / len(grammar_bank)
+    assert covered >= 0.8, f"輪轉只碰到文法題庫的 {covered:.0%}"
