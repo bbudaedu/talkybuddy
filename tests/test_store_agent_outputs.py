@@ -89,3 +89,55 @@ def test_unknown_kind_is_rejected(tmp_db):
     """打錯 kind 會讓產出掉進儀表板永遠讀不到的桶子裡，必須當場失敗而非靜默寫入。"""
     with pytest.raises(ValueError):
         store.add_agent_output("homwork", _HOMEWORK)  # 故意拼錯
+
+
+# ---------------------------------------------------------------------------
+# 學生範圍隔離
+#
+# interactions 與 diagnoses 都有 student_id 隔離，agent_outputs 沒有的話，
+# 學生 A 的 token 會讀到學生 B 的作業與家長週報。單一學生 demo 看不出來，
+# 但 _resolve_student 的存在說明這個 codebase 有在建模多學生。
+# ---------------------------------------------------------------------------
+
+def test_outputs_are_scoped_by_student(tmp_db):
+    store.add_agent_output("homework", _HOMEWORK, student_id="alice")
+    store.add_agent_output("homework", dict(_HOMEWORK, focus="bob 的"), student_id="bob")
+
+    alice = store.list_agent_outputs(student_id="alice")
+    bob = store.list_agent_outputs(student_id="bob")
+
+    assert [r["focus"] for r in alice] == [_HOMEWORK["focus"]]
+    assert [r["focus"] for r in bob] == ["bob 的"]
+
+
+def test_student_filter_combines_with_kind_and_limit(tmp_db):
+    """三個條件要能疊加，否則儀表板分頁時會漏資料或串生。"""
+    for i in range(3):
+        store.add_agent_output("homework", dict(_HOMEWORK, focus=f"a{i}"), student_id="alice")
+        store.add_agent_output("report", dict(_REPORT, summary=f"b{i}"), student_id="bob")
+
+    rows = store.list_agent_outputs(kind="homework", student_id="alice", limit=2)
+    assert len(rows) == 2
+    assert all(r["kind"] == "homework" for r in rows)
+    assert [r["focus"] for r in rows] == ["a2", "a1"]
+
+
+def test_limit_applies_after_student_filter(tmp_db):
+    """limit 必須套在過濾後的結果上。
+
+    若先取 limit 筆再過濾，別的學生的資料會把配額吃光，
+    當事人反而讀到空清單——這種 bug 在單一學生 demo 上永遠不會現形。
+    """
+    for i in range(5):
+        store.add_agent_output("homework", dict(_HOMEWORK, focus=f"noise{i}"), student_id="bob")
+    store.add_agent_output("homework", dict(_HOMEWORK, focus="alice 唯一的"), student_id="alice")
+
+    rows = store.list_agent_outputs(student_id="alice", limit=3)
+    assert [r["focus"] for r in rows] == ["alice 唯一的"]
+
+
+def test_student_id_omitted_returns_all(tmp_db):
+    """省略 student_id 維持舊行為（回全部），與 list_diagnoses 一致。"""
+    store.add_agent_output("homework", _HOMEWORK, student_id="alice")
+    store.add_agent_output("report", _REPORT, student_id="bob")
+    assert len(store.list_agent_outputs()) == 2

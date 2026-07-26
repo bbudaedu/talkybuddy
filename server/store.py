@@ -122,9 +122,17 @@ def init_db() -> None:
             "CREATE TABLE IF NOT EXISTS agent_outputs ("
             " seq INTEGER PRIMARY KEY,"
             " kind TEXT NOT NULL,"
+            " student_id TEXT NOT NULL DEFAULT '',"
             " ts TEXT NOT NULL,"
             " payload TEXT NOT NULL)"
         )
+        # student_id 是後補的欄位。CREATE TABLE IF NOT EXISTS 不會替既有表加欄位，
+        # 開發機上可能已建好舊版表，故補一段冪等遷移。
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_outputs)")}
+        if "student_id" not in cols:
+            conn.execute(
+                "ALTER TABLE agent_outputs ADD COLUMN student_id TEXT NOT NULL DEFAULT ''"
+            )
         conn.commit()
 
 
@@ -246,55 +254,69 @@ def list_diagnoses(student_id: str | None = None) -> list[dict]:
 AGENT_OUTPUT_KINDS = ("homework", "report")
 
 
-def add_agent_output(kind: str, payload: dict) -> int:
+def add_agent_output(kind: str, payload: dict, student_id: str | None = None) -> int:
     """新增一筆 agent 產出，回傳自增 seq。
 
     kind 不在 AGENT_OUTPUT_KINDS 內時**明確拋 ValueError**，不靜默寫入——
     打錯字（"homwork"）會讓產出掉進儀表板永遠讀不到的桶子裡，
     那是最難查的一種 bug，寧可當場失敗。呼叫端在背景任務中，
     例外會被既有的 try/except 吃掉，不會影響即時路徑。
+
+    student_id 省略時用 config.STUDENT_ID（比照 add_interaction）。
     """
     if kind not in AGENT_OUTPUT_KINDS:
         raise ValueError(f"未知的 agent 產出類型：{kind!r}（可用：{AGENT_OUTPUT_KINDS}）")
     body = dict(payload)
+    sid = student_id if student_id is not None else _student_id()
     ts = datetime.datetime.now(
         datetime.timezone(datetime.timedelta(hours=8))
     ).isoformat(timespec="seconds")
     with _lock:
         conn = _get_conn()
         cur = conn.execute(
-            "INSERT INTO agent_outputs (kind, ts, payload) VALUES (?, ?, ?)",
-            (kind, ts, json.dumps(body, ensure_ascii=False)),
+            "INSERT INTO agent_outputs (kind, student_id, ts, payload) VALUES (?, ?, ?, ?)",
+            (kind, sid, ts, json.dumps(body, ensure_ascii=False)),
         )
         conn.commit()
         return int(cur.lastrowid)
 
 
-def list_agent_outputs(kind: str | None = None, limit: int = 20) -> list[dict]:
+def list_agent_outputs(
+    kind: str | None = None,
+    limit: int = 20,
+    student_id: str | None = None,
+) -> list[dict]:
     """列出 agent 產出，新→舊（與 list_interactions 同方向，儀表板一致）。
 
-    每筆回傳 payload 攤平後再補上 seq / kind / ts，讓呼叫端不必再拆一層。
-    kind 省略時回全部類型混排。
+    每筆回傳 payload 攤平後再補上 seq / kind / student_id / ts，
+    讓呼叫端不必再拆一層。kind / student_id 省略時該條件不設限。
+
+    過濾一律在 SQL 內完成、LIMIT 最後才套用。若先取 LIMIT 筆再於 Python 過濾，
+    別的學生的資料會把配額吃光，當事人反而讀到空清單——這種 bug 在單一學生
+    demo 上永遠不會現形，等到多學生才爆。
     """
+    where: list[str] = []
+    params: list = []
+    if kind is not None:
+        where.append("kind = ?")
+        params.append(kind)
+    if student_id is not None:
+        where.append("student_id = ?")
+        params.append(student_id)
+    sql = "SELECT seq, kind, student_id, ts, payload FROM agent_outputs"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY seq DESC LIMIT ?"
+    params.append(int(limit))
     with _lock:
         conn = _get_conn()
-        if kind is None:
-            rows = conn.execute(
-                "SELECT seq, kind, ts, payload FROM agent_outputs"
-                " ORDER BY seq DESC LIMIT ?",
-                (int(limit),),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT seq, kind, ts, payload FROM agent_outputs"
-                " WHERE kind = ? ORDER BY seq DESC LIMIT ?",
-                (kind, int(limit)),
-            ).fetchall()
+        rows = conn.execute(sql, tuple(params)).fetchall()
     out: list[dict] = []
-    for seq, k, ts, payload in rows:
+    for seq, k, sid, ts, payload in rows:
         d = json.loads(payload)
         d["seq"] = int(seq)
         d["kind"] = k
+        d["student_id"] = sid
         d["ts"] = ts
         out.append(d)
     return out
