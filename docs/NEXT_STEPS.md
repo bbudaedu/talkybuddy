@@ -8,7 +8,8 @@
 
 | 項目 | 狀態 |
 |---|---|
-| 測試基準 | **632 passed**（`tests/`；上一版是 552） |
+| 測試基準 | **811 passed**（`pytest -q` 全套：`tests/` 785 + streaming 26） |
+| | session 開始時是 552，而且全套根本跑不動 |
 | 離線路徑（斷網橋段） | ✅ 端到端跑通，`source` 全為 `rule`、零出境 |
 | 三個 agent（派作業／週報／決策判斷） | ✅ 完成並接進 `pipeline._refresh_directive` |
 | AgentCore 資源（新加坡） | ✅ Memory ACTIVE、3 個 Harness READY、IAM 已過官方安全稽核 |
@@ -16,6 +17,8 @@
 | Code review 待修項 | ✅ **全部清空**（B2/B4 + W1–W9） |
 | 間隔重複（原「推薦演算法」） | ✅ 已實作並接線 |
 | 教材依據（課綱） | ✅ 官方資料已抓取入庫，可現場佐證 |
+| 題庫 | ✅ 44 → **136 詞**，99.3% 落在教育部基本 1,200 字內 |
+| AgentCore 共用 skill | ⚠️ 已產生、**尚未掛上**（等 AWS 放行） |
 | **雲端實際產出** | ❌ **零實證** — AWS 帳號被鎖，模型呼叫從未成功 |
 
 **決賽策略（使用者 2026-07-26 拍板）**：以雲端為主，決賽當天用**主辦方提供的 AWS 資源**展示。
@@ -84,48 +87,73 @@ Title-case 英文專名。所以「有呼叫 deidentify」從來不等於「沒�
 
 ---
 
+## 1b. 同一個 session 的第二輪（commit `0852193`..`6b74616`）
+
+### 測試環境修好了（`0852193`）
+
+兩件事讓「跑全套」原本不可能：`pytest -q` 會收集 `third_party/llama.cpp`
+並在 import 期失敗；`models/sherpa-.../test_wavs/` 整個資料夾不在，
+streaming 的 3 條音訊測試全部 FileNotFoundError。
+
+- `pytest.ini` 限定 `testpaths`，並加 `faulthandler_timeout=60`（真的卡住時印堆疊）
+- `setup_env.sh` 單獨補回 178KB 的 `zh.wav`（原本的 guard 只看 `model.int8.onnx`，
+  模型在、音檔被清掉的機器會永遠少那三條）
+
+**更正上一版交接文件的誤判**：`test_turn_manager.py` 不是卡住，是慢（38.7 秒）。
+先前用 20 秒的 per-file timeout 掃過去，把慢誤判成 hang。
+
+### 題庫 44 → 136 詞（`06dd16c`）
+
+92 個新詞全部落在教育部基本 1,200 字表內，**連例句用字都是**——加詞前用
+`curriculum_data` 程式驗過才寫進 `scaffold.py`。覆蓋率 97.7% → 99.3%。
+
+擴充後才浮出來的問題：出題永遠取詞庫前幾個，新詞根本出不來。加了取題輪轉，
+種子是 `sha256(學生 + 診斷日期)`：同一天同一個孩子拿到同一份（現場可重現），
+換一天換一批，不同學生不同批。
+
+順手修兩個既有缺陷：`_EN_NOUNS` 把 bread/rice/water/milk 也收進複數修正表
+（"two rice" → "two rices"，教錯比不教更糟）；兩組重複的目標句會被 homework
+的去重靜默丟掉一題。
+
+`tests/test_scaffold_vocab.py` 把加詞規則釘成守門（en 不得重複、sent 必須唯一、
+冠詞要對、每個字與例句用字都必須在課綱表內）。
+
+### AgentCore 共用 skill（`6b74616`，**尚未掛上**）
+
+`scripts/generate_agent_skill.py` 從課綱 JSON 與專案常數產生
+`deploy/aws/skills/taiwan-elementary-english/SKILL.md`。測試會重跑腳本比對輸出，
+不同步就紅——skill 靜默過期等於三個 agent 一起拿舊依據出題。
+
+掛載步驟與那道踩過的坑（`update-harness` 不是 patch 語意）寫在
+`AGENTCORE_RESOURCES.md`。
+
+---
+
 ## 2. 剩下的待辦
 
 ### A. AgentCore 加值（需 AWS 放行）
 
 依投資報酬排序：
 
-1. **自訂 skill `taiwan-elementary-english`** — 現在有真的課綱資料了，可以把
-   `curriculum_data` 的主題／溝通功能／基本字表寫成 skill 掛上 Harness
-   （`CreateHarness` 有 `skills` 欄位），三個 agent 共用、一改全改
+1. ~~自訂 skill `taiwan-elementary-english`~~ — **內容已產生**，只差
+   `aws s3 sync` + `update-harness`（指令在 `AGENTCORE_RESOURCES.md`）
 2. **Gateway 包 `curriculum.py` + `curriculum_data.py` 成 MCP tool** — agent 能「查」課綱
-   而非把課綱塞進 prompt
+   而非把課綱塞進 prompt。現在課綱查詢層已經是現成的公開函式，包起來很直接
 3. **Memory 加 `userPreferenceMemoryStrategy`** — 與 `word_reviews` 互補
 4. Evaluations（需先有 OTEL trace）
 
 **放行後的三步**：撥開關（ARN 在 `AGENTCORE_RESOURCES.md`）→ 端到端實跑確認
 `source` 從 `rule` 變 `cloud` → **有實證後才刪規則式實作**。
 
-### B. 題庫擴充（需人審，不可機器代筆）
+### B. 題庫再擴充（可選，需人審）
 
-`scaffold.VOCAB` 仍是 44 個詞。要擴到課綱的 1,200 字，缺的是**中文語意與例句**——
-官方字彙表只有英文單字，沒有中文對照也沒有例句。這兩樣機器生成就是憑印象寫，
-必須人工撰寫或審過才進 repo。`curriculum_data.vocab_for_topic()` 可以直接列出某主題
-該補哪些詞，照著補即可。
+136 詞對決賽夠用。要再往 1,200 字推的話，缺的是**中文語意與例句**——官方字彙表
+只有英文單字。這一輪的 92 個詞是依既有句型框架擴寫的（機器起草、程式驗過字表），
+再往下推建議請老師過目例句的語用自然度。
 
-擴充時注意 `scaffold.VOCAB` 的 schema 是 `{zh_key: {en, cat, np, sent}}`，`homework.py`
-的規則式出題直接依賴它；要嘛保持相容，要嘛同步改 `_DIM_TO_CATS`（`homework.py`）與
-`_PROMPT_TEMPLATES_BY_CAT`。
-
-### C. streaming 測試套件的環境缺損（既有問題，非本次造成）
-
-`server/streaming/tests/` 有 3 個測試失敗、1 個檔案會卡住不結束：
-
-- `models/sherpa-onnx-sense-voice-.../test_wavs/` 整個資料夾不在（模型只下載了
-  `model.int8.onnx` 與 `tokens.txt`）。`test_barge_in_gate.py`、`test_realwire_synth.py`、
-  `test_vad.py` 都因為讀不到 `zh.wav` 而失敗
-- `test_turn_manager.py` 跑到第二條會卡住（20 秒 timeout 無輸出）
-
-已用 `git stash` 在乾淨工作樹上覆驗過，**與本次改動無關**。
-影響僅限測試，runtime 用的模型檔是齊的。
-
-`./run_tests.sh` 直接跑 `pytest -q`（不帶路徑），會連 `third_party/llama.cpp` 的測試一起收集
-並在 import 期就失敗。要跑全套請用 `pytest tests/`（本次的 632 passed 就是這樣跑的）。
+`curriculum_data.vocab_for_topic()` 可直接列出某主題還缺哪些詞。
+加詞規則見 `server/scaffold.py` 的 VOCAB 區塊註解，違反的話
+`tests/test_scaffold_vocab.py` 會擋下來。
 
 ---
 
@@ -158,6 +186,20 @@ Title-case 英文專名。所以「有呼叫 deidentify」從來不等於「沒�
   才不會把 `campus` 切成 `ca` + `mpus`
 - `airplane (plane)` 這種條目逗號一切就散了，要看括號配對接回去
 
+**AgentCore Harness skills（官方文件的安全注意事項）**
+- `skills` 是 union，四種來源：`path` / `s3` / `git` / `awsSkills`，擇一
+- skill 內容（**含它帶的腳本**）會被當成**可信輸入**注入 agent context
+- **沒有 IAM condition key 能限制 per-invocation 的 `skills` 欄位**——invoke 時
+  傳同名 skill 會覆蓋 harness 上掛好的那份。應用層絕不可把外部輸入透傳到
+  `InvokeHarness` 的 `skills`
+- `systemPrompt` 是 content block 的 list，不是字串；`model` 的 variant key 是
+  `bedrockModelConfig`（不是裸的 `bedrock`），調參是平的、沒有 `inferenceConfig` 包層
+
+**跑測試**
+- `pytest -q` 現在直接跑得動（`pytest.ini` 限定 `testpaths`）
+- streaming 那套第一次跑會經 modelscope 下載 SenseVoice（~900MB），
+  之後有快取就快很多（首次約 6 分鐘，之後約 2.5 分鐘）
+
 **Kiro CLI 協作**
 - 免費 Builder ID 即可跑 headless（官方文件說要 Pro 訂閱，對 2.14.2 不成立）
 - 工具旗標是 `--trust-tools=fs_read,fs_write,execute_bash`
@@ -178,4 +220,7 @@ Title-case 英文專名。所以「有呼叫 deidentify」從來不等於「沒�
 | `server/srs.py` | 間隔重複排程（純函式、可離線） |
 | `server/curriculum_data.py` | 課綱官方資料查詢層（含誠實邊界說明） |
 | `scripts/extract_curriculum.py` | 課綱抽取腳本（可重跑、帶 SHA-256） |
+| `scripts/generate_agent_skill.py` | 產生 Harness 共用 skill（改內容要改來源不是改 md） |
+| `deploy/aws/skills/taiwan-elementary-english/` | 產生出來的 skill（尚未掛上 Harness） |
+| `tests/test_scaffold_vocab.py` | 加詞守門（重複、冠詞、課綱依據） |
 | `.kiro/steering/*.md` | Kiro 協作的檔案邊界與設計契約 |
