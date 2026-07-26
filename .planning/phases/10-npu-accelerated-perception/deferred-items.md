@@ -39,3 +39,22 @@
   疑為 spike 目錄依賴未安裝，與 NPU-02 無關。
 
 `pytest tests/test_npu_placement.py -x`：14/14 全綠。
+
+## 10-03 執行時確認（2026-07-26）
+
+執行全套 `pytest` 時，以下失敗與本 plan 改動的檔案（`edge/npu_spike/raw_neuron_session.py`、
+`tests/test_raw_neuron_session.py`）完全無關，且與 10-01/10-02 記錄的既有失敗集合完全相同
+（同一批測試、同一批錯誤原因），故不重複修正：
+
+- `tests/test_audio_io.py`、`tests/test_pipeline_wav_fastpath.py` — collection error：
+  `ModuleNotFoundError: No module named 'soundfile'`。
+- `tests/test_asr_backend.py::test_sensevoice_opencc_s2twp`、
+  `test_sensevoice_transcribe_converts_to_traditional` — 缺 OpenCC 轉換資料。
+- `tests/test_nova_sonic.py`（7 個測試）— 缺 `pytest-asyncio` 外掛，async 測試未真正執行。
+- `spike/a2_pipecat/tests/test_interruptible_synth.py`（3 個測試）— collection error，
+  spike 目錄依賴缺失。
+
+`pytest tests/test_raw_neuron_session.py -x`：10/10 全綠（8 個 behavior 測試 + 2 個補充測試）。
+`pytest --ignore=tests/test_audio_io.py --ignore=tests/test_pipeline_wav_fastpath.py`：
+366 passed, 2 skipped，9 個既有失敗 + 3 個既有 collection error（皆列於上，與 10-01/10-02
+記錄的清單一致），無新增回歸。
