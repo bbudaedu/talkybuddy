@@ -150,3 +150,26 @@ def test_load_never_raises_when_the_file_is_missing(monkeypatch, tmp_path):
         assert cd.source_citation() == "（課綱資料未載入）"
     finally:
         cd.load.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# /api/curriculum：現場佐證「教材依據」的端點
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_curriculum_endpoint_returns_a_verifiable_citation():
+    """回應必須帶得走：官方網址 + 檔案雜湊 + 我們題庫的對照數字。"""
+    from httpx import ASGITransport, AsyncClient
+
+    from server.app import app
+
+    async with AsyncClient(transport=ASGITransport(app=app),
+                           base_url="http://test") as client:
+        resp = await client.get("/api/curriculum")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source"]["url"].startswith("https://www.naer.edu.tw/")
+    assert len(body["source"]["sha256"]) == 64
+    assert body["counts"]["basic_1200"] > 1000
+    assert body["our_vocab_coverage"]["ratio"] >= 0.95

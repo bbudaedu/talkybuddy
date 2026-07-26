@@ -180,6 +180,32 @@ async def api_status():
     }
 
 
+@app.get("/api/curriculum")
+async def api_curriculum():
+    """教材依據：教育部英語文領綱的出處、規模，以及本專案題庫的對照。
+
+    刻意**不設 JWT**：回的全是政府公開資料與本專案題庫的統計，沒有任何
+    學生資訊——與 /api/status 同級。要現場佐證「教材依據是什麼」時，
+    這個端點的 source 區塊帶著官方網址與檔案 SHA-256，可以當場驗。
+    """
+    from server import curriculum_data, scaffold
+
+    ours = [v["en"] for v in scaffold.VOCAB.values()]
+    cov = curriculum_data.coverage(ours)
+    return {
+        "source": curriculum_data.source_meta(),
+        "citation": curriculum_data.source_citation(),
+        "elementary_targets": curriculum_data.elementary_targets(),
+        "counts": {
+            "basic_1200": len(curriculum_data.basic_vocab()),
+            "extra_800": len(curriculum_data.extra_vocab()),
+            "topics": len(curriculum_data.topics()),
+            "communicative_functions": len(curriculum_data.communicative_functions()),
+        },
+        "our_vocab_coverage": cov,
+    }
+
+
 @app.get("/api/wake-config")
 async def api_wake_config():
     """下發 Porcupine Web 喚醒設定給瀏覽器。
