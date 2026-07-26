@@ -116,6 +116,15 @@ def init_db() -> None:
             " payload TEXT NOT NULL,"
             " updated_at TEXT NOT NULL)"
         )
+        # agent 產出（派作業／週報）。用單表以 kind 區分而非兩張近乎相同的表：
+        # 新增產出類型時不必動 schema，儀表板也能一次撈完混排的時間軸。
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS agent_outputs ("
+            " seq INTEGER PRIMARY KEY,"
+            " kind TEXT NOT NULL,"
+            " ts TEXT NOT NULL,"
+            " payload TEXT NOT NULL)"
+        )
         conn.commit()
 
 
@@ -230,6 +239,65 @@ def list_diagnoses(student_id: str | None = None) -> list[dict]:
     if student_id is not None:
         items = [d for d in items if d.get("student_id") == student_id]
     return items
+
+
+# agent 產出的合法類型。派作業（子專案 B）與週報（子專案 C）目前是全部；
+# 編排 agent（子專案 E）之後若新增類型，加在這裡即可，不必改 schema。
+AGENT_OUTPUT_KINDS = ("homework", "report")
+
+
+def add_agent_output(kind: str, payload: dict) -> int:
+    """新增一筆 agent 產出，回傳自增 seq。
+
+    kind 不在 AGENT_OUTPUT_KINDS 內時**明確拋 ValueError**，不靜默寫入——
+    打錯字（"homwork"）會讓產出掉進儀表板永遠讀不到的桶子裡，
+    那是最難查的一種 bug，寧可當場失敗。呼叫端在背景任務中，
+    例外會被既有的 try/except 吃掉，不會影響即時路徑。
+    """
+    if kind not in AGENT_OUTPUT_KINDS:
+        raise ValueError(f"未知的 agent 產出類型：{kind!r}（可用：{AGENT_OUTPUT_KINDS}）")
+    body = dict(payload)
+    ts = datetime.datetime.now(
+        datetime.timezone(datetime.timedelta(hours=8))
+    ).isoformat(timespec="seconds")
+    with _lock:
+        conn = _get_conn()
+        cur = conn.execute(
+            "INSERT INTO agent_outputs (kind, ts, payload) VALUES (?, ?, ?)",
+            (kind, ts, json.dumps(body, ensure_ascii=False)),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def list_agent_outputs(kind: str | None = None, limit: int = 20) -> list[dict]:
+    """列出 agent 產出，新→舊（與 list_interactions 同方向，儀表板一致）。
+
+    每筆回傳 payload 攤平後再補上 seq / kind / ts，讓呼叫端不必再拆一層。
+    kind 省略時回全部類型混排。
+    """
+    with _lock:
+        conn = _get_conn()
+        if kind is None:
+            rows = conn.execute(
+                "SELECT seq, kind, ts, payload FROM agent_outputs"
+                " ORDER BY seq DESC LIMIT ?",
+                (int(limit),),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT seq, kind, ts, payload FROM agent_outputs"
+                " WHERE kind = ? ORDER BY seq DESC LIMIT ?",
+                (kind, int(limit)),
+            ).fetchall()
+    out: list[dict] = []
+    for seq, k, ts, payload in rows:
+        d = json.loads(payload)
+        d["seq"] = int(seq)
+        d["kind"] = k
+        d["ts"] = ts
+        out.append(d)
+    return out
 
 
 def get_profile(student_id: str | None = None) -> dict | None:
