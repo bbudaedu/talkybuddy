@@ -27,14 +27,39 @@ edge 線（Genio 520 / Phase 10 NPU）由 GSD pi 另一條線負責，**不要�
 
 ---
 
-## 🔴 唯一阻塞點：AWS 帳號 Bedrock 配額被歸零
+## 🟡 阻塞點：帳號驗證中（暫時性，非配額問題）
 
-> ⚠️ **2026-07-26 更正**：先前寫的「根因是 Free plan」**已被實測推翻**。
-> 帳號早已升級且驗證為 `accountPlanType: PAID / ACTIVE`（credits $51.92），
-> IAM 也已掛 `AdministratorAccess`，Bedrock 仍然全模型 `ThrottlingException`。
+> ⚠️ **2026-07-26 兩次更正，以最後這版為準。**
+> 1. 「根因是 Free plan」— **錯**。帳號已是 `PAID / ACTIVE`（credits $51.92）。
+> 2. 「配額被歸零、只能開 Support case」— **也錯**。真正原因見下。
 
-**實際根因（2026-07-26 以 Service Quotas API 佐證）**：帳號的 Bedrock
-on-demand token 配額被**明確套用為 0**，而非 AWS 預設值。
+**實際根因**：從 `ap-east-2`（台北）打 Converse 才拿到真正的錯誤訊息：
+
+> Your account is currently being verified. **Verification normally takes less
+> than 2 hours.** Until your account is verified, you may not have access to
+> this operation. If you are still receiving this message after more than 2
+> hours, please let us know by writing to **aws-verification@amazon.com**.
+
+`us-west-2` 一直回 `ThrottlingException` 是誤導性的表象——該 region 的配額
+確實是 0，但那不是要開 case 解的，帳號驗證完成後應會恢復。
+
+### region 配額實測（2026-07-26）
+
+| Region | Sonnet 5 TPM | Haiku 4.5 TPM |
+|---|---|---|
+| `ap-northeast-1` 東京 | 0.0 | 0.0 |
+| **`ap-east-2` 台北** | **6,000,000** | **5,000,000** |
+| `us-west-2` Oregon | 0.0 | 0.0 |
+
+**只有台北有配額**，且台北是離台灣現場最近的 region。雲端線應改用 `ap-east-2`。
+
+註：`ap-east-2` 只提供 `global.` 前綴的 profile（Sonnet 5 / Haiku 4.5 皆無
+`apac.` geo 版本，唯一的 geo 是舊的 `apac.anthropic.claude-sonnet-4`），
+所以從台北出發時 **Global cross-region 是唯一選項**，不是偏好問題。
+
+<details><summary>先前誤判的紀錄（保留供追溯）</summary>
+
+一度認為帳號的 Bedrock on-demand token 配額被明確套用為 0：
 
 | 配額 | AWS 預設 | 本帳號套用 |
 |---|---|---|
@@ -54,10 +79,11 @@ aws service-quotas get-service-quota             --service-code bedrock --quota-
 —— 它只受理「高於預設」的申請，對「被歸零」的情況幫不上忙。
 `aws support` API 亦不可用（`SubscriptionRequiredException`，Basic plan 無 API 權限）。
 
-**唯一剩下的路**：AWS Console 開 Support case（Account and billing，Basic plan 免費），
-說明 applied quota = 0 而 default = 6,000,000，要求恢復預設 on-demand 配額。
+當時結論是「開 Support case」——**現已作廢**，真因是帳號驗證中。
 
-**排除法已完整**（全部實測，非推論）：
+</details>
+
+### 排除法完整紀錄（全部實測，非推論）
 
 | 可能原因 | 結果 |
 |---|---|
@@ -67,17 +93,21 @@ aws service-quotas get-service-quota             --service-code bedrock --quota-
 | region 不支援 | ❌ 排除 — `regionAvailability: AVAILABLE` |
 | **Free plan** | ❌ **排除（2026-07-26 新增）** — 已升級 `PAID / ACTIVE`，仍 throttled |
 | **IAM 權限不足** | ❌ **排除（2026-07-26 新增）** — 已掛 `AdministratorAccess`，仍 throttled |
-| 配額被歸零 | ✅ **就是這個** — applied 0.0 vs default 6,000,000 |
+| 配額被歸零 | ⚠️ 是表象 — `us-west-2` 確實 0.0，但 `ap-east-2` 是滿額 |
+| **帳號驗證中** | ✅ **就是這個** — `ap-east-2` 的錯誤訊息才講出真話 |
 
-實測涵蓋 3 個 region × 8+ 模型組合（含東京 `jp.` 前綴、Opus 4.5、Sonnet 4.6），
-**全部一致 throttled** → 帳號層級限制，非模型或 region 問題。
+**教訓**：`us-west-2` 的 `ThrottlingException` 是誤導性訊息，害我繞了兩圈。
+換一個配額正常的 region 去打，才會拿到真正的 `AccessDeniedException` 說明。
+**日後遇到 Bedrock 疑難，先跨 region 交叉比對再下結論。**
 
 ### 待辦（使用者操作）
 
-1. **開 Support case** ← 現在唯一的路
-   Console → Support → Create case → **Account and billing**（Basic plan 免費）
-   內容要點：applied Bedrock on-demand quota = 0，AWS default = 6,000,000，
-   要求恢復預設配額。附上 `L-D4FBCF4E` / `L-58BE175A` 兩個 quota code。
+1. **等帳號驗證完成**（< 2 小時）。超過 2 小時仍失敗 → 寄
+   `aws-verification@amazon.com`。驗證完先跑：
+   ```bash
+   BEDROCK_REGION=ap-east-2 TALKYBUDDY_CLOUD_PROVIDER=bedrock \
+     .venv/bin/python scripts/aws_preflight.py
+   ```
 2. **刪除 root access key**（root 金鑰無法被 IAM 限權，且本 repo 公開）。
 3. 決賽後 **detach `AdministratorAccess`** 並刪掉 `talkybuddy-admin` 的 access key。
 
