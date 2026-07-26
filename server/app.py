@@ -143,6 +143,20 @@ async def teacher_page():
 # REST API
 # ---------------------------------------------------------------------------
 
+def _cloud_provider_name() -> str:
+    """回報雲端大腦實際會走的後端；解析失敗一律保守回 "none"。"""
+    try:
+        from server import anthropic_relay, bedrock_converse
+
+        if bedrock_converse.resolve_config() is not None:
+            return "bedrock"
+        if anthropic_relay.resolve_config() is not None:
+            return "relay"
+    except Exception:
+        pass
+    return "none"
+
+
 @app.get("/api/status")
 async def api_status():
     """引擎可用性 + 網路模式 + 待同步筆數。"""
@@ -152,6 +166,9 @@ async def api_status():
         "tts": bool(tts_engine.available()),
         "cloud_tts": bool(cloud_tts_engine.available()),
         "cloud_llm": bool(cloud_llm_engine.available()),
+        # 雲端大腦後端身分："bedrock" | "relay" | "none"。優先序與
+        # CloudLLM.generate 一致；現場靠這個欄位當場佐證「大腦在 Bedrock」。
+        "cloud_provider": _cloud_provider_name(),
         "network_mode": pipeline.network_mode,
         "pending": store.pending_count(),
         "live_s2s": bool(config.LIVE_S2S_ENABLED and nova_sonic.available()),

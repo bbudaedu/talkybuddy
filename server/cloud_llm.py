@@ -14,7 +14,7 @@ import os
 import urllib.error
 import urllib.request
 
-from server import anthropic_relay, guardrails
+from server import anthropic_relay, bedrock_converse, guardrails
 
 _log = logging.getLogger(__name__)
 
@@ -57,17 +57,24 @@ class CloudLLM:
     """雲端腦對話加值；憑證可解析即 available，consent/network 由 pipeline 把關。"""
 
     def available(self) -> bool:
-        """憑證可解析（resolve_config 非 None）即 True；任何失敗回 False。"""
+        """任一後端（Bedrock 或 relay）可解析即 True；任何失敗回 False。"""
         try:
+            if bedrock_converse.resolve_config() is not None:
+                return True
             return anthropic_relay.resolve_config() is not None
         except Exception:
             return False
 
     def generate(self, student_text: str, scaffold, directive: str | None = None) -> str | None:
-        """以雲端腦生成加值回覆；任何失敗、逾時、護欄命中回 None（絕不拋進 pipeline）。"""
+        """以雲端腦生成加值回覆；任何失敗、逾時、護欄命中回 None（絕不拋進 pipeline）。
+
+        後端優先序：原生 Bedrock Converse → Anthropic 相容 relay。前者需
+        ``TALKYBUDDY_CLOUD_PROVIDER=bedrock`` 才啟用，未切換時行為與過去完全一致。
+        """
         try:
+            bedrock_cfg = bedrock_converse.resolve_config()
             cfg = anthropic_relay.resolve_config()
-            if cfg is None:
+            if bedrock_cfg is None and cfg is None:
                 return None
             target = getattr(scaffold, "target_sentence", None)
             safe_text = guardrails.deidentify(student_text)  # 上雲前去識別化
@@ -81,21 +88,34 @@ class CloudLLM:
                 "請照規則回覆：先一句繁體中文稱讚鼓勵，"
                 "再用「跟我說一遍：<英文句>」帶讀目標英文句。"
             )
-            body = json.dumps(
-                {
-                    "model": cfg["model"],
-                    "max_tokens": _MAX_TOKENS,
-                    "system": _SYSTEM_PROMPT,
-                    "messages": [{"role": "user", "content": user_prompt}],
-                }
-            ).encode("utf-8")
-            req = urllib.request.Request(
-                cfg["url"], data=body, headers=cfg["headers"], method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
+            if bedrock_cfg is not None:
+                # 原生 Bedrock Converse。timeout 刻意傳 _TIMEOUT_S 而非讓
+                # bedrock_converse 用它自己的 12s 預設——斷網橋段（D-03）
+                # 的「恢復 <1-2 秒」全靠這個上界，用錯就直接破功。
+                text = bedrock_converse.converse_text(
+                    _SYSTEM_PROMPT,
+                    user_prompt,
+                    cfg=bedrock_cfg,
+                    max_tokens=_MAX_TOKENS,
+                    timeout_s=_TIMEOUT_S,
+                )
+            else:
+                body = json.dumps(
+                    {
+                        "model": cfg["model"],
+                        "max_tokens": _MAX_TOKENS,
+                        "system": _SYSTEM_PROMPT,
+                        "messages": [{"role": "user", "content": user_prompt}],
+                    }
+                ).encode("utf-8")
+                req = urllib.request.Request(
+                    cfg["url"], data=body, headers=cfg["headers"], method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                text = _extract_text(payload)
 
-            text = _extract_text(payload).strip()
+            text = text.strip()
             if not text:
                 return None
             # 輸出後置護欄（不安全→降級回 edge/scaffold）

@@ -154,7 +154,8 @@ class VoicePipeline:
 ## app.py（FastAPI）
 
 - `GET /` → web/index.html；`GET /teacher` → web/teacher.html（FileResponse；web/ 也掛 StaticFiles /static）
-- `GET /api/status` → `{"asr":bool,"llm":bool,"tts":bool,"network_mode":"edge|cloud","pending":int}`
+- `GET /api/status` → `{"asr":bool,"llm":bool,"tts":bool,"cloud_tts":bool,"cloud_llm":bool,"cloud_provider":"bedrock"|"relay"|"none","network_mode":"edge|cloud","pending":int,"live_s2s":bool}`
+  - `cloud_provider`：雲端大腦實際會走的後端。優先序與 `CloudLLM.generate` 一致（Bedrock > relay）；解析失敗保守回 `"none"`。
 - `POST /api/network_mode` body `{"mode":"edge"|"cloud"}`；切到 cloud 時：mark_all_synced() → 以近 10 筆互動 generate_diagnosis → add_diagnosis → 回 `{"synced":n,"new_diagnosis":{...}}`
 - `GET /api/interactions?limit=50`、`GET /api/diagnoses`
 - `POST /api/seed_reset` → 清空重種子（demo 重置）

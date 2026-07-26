@@ -59,8 +59,11 @@ async def test_get_api_status_shape():
     assert resp.status_code == 200
     body = resp.json()
     assert set(body.keys()) == {
-        "asr", "llm", "tts", "cloud_tts", "cloud_llm", "network_mode", "pending", "live_s2s"
+        "asr", "llm", "tts", "cloud_tts", "cloud_llm", "cloud_provider",
+        "network_mode", "pending", "live_s2s",
     }
+    # cloud_provider：雲端大腦實際會走的後端，供現場佐證「大腦在 Bedrock」
+    assert body["cloud_provider"] in {"bedrock", "relay", "none"}
     assert isinstance(body["live_s2s"], bool)
     assert isinstance(body["asr"], bool)
     assert isinstance(body["llm"], bool)
