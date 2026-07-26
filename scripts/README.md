@@ -12,7 +12,8 @@
 
 | 腳本 | 驗什麼 | 後端 | 認證 |
 |------|--------|------|------|
-| `verify_bedrock_live.py` | 陪聊①／導師②／降級③三條 code path（走 production `cloud_llm` 函式） | Bedrock Converse | bearer token 或 boto3 credential chain |
+| `aws_preflight.py` | **決賽現場用這支**：provider→憑證→模型開通→真打 Converse→端到端診斷 | Bedrock Converse | boto3 credential chain（含 EC2 IAM Role） |
+| ~~`verify_bedrock_live.py`~~ | ⛔ **已失效，勿用** | — | — |
 | `verify_nova_sonic_live.py` | Nova (2) Sonic 端到端雙向串流 S2S（ASR＋文字回覆＋語音輸出） | Bedrock bidi stream | **僅 SigV4**（不吃 bearer token） |
 | `verify_via_proxy.py` | 同一套 prompt／前後處理邏輯在真 LLM 上的**語義正確性** | Anthropic 相容中轉 | 中轉 token |
 
@@ -24,16 +25,23 @@
 
 先進 `talkybuddy/`，用共用 `.venv`。憑證用 `set -a; source <env 檔>; set +a` 匯入（env 檔請設 `600` 權限、勿進版控）。
 
-### 1. `verify_bedrock_live.py` — Bedrock Converse 三路徑
+### 1. `aws_preflight.py` — Bedrock 端到端就緒檢查（決賽現場用這支）
 ```bash
 cd talkybuddy
-LLM_CLOUD_PROVIDER=bedrock BEDROCK_REGION=us-east-1 \
-  AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
-  .venv/bin/python scripts/verify_bedrock_live.py
+.venv/bin/python scripts/aws_preflight.py
 
-# 只驗離線降級（不需憑證）
-LLM_CLOUD_PROVIDER=off .venv/bin/python scripts/verify_bedrock_live.py --downgrade-only
+# 指定 region（未設則吃 BEDROCK_REGION → AWS_REGION → 內建預設）
+BEDROCK_REGION=ap-northeast-1 .venv/bin/python scripts/aws_preflight.py
 ```
+
+依序檢查 provider 開關 → 憑證（並指出是走 IAM Role 還是長期金鑰）→ 模型開通
+狀態（**列出你帳號實際可用的 model ID**）→ 真打一次 Converse → 端到端產出診斷。
+每一步失敗都會附上修法。憑證走 boto3 標準鏈，在 EC2 上自動吃 IAM Instance Profile。
+
+> ⛔ **`verify_bedrock_live.py` 已失效，請勿使用。** 它是 2026-07-08 廢棄計畫的
+> 殘留，引用了從未實作的 `config.LLM_CLOUD_PROVIDER` / `COMPANION_MODEL_ID` /
+> `TUTOR_MODEL_ID`，執行即 `AttributeError`（2026-07-26 實測）。功能已由
+> `aws_preflight.py` 取代，該檔待刪。
 
 ### 2. `verify_nova_sonic_live.py` — Nova Sonic S2S
 ```bash
