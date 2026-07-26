@@ -10,7 +10,13 @@ fixture 文字直接抄自 ORT VerifyEachNodeIsAssignedToAnEp 的實際輸出格
 
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from server.npu_placement import (
+    MAX_CAPTURE_BYTES,
+    capture_fd_output,
     format_placement_line,
     parse_ep_placement_log,
     summarize_placement,
@@ -103,3 +109,55 @@ def test_format_placement_line_on_and_off():
     off_summary = summarize_placement({})
     assert format_placement_line(on_summary) == "NPU: ON, 2/3 ops accelerated"
     assert format_placement_line(off_summary) == "NPU: OFF, 0/0 ops accelerated"
+
+
+# --- Task 2: capture_fd_output — 攔截 ONNX Runtime C++ 層寫到 fd 2 的日誌。
+# Python 的 contextlib.redirect_stderr 只換掉 sys.stderr 物件，攔不到 C 層
+# 直接寫 fd 的輸出，這正是必須自己做 fd 級擷取的唯一理由。
+
+
+def test_capture_fd_output_captures_raw_fd_write():
+    with capture_fd_output(fd=2) as buf:
+        os.write(2, b"hello-from-c-layer\n")
+    assert "hello-from-c-layer" in buf.text
+
+
+def test_capture_fd_output_restores_fd_after_block():
+    with capture_fd_output(fd=2) as buf:
+        os.write(2, b"inside-block\n")
+    text_after_block = buf.text
+    # fd 2 已還原；此後寫入不應再進入 buf。
+    os.write(2, b"after-block-should-not-be-captured\n")
+    assert buf.text == text_after_block
+    assert "after-block-should-not-be-captured" not in buf.text
+
+
+def test_capture_fd_output_restores_fd_even_on_exception():
+    with pytest.raises(RuntimeError):
+        with capture_fd_output(fd=2):
+            raise RuntimeError("boom")
+    # fd 2 必須已還原，此後寫入不應拋例外（還原發生在 finally）。
+    os.write(2, b"fd-still-usable-after-exception\n")
+
+
+def test_capture_fd_output_truncates_over_limit():
+    with capture_fd_output(fd=2) as buf:
+        os.write(2, b"x" * (MAX_CAPTURE_BYTES + 100))
+    assert buf.truncated is True
+    assert len(buf.text) <= MAX_CAPTURE_BYTES
+
+
+def test_capture_fd_output_no_truncation_under_limit():
+    with capture_fd_output(fd=2) as buf:
+        os.write(2, b"short-write\n")
+    assert buf.truncated is False
+
+
+def test_capture_fd_output_integrates_with_parser():
+    with capture_fd_output(fd=2) as buf:
+        os.write(2, FIXTURE_TWO_PROVIDERS.encode("utf-8"))
+    result = parse_ep_placement_log(buf.text)
+    assert result == {
+        "NeuronExecutionProvider": ["Conv_12", "MatMul_45"],
+        "CPUExecutionProvider": ["Gather_3"],
+    }
