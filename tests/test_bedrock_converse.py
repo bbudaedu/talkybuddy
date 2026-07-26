@@ -120,17 +120,44 @@ def test_chat_role_defaults_to_a_faster_model_than_diag(_clean_env):
 
 
 def test_chat_default_is_haiku_and_diag_default_is_sonnet(_clean_env):
-    """預設值以 AWS 官方 model card 的 US geo inference ID 為準。
+    """預設 model 以 `ap-east-2`（台北）實際可用的 profile 為準。
 
-    us-west-2（專案預設 region）對 Haiku 4.5 只支援 Geo、不支援 In-Region，
-    故必須帶 `us.` 前綴，與既有 Sonnet 預設一致。
+    2026-07-26 實測：Sonnet 5 / Haiku 4.5 在台北只有 `global.` 前綴版本，
+    沒有 `apac.` geo 版本（唯一的 geo 是舊的 apac.anthropic.claude-sonnet-4）。
     """
     _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
     assert (
         bedrock_converse.resolve_config(role="chat")["model_id"]
-        == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+        == "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     )
-    assert "sonnet" in bedrock_converse.resolve_config(role="diag")["model_id"]
+    assert (
+        bedrock_converse.resolve_config(role="diag")["model_id"]
+        == "global.anthropic.claude-sonnet-5"
+    )
+
+
+def test_default_region_is_taipei(_clean_env):
+    """預設 region 必須是台北。
+
+    2026-07-26 同帳號同時間跨 region 實測，只有 `ap-east-2` 的 Bedrock 配額
+    非零（Sonnet 5 = 6,000,000 TPM），東京與 Oregon 皆為 0.0；台北同時也是
+    離決賽現場最近的 region，對對話路徑 1.5s 預算是實質好處。
+    """
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    assert bedrock_converse.DEFAULT_REGION == "ap-east-2"
+    assert bedrock_converse.resolve_config()["region"] == "ap-east-2"
+
+
+def test_both_role_defaults_are_global_profiles(_clean_env):
+    """兩個 role 預設都必須是 global cross-region profile。
+
+    這不是偏好而是唯一選項：從 `ap-east-2` 出發，這兩顆模型都沒有 geo 版本。
+    若誤填 `us.` / `apac.` 前綴，在台北會直接 ValidationException。
+    """
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    for role in ("chat", "diag"):
+        model_id = bedrock_converse.resolve_config(role=role)["model_id"]
+        assert model_id.startswith("global."), (role, model_id)
 
 
 def test_role_specific_env_overrides_role_default(_clean_env):

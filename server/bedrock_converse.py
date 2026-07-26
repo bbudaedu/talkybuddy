@@ -17,24 +17,33 @@ from __future__ import annotations
 
 import os
 
-# 預設 region：us-west-2 的 Anthropic 模型可用性最廣。台灣現場若要壓低延遲，
-# 設 AWS_REGION=ap-northeast-1（東京，RTT 約 40ms vs Oregon 約 130ms），但需
-# 先確認該 region 已開通對應模型（見本檔 __main__ 的 list_models 探測）。
-DEFAULT_REGION = "us-west-2"
+# 預設 region：ap-east-2（台北）。兩個獨立理由指向同一個選擇：
+#   1. 配額——2026-07-26 同帳號同時間跨 region 實測，只有台北的 Bedrock
+#      on-demand 配額非零（Sonnet 5 = 6,000,000 TPM），東京與 us-west-2
+#      皆為 0.0。細節見 deploy/aws/STATUS.md。
+#   2. 延遲——台北是離決賽現場最近的 region，對話路徑只有 1.5s 預算
+#      （cloud_llm._TIMEOUT_S），省下的 RTT 是實質的。
+# 換 region 前務必用 list_models() 重新確認該地可用的 profile 前綴，
+# 不同 region 提供的前綴不同（見 _ROLE_MODELS 的註記）。
+DEFAULT_REGION = "ap-east-2"
 
 # 預設 model：cross-region inference profile ID。**上線前務必以本檔的
 # list_models() 對實際帳號查證**——各帳號/region 可用的 profile 不同，
 # 寫死的字串很容易過期。可由 BEDROCK_MODEL_ID 覆蓋。
 # 這顆同時是「診斷路徑」與未指定 role 時的通用預設。
-DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+DEFAULT_MODEL_ID = "global.anthropic.claude-sonnet-5"
 
 # 對話路徑（cloud_llm）專屬預設。兩條路徑的逾時上界差 8 倍——對話是
 # 1.5s（cloud_llm._TIMEOUT_S，斷網橋段 D-03 的驗收上界）、診斷是 12s
 # （非同步）。共用一顆大模型的話，對話路徑會穩定逾時而永遠降級回 edge，
 # 等於雲端大腦白接，故預設拆成快模型。
-# ID 取自 AWS 官方 model card 的 US geo inference ID：us-west-2（專案預設
-# region）對 Haiku 4.5 只支援 Geo、不支援 In-Region，必須帶 `us.` 前綴。
-DEFAULT_CHAT_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+DEFAULT_CHAT_MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+
+# 兩顆都是 `global.`（global cross-region）而非 geo profile，這是唯一選項
+# 不是偏好：2026-07-26 實測 ap-east-2 只提供 global. 前綴，Sonnet 5 與
+# Haiku 4.5 皆無 apac. geo 版本（該地唯一的 geo 是舊的
+# apac.anthropic.claude-sonnet-4）。若把前綴改成 us. / apac. 而 region 仍是
+# 台北，呼叫會直接失敗。換 region 時這三個常數要一起重新查證。
 
 # role → (專屬環境變數, 預設 model)
 _ROLE_MODELS = {

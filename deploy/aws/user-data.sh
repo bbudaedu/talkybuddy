@@ -14,10 +14,10 @@ exec > >(tee -a /var/log/talkybuddy-bootstrap.log) 2>&1
 
 # ---- 需要你改的三個值 -------------------------------------------------
 REPO_URL="https://github.com/YOUR_ACCOUNT/talkybuddy.git"   # ← 改成你的 repo
-BEDROCK_REGION="us-west-2"                                   # ← 已開通模型的 region
+BEDROCK_REGION="ap-east-2"                                   # ← 台北：唯一有配額且離現場最近（見 STATUS.md）
 BEDROCK_MODEL_ID=""      # ← 留空則用程式內建預設；建議填 preflight 查到的實際值
 # 選填：對話／診斷分流（延遲需求差 8 倍，見 deploy/aws/README.md 環境變數一覽）。
-# 兩者留空則各自用內建預設（chat=Haiku 4.5、diag=Sonnet 4.5）；
+# 兩者留空則各自用內建預設（chat=global Haiku 4.5、diag=global Sonnet 5）；
 # 若只填上面的 BEDROCK_MODEL_ID，兩條路徑都沿用那一顆。
 BEDROCK_MODEL_ID_CHAT=""  # ← 對話回覆，1.5s 上界，建議 haiku
 BEDROCK_MODEL_ID_DIAG=""  # ← 教師診斷，12s 上界，建議 sonnet
