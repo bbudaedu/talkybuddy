@@ -52,6 +52,35 @@ export AGENTCORE_HARNESS_REPORT=arn:aws:bedrock-agentcore:ap-southeast-1:6410799
 
 未設 `TALKYBUDDY_AGENT_BACKEND=agentcore` 時，既有 in-process 路徑行為完全不變。
 
+## 安全稽核（2026-07-26，依 AWS Agent Toolkit 官方 skill 修正）
+
+裝了 `aws agent-toolkit add-skill --skill-name amazon-bedrock --agent claude-code`
+之後，拿 `references/agentcore-harness.md` 對照本專案的實作，抓到三個缺陷並已修復：
+
+| # | 缺陷 | 風險 | 修法 |
+|---|---|---|---|
+| 1 | **Confused deputy** — 執行角色的 trust policy 只寫 `Principal: bedrock-agentcore.amazonaws.com`，沒有任何 Condition | 🔴 **任何 AWS 帳號的 harness 都能假冒服務主體 assume 這個角色**，進而用我們的權限打 Bedrock 與讀 Memory | 加上 `aws:SourceAccount` + `aws:SourceArn` 兩個 confused-deputy 條件 |
+| 2 | 模型權限 `Resource: "*"` | 🟠 執行角色可呼叫帳號內任何 Bedrock 模型，超出需要 | 收斂到 `anthropic.claude-*` 的 foundation-model 與 inference-profile ARN |
+| 3 | `update_harness` 只傳 `model` 時，**`maxTokens` 被靜默重置為 None** | 🟠 官方明列 maxIterations/maxTokens/timeoutSeconds 須顯式設定為成本與濫用護欄；微 VM 每次呼叫都帶 shell 存取，不設上限等於開放資源耗盡 | 更新時一併重傳三個上限，並已驗證回讀值 |
+
+> 缺陷 3 的教訓：`update_harness` **不是 patch 語意**。只傳部分欄位會讓其他欄位掉回預設。
+> 每次更新都要把三個執行上限一起傳。
+
+現行值：`maxIterations=3` / `timeoutSeconds=60` /
+`maxTokens` 依角色 512（orchestrator）、1024（homework）、2048（report）。
+
+其他官方要點（目前無風險，記錄備查）：
+
+- **inbound auth 只能二選一**：無 `authorizerConfiguration` 即 SigV4，有則為 OAuth JWT，沒有混合模式。
+  本專案由後端伺服器以 IAM 憑證呼叫，SigV4 正確；若日後要讓瀏覽器直連才需改 JWT。
+- **`InvokeHarness` 的呼叫端需要兩個權限**：`bedrock-agentcore:InvokeHarness`
+  **與** `bedrock-agentcore:InvokeAgentRuntime`。目前 `talkybuddy-admin` 掛
+  AdministratorAccess 所以沒問題，賽後收斂權限時要記得同時給。
+- **`CreateHarness` 需要 `iam:PassRole`** —— 官方說這是 CreateHarness 出現
+  AccessDenied 最常見的原因。
+- `messageStop.stopReason` 的 `max_iterations_exceeded` 是官方文件列出的正常值，
+  與我們實測到的一致。
+
 ## 實測踩到的三個坑（都不在文件裡）
 
 1. **`runtimeSessionId` 最短 33 字元。** 傳「verify-1」會被
