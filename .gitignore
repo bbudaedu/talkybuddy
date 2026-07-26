@@ -30,6 +30,10 @@ models/_sherpa_cache
 # Large model binaries — LLM (qwen .gguf) and piper TTS voices (.onnx)
 models/*.gguf
 models/*.onnx
+# espeak-ng 音素化資料（piper-tts 內附，~19MB）。上游授權 GPL-3.0——本 repo
+# 為公開 repo，不把它納入版控以免擴大授權汙染面；由 setup_env.sh / 容器
+# build 階段各自取得。
+models/espeak-ng-data
 
 # A1 wake assets — Porcupine params/keyword models (fetched at verify time, not committed)
 web/assets/*.pv
