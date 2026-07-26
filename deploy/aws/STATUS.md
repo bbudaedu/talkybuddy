@@ -27,14 +27,37 @@ edge 線（Genio 520 / Phase 10 NPU）由 GSD pi 另一條線負責，**不要�
 
 ---
 
-## 🔴 唯一阻塞點：AWS 帳號配額為零
+## 🔴 唯一阻塞點：AWS 帳號 Bedrock 配額被歸零
 
-**根因（已用官方文件佐證）**：帳號在 **AWS Free plan**，而
-[官方文件](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/free-tier-plans.html)
-明載 Free plan「don't include access to AWS services and features that could
-possibly deplete your credits」—— Bedrock 正是這類服務，配額趨近於零。
+> ⚠️ **2026-07-26 更正**：先前寫的「根因是 Free plan」**已被實測推翻**。
+> 帳號早已升級且驗證為 `accountPlanType: PAID / ACTIVE`（credits $51.92），
+> IAM 也已掛 `AdministratorAccess`，Bedrock 仍然全模型 `ThrottlingException`。
 
-**排除法已完整**（`get-foundation-model-availability` 實測）：
+**實際根因（2026-07-26 以 Service Quotas API 佐證）**：帳號的 Bedrock
+on-demand token 配額被**明確套用為 0**，而非 AWS 預設值。
+
+| 配額 | AWS 預設 | 本帳號套用 |
+|---|---|---|
+| Cross-region TPM — Claude Sonnet 5（`L-D4FBCF4E`） | 6,000,000 | **0.0** |
+| Cross-region TPM — Claude Haiku 4.5（`L-58BE175A`） | 5,000,000 | **0.0** |
+| Model invocation max tokens per day（各模型） | — | **0.0**（`Adjustable: false`） |
+
+驗證指令：
+
+```bash
+aws service-quotas get-aws-default-service-quota --service-code bedrock --quota-code L-D4FBCF4E   # 6000000.0
+aws service-quotas get-service-quota             --service-code bedrock --quota-code L-D4FBCF4E   # 0.0
+```
+
+**自助管道無效**：`request-service-quota-increase` 回
+`You must provide a quota value greater than the default quota value of 6000000.0`
+—— 它只受理「高於預設」的申請，對「被歸零」的情況幫不上忙。
+`aws support` API 亦不可用（`SubscriptionRequiredException`，Basic plan 無 API 權限）。
+
+**唯一剩下的路**：AWS Console 開 Support case（Account and billing，Basic plan 免費），
+說明 applied quota = 0 而 default = 6,000,000，要求恢復預設 on-demand 配額。
+
+**排除法已完整**（全部實測，非推論）：
 
 | 可能原因 | 結果 |
 |---|---|
@@ -42,25 +65,30 @@ possibly deplete your credits」—— Bedrock 正是這類服務，配額趨近
 | use-case 表單未提交 | ❌ 排除 — 已在檔（Education / children's English tutor） |
 | 授權協議未簽 | ❌ 排除 — `agreementAvailability: AVAILABLE` |
 | region 不支援 | ❌ 排除 — `regionAvailability: AVAILABLE` |
-| 配額 | ✅ **就是這個** — `ThrottlingException: Too many tokens per day` |
+| **Free plan** | ❌ **排除（2026-07-26 新增）** — 已升級 `PAID / ACTIVE`，仍 throttled |
+| **IAM 權限不足** | ❌ **排除（2026-07-26 新增）** — 已掛 `AdministratorAccess`，仍 throttled |
+| 配額被歸零 | ✅ **就是這個** — applied 0.0 vs default 6,000,000 |
 
-實測涵蓋 3 個 region × 8 個模型組合（含東京 `jp.` 前綴、剛開通的 Opus 4.5），
+實測涵蓋 3 個 region × 8+ 模型組合（含東京 `jp.` 前綴、Opus 4.5、Sonnet 4.6），
 **全部一致 throttled** → 帳號層級限制，非模型或 region 問題。
 
 ### 待辦（使用者操作）
 
-1. **升級 Paid plan** ← 最關鍵
-   `https://console.aws.amazon.com/billing/home?#/freetier/upgrade`
-   credit（$52.45）升級後仍可用，不會沒收；Free plan 6 個月後帳號會自動關閉。
-2. **開免費 Support case**（Account and billing）要求 provision on-demand quota
-   —— 社群回報部分帳號需人工介入，1–24 小時。
-3. **刪除 root access key** `AKIAZKQ2XL7Q4R7TPTFJ`（root 金鑰無法被 IAM 限權，
-   且本 repo 公開）。已從本機移除，但 AWS 端仍存在。
-4. 加 `ServiceQuotasReadOnlyAccess` 給 `talkybuddy-admin`，才能讀到確切配額數字。
+1. **開 Support case** ← 現在唯一的路
+   Console → Support → Create case → **Account and billing**（Basic plan 免費）
+   內容要點：applied Bedrock on-demand quota = 0，AWS default = 6,000,000，
+   要求恢復預設配額。附上 `L-D4FBCF4E` / `L-58BE175A` 兩個 quota code。
+2. **刪除 root access key**（root 金鑰無法被 IAM 限權，且本 repo 公開）。
+3. 決賽後 **detach `AdministratorAccess`** 並刪掉 `talkybuddy-admin` 的 access key。
 
-### 已建立的 AWS 資源
+### 已建立的 AWS 資源（2026-07-26 更新）
 
-- IAM user `talkybuddy-admin`（`AmazonBedrockFullAccess`），憑證已寫入 `~/.aws`
+- IAM user `talkybuddy-admin`：`AmazonBedrockFullAccess` + **`AdministratorAccess`**
+  （決賽用的臨時全權，賽後務必 detach）
+- AWS Budgets `talkybuddy-monthly-5usd`：月度 $5 上限，50/80/100% 實際 +
+  100% 預測共 4 個 email 通知 → `coolexam@ntnueng.tw`
+- Claude Sonnet 5 foundation model agreement 已建立（`agreementAvailability: AVAILABLE`），
+  但因配額為 0 仍無法呼叫
 - 本機預設 region `us-west-2`
 
 ---
