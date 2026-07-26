@@ -23,6 +23,7 @@ from server.cloud_llm import CloudLLM
 _ALL_ENV = [
     "TALKYBUDDY_CLOUD_PROVIDER", "BEDROCK_REGION", "AWS_REGION",
     "AWS_DEFAULT_REGION", "BEDROCK_MODEL_ID",
+    "BEDROCK_MODEL_ID_CHAT", "BEDROCK_MODEL_ID_DIAG",
     "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
     "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_MODEL",
 ]
@@ -97,6 +98,43 @@ def test_bedrock_call_uses_cloud_llm_timeout_not_bedrock_default(
 
     assert captured["timeout_s"] == cloud_llm_mod._TIMEOUT_S
     assert captured["timeout_s"] < bedrock_converse.DEFAULT_TIMEOUT_S
+
+
+def test_bedrock_call_uses_chat_model_not_diag_model(_clean_env, monkeypatch):
+    """對話路徑必須取 chat 專屬 model（1.5s 上界只有小模型跟得上）。
+
+    若這裡取到診斷用的大模型，雲端回覆會穩定逾時 → 永遠降級回 edge，
+    等於雲端大腦白接（deploy/aws/STATUS.md「model 分流」待辦）。
+    """
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    _clean_env.setenv("BEDROCK_MODEL_ID_CHAT", "us.anthropic.fast-chat-v1:0")
+    _clean_env.setenv("BEDROCK_MODEL_ID_DIAG", "us.anthropic.slow-diag-v1:0")
+    captured = {}
+
+    def _fake(system, user, *, cfg, **kwargs):
+        captured["cfg"] = cfg
+        return "好棒！跟我說一遍：I like apples."
+
+    monkeypatch.setattr(bedrock_converse, "converse_text", _fake)
+    CloudLLM().generate("我喜歡蘋果", _Sc())
+
+    assert captured["cfg"]["model_id"] == "us.anthropic.fast-chat-v1:0"
+
+
+def test_bedrock_chat_default_model_differs_from_diag_default(_clean_env, monkeypatch):
+    """未設任何 model env 時，對話路徑也要拿到 chat 預設（快模型），
+    而不是模組層的通用預設（診斷用的大模型）。"""
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    captured = {}
+
+    def _fake(system, user, *, cfg, **kwargs):
+        captured["cfg"] = cfg
+        return "好棒！跟我說一遍：I like apples."
+
+    monkeypatch.setattr(bedrock_converse, "converse_text", _fake)
+    CloudLLM().generate("我喜歡蘋果", _Sc())
+
+    assert captured["cfg"]["model_id"] == bedrock_converse.DEFAULT_CHAT_MODEL_ID
 
 
 def test_bedrock_failure_returns_none_not_raise(_clean_env, monkeypatch):

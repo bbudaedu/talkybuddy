@@ -33,6 +33,8 @@ def _bedrock_selected(monkeypatch):
     """預設把 provider 切到 bedrock；個別測試可再覆蓋。"""
     monkeypatch.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
     monkeypatch.delenv("BEDROCK_MODEL_ID", raising=False)
+    monkeypatch.delenv("BEDROCK_MODEL_ID_CHAT", raising=False)
+    monkeypatch.delenv("BEDROCK_MODEL_ID_DIAG", raising=False)
     monkeypatch.delenv("AWS_REGION", raising=False)
     return monkeypatch
 
@@ -76,6 +78,27 @@ def test_generate_diagnosis_uses_bedrock_when_selected(_bedrock_selected, monkey
     assert result["scores"]["pronunciation"] == 71
     assert captured["cfg"]["model_id"] == bedrock_converse.DEFAULT_MODEL_ID
     assert "JSON" in captured["user"] or "json" in captured["user"]
+
+
+def test_bedrock_diagnosis_uses_diag_model_not_chat_model(
+    _bedrock_selected, monkeypatch
+):
+    """診斷是非同步路徑（12s 上界），該用推理品質較好的大模型，
+    不可誤取對話路徑那顆為 1.5s 上界挑的小模型。"""
+    monkeypatch.setattr(diagnose.anthropic_relay, "resolve_config", _no_relay)
+    monkeypatch.setenv("BEDROCK_MODEL_ID_CHAT", "us.anthropic.fast-chat-v1:0")
+    monkeypatch.setenv("BEDROCK_MODEL_ID_DIAG", "us.anthropic.smart-diag-v1:0")
+
+    captured = {}
+
+    def _fake_converse(system, user, *, cfg, **kwargs):
+        captured["cfg"] = cfg
+        return json.dumps(_VALID_DIAG, ensure_ascii=False)
+
+    monkeypatch.setattr(bedrock_converse, "converse_text", _fake_converse)
+    diagnose.generate_diagnosis([], None)
+
+    assert captured["cfg"]["model_id"] == "us.anthropic.smart-diag-v1:0"
 
 
 def test_bedrock_branch_tolerates_markdown_fence(_bedrock_selected, monkeypatch):

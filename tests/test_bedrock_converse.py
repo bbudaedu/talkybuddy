@@ -18,6 +18,8 @@ _ALL_ENV = [
     "AWS_REGION",
     "AWS_DEFAULT_REGION",
     "BEDROCK_MODEL_ID",
+    "BEDROCK_MODEL_ID_CHAT",
+    "BEDROCK_MODEL_ID_DIAG",
 ]
 
 
@@ -97,6 +99,89 @@ def test_aws_region_used_when_bedrock_region_absent(_clean_env):
     _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
     _clean_env.setenv("AWS_REGION", "eu-central-1")
     assert bedrock_converse.resolve_config()["region"] == "eu-central-1"
+
+
+# ---------------------------------------------------------------------------
+# resolve_config(role=...) — 對話／診斷 model 分流
+#
+# 兩條路徑的延遲上界差 8 倍（對話 cloud_llm._TIMEOUT_S=1.5s vs 診斷
+# _API_TIMEOUT_SEC=12s）。若兩者共用同一個大模型，對話路徑會來不及回覆而
+# 永遠降級到 edge，等於雲端大腦白接。
+# ---------------------------------------------------------------------------
+
+def test_chat_role_defaults_to_a_faster_model_than_diag(_clean_env):
+    """對話路徑預設必須是比診斷路徑更快的小模型，否則 1.5s 上界必然逾時。"""
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    chat = bedrock_converse.resolve_config(role="chat")["model_id"]
+    diag = bedrock_converse.resolve_config(role="diag")["model_id"]
+    assert chat == bedrock_converse.DEFAULT_CHAT_MODEL_ID
+    assert diag == bedrock_converse.DEFAULT_MODEL_ID
+    assert chat != diag
+
+
+def test_chat_default_is_haiku_and_diag_default_is_sonnet(_clean_env):
+    """預設值以 AWS 官方 model card 的 US geo inference ID 為準。
+
+    us-west-2（專案預設 region）對 Haiku 4.5 只支援 Geo、不支援 In-Region，
+    故必須帶 `us.` 前綴，與既有 Sonnet 預設一致。
+    """
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    assert (
+        bedrock_converse.resolve_config(role="chat")["model_id"]
+        == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    )
+    assert "sonnet" in bedrock_converse.resolve_config(role="diag")["model_id"]
+
+
+def test_role_specific_env_overrides_role_default(_clean_env):
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    _clean_env.setenv("BEDROCK_MODEL_ID_CHAT", "jp.anthropic.chat-model-v1:0")
+    _clean_env.setenv("BEDROCK_MODEL_ID_DIAG", "jp.anthropic.diag-model-v1:0")
+    assert (
+        bedrock_converse.resolve_config(role="chat")["model_id"]
+        == "jp.anthropic.chat-model-v1:0"
+    )
+    assert (
+        bedrock_converse.resolve_config(role="diag")["model_id"]
+        == "jp.anthropic.diag-model-v1:0"
+    )
+
+
+def test_global_model_id_still_applies_to_both_roles(_clean_env):
+    """向後相容：既有部署（user-data.sh / README）只設 BEDROCK_MODEL_ID，
+    未設 role 專屬變數時兩條路徑都必須沿用它，不可被 role 預設值蓋掉。"""
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    _clean_env.setenv("BEDROCK_MODEL_ID", "us.anthropic.only-one-v1:0")
+    assert (
+        bedrock_converse.resolve_config(role="chat")["model_id"]
+        == "us.anthropic.only-one-v1:0"
+    )
+    assert (
+        bedrock_converse.resolve_config(role="diag")["model_id"]
+        == "us.anthropic.only-one-v1:0"
+    )
+
+
+def test_role_env_wins_over_global_model_id(_clean_env):
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    _clean_env.setenv("BEDROCK_MODEL_ID", "us.anthropic.global-v1:0")
+    _clean_env.setenv("BEDROCK_MODEL_ID_CHAT", "us.anthropic.chat-v1:0")
+    assert (
+        bedrock_converse.resolve_config(role="chat")["model_id"]
+        == "us.anthropic.chat-v1:0"
+    )
+    # 未設 DIAG 專屬變數的那條仍吃全域值
+    assert (
+        bedrock_converse.resolve_config(role="diag")["model_id"]
+        == "us.anthropic.global-v1:0"
+    )
+
+
+def test_unknown_role_falls_back_to_generic_default(_clean_env):
+    """未知 role 不得爆炸——決賽現場寧可用通用預設也不能整條雲端路徑掛掉。"""
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    cfg = bedrock_converse.resolve_config(role="不存在的角色")
+    assert cfg["model_id"] == bedrock_converse.DEFAULT_MODEL_ID
 
 
 # ---------------------------------------------------------------------------
