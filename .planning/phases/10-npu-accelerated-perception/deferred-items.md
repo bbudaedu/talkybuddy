@@ -2,6 +2,26 @@
 
 記錄執行 plan 時發現、但與該 plan 改動檔案無關、不在 scope 內修正的既有問題。
 
+## 10-01 執行時發現（2026-07-26）
+
+執行 `pytest`（全套）時，以下失敗與本 plan 改動的檔案（`edge/npu_spike/`、
+`tests/test_npu_spike_tools.py`）完全無關，且在改動前即已存在，故不修正：
+
+- `tests/test_audio_io.py`、`tests/test_pipeline_wav_fastpath.py` — collection error：
+  `ModuleNotFoundError: No module named 'soundfile'`（dev sandbox 缺 `soundfile`）。
+- `tests/test_asr_backend.py::test_sensevoice_opencc_s2twp`、
+  `tests/test_asr_backend.py::test_sensevoice_transcribe_converts_to_traditional` —
+  `SenseVoiceASREngine._ensure_opencc()` 回傳 `None`（dev sandbox 缺 `opencc`）。
+- `tests/test_nova_sonic.py`（7 個測試）— 缺 AWS 憑證/模擬 bidi client，Bedrock/Nova Sonic
+  client 測試失敗。
+- `spike/a2_pipecat/tests/test_interruptible_synth.py`（3 個測試）— collection error，
+  pipecat spike 依賴缺失，與本 plan 無關。
+
+**Verified isolated：** `pytest tests/test_npu_spike_tools.py -x` — 15/15 通過。
+`pytest --ignore=tests/test_audio_io.py --ignore=tests/test_pipeline_wav_fastpath.py` —
+342 passed, 2 skipped，9 個既有失敗（皆列於上）、3 個既有 collection error（皆列於上），
+皆非本 plan 造成。
+
 ## 10-02 執行時發現（2026-07-26）
 
 執行 `pytest`（全套）時，以下失敗與本 plan 改動的檔案（`server/npu_placement.py`、
