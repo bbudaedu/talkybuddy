@@ -32,7 +32,7 @@ import re
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
-from server import anthropic_relay, guardrails
+from server import anthropic_relay, bedrock_converse, guardrails
 
 # Asia/Taipei 固定 UTC+8（無日光節約，直接用 timedelta 最穩）
 _TAIPEI_TZ = timezone(timedelta(hours=8))
@@ -527,14 +527,8 @@ def _validate_diagnosis(d: dict) -> dict:
     }
 
 
-def _call_anthropic_api(interactions: list[dict], prev: dict | None, cfg: dict) -> dict:
-    """以 urllib 直呼 Anthropic（相容）Messages API，要求輸出診斷 JSON。
-
-    ``cfg`` 由 :func:`_resolve_api_config` 產生，含 ``url`` / ``model`` /
-    ``headers``（端點、model、認證 header 皆可由環境變數覆蓋，支援自架中轉）。
-    失敗（HTTP 錯誤、逾時、JSON 解析失敗、schema 不符）皆丟例外，
-    由呼叫端 fallback 到規則式 mock。
-    """
+def _build_diagnosis_prompt(interactions: list[dict], prev: dict | None) -> str:
+    """組出診斷 prompt（上雲前已去識別化）；relay 與 Bedrock 兩條後端共用。"""
     # 只帶必要欄位，控制 prompt 長度
     brief = [
         {
@@ -576,6 +570,26 @@ def _call_anthropic_api(interactions: list[dict], prev: dict | None, cfg: dict) 
         "companion_directive 是給即時陪聊玩偶的下一輪策略（difficulty 依趨勢、"
         "next_goal/topic/example_questions 具體可帶入對話），example_questions 用英文、其餘用繁體中文。"
     )
+    return prompt
+
+
+def _parse_diagnosis_text(text: str) -> dict:
+    """把模型輸出的 JSON 文字轉成合法診斷 dict；容忍 ```json 圍欄。"""
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text).strip()
+    return _validate_diagnosis(json.loads(text))
+
+
+def _call_anthropic_api(interactions: list[dict], prev: dict | None, cfg: dict) -> dict:
+    """以 urllib 直呼 Anthropic（相容）Messages API，要求輸出診斷 JSON。
+
+    ``cfg`` 由 :mod:`server.anthropic_relay` 產生，含 ``url`` / ``model`` /
+    ``headers``（端點、model、認證 header 皆可由環境變數覆蓋，支援自架中轉）。
+    失敗（HTTP 錯誤、逾時、JSON 解析失敗、schema 不符）皆丟例外，
+    由呼叫端 fallback 到下一層降級。
+    """
+    prompt = _build_diagnosis_prompt(interactions, prev)
     body = json.dumps(
         {
             "model": cfg["model"],
@@ -591,16 +605,38 @@ def _call_anthropic_api(interactions: list[dict], prev: dict | None, cfg: dict) 
     )
     with urllib.request.urlopen(req, timeout=_API_TIMEOUT_SEC) as resp:
         payload = json.loads(resp.read().decode("utf-8"))
-    # 取第一個 text block；容忍模型仍包了 ```json 圍欄
+    # 取第一個 text block；圍欄剝除與 schema 驗證共用 _parse_diagnosis_text
     text = ""
     for block in payload.get("content", []):
         if block.get("type") == "text":
             text = block.get("text", "")
             break
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text).strip()
-    return _validate_diagnosis(json.loads(text))
+    return _parse_diagnosis_text(text)
+
+
+# 原生 Bedrock Converse 分支的 system prompt（TCLOUD-02「大腦 100% 在 Bedrock」）
+_BEDROCK_SYSTEM = (
+    "你是台灣國小英語學習診斷專家。只輸出一個 JSON 物件，"
+    "不得有 markdown 圍欄或任何額外說明文字。所有文字內容用繁體中文（台灣用語）。"
+)
+
+
+def _call_bedrock_api(interactions: list[dict], prev: dict | None, cfg: dict) -> dict:
+    """以原生 `boto3 bedrock-runtime.converse()` 產出診斷 JSON。
+
+    ``cfg`` 由 :func:`server.bedrock_converse.resolve_config` 產生
+    （``region`` / ``model_id``）。任何失敗皆丟例外，由呼叫端往下降級
+    （relay → 規則式 mock）。
+    """
+    prompt = _build_diagnosis_prompt(interactions, prev)
+    text = bedrock_converse.converse_text(
+        _BEDROCK_SYSTEM,
+        prompt,
+        cfg=cfg,
+        max_tokens=1024,
+        timeout_s=_API_TIMEOUT_SEC,
+    )
+    return _parse_diagnosis_text(text)
 
 
 # ---------------------------------------------------------------------------
@@ -620,17 +656,27 @@ def generate_diagnosis(interactions: list[dict], prev: dict | None,
     VoicePipeline._refresh_directive（09-RESEARCH.md Pitfall 4）。
     """
     cfg = anthropic_relay.resolve_config()
+    bedrock_cfg = bedrock_converse.resolve_config()
     result = None
     # B4-5 consent gate：真正的雲端資料出境 chokepoint。未取得家長同意時，
     # 即使有憑證也不上雲，改走本地規則式（背景 _refresh_directive 亦涵蓋）。
     # allow_cloud 放最前面短路：network_mode 為 edge 時連 resolve_config 的
-    # 結果都不看，直接跳過雲端分支。
-    if allow_cloud and cfg and guardrails.consent_granted():
-        try:
-            result = _call_anthropic_api(interactions, prev, cfg)
-        except Exception:
-            # 雲端層失敗：不拋錯、不阻塞，改用邊緣端規則式診斷
-            result = None
+    # 結果都不看，直接跳過雲端分支。兩道閘門對 Bedrock 與 relay 一視同仁。
+    if allow_cloud and guardrails.consent_granted():
+        # 降級鏈：原生 Bedrock Converse → Anthropic relay → 規則式 mock。
+        # Bedrock 只在 TALKYBUDDY_CLOUD_PROVIDER=bedrock 時才有 cfg，
+        # 未切換時整段跳過，既有 relay 行為零變更。
+        if bedrock_cfg:
+            try:
+                result = _call_bedrock_api(interactions, prev, bedrock_cfg)
+            except Exception:
+                result = None
+        if result is None and cfg:
+            try:
+                result = _call_anthropic_api(interactions, prev, cfg)
+            except Exception:
+                # 雲端層失敗：不拋錯、不阻塞，改用邊緣端規則式診斷
+                result = None
     if result is None:
         result = _rule_based_diagnosis(interactions, prev)
     # 收斂保底：不論走 API 或規則式，最終一定有合法 companion_directive
