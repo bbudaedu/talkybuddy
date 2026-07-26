@@ -16,6 +16,7 @@ import asyncio
 import datetime
 import io
 import itertools
+import logging
 import os
 import shutil
 import subprocess
@@ -24,6 +25,8 @@ import time
 from dataclasses import dataclass, field
 
 from server import config, guardrails, scaffold, store
+
+_log = logging.getLogger(__name__)
 
 # LLM 加值生成的逾時秒數（契約：>8s 即降級用 scaffold 結果；測試可 monkeypatch）。
 # 此常數套用在 _process_text() 的 `for engine in engines:` 迴圈的**每一個**
@@ -346,6 +349,10 @@ class VoicePipeline:
                 prev = diagnoses[-1] if diagnoses else None
                 diag = diagnose.generate_diagnosis(recent, prev, allow_cloud=allow_cloud)
                 store.add_diagnosis(diag)  # 持久化（含 companion_directive）
+                # 子專案 B/C/E：診斷產出後才做編排決策——它要看的就是這份新診斷。
+                # 整段包在自己的 try 內，agent 出事不得影響 directive 更新
+                # （directive 停更 = 導師層在現場悄悄死掉）。
+                self._run_agents(diag, diagnoses, allow_cloud=allow_cloud)
                 # B3 接法 A：帶 level_state，CEFR 難度/語言形式折進注入字串
                 return diagnose.format_directive_for_prompt(
                     diag.get("companion_directive"), diag.get("level_state"))
@@ -355,6 +362,58 @@ class VoicePipeline:
             pass  # 更新失敗維持舊 directive（或 None），即時路徑不受影響
         finally:
             self._directive_refreshing = False
+
+    def _run_agents(self, diag: dict, diagnoses: list[dict], *, allow_cloud: bool) -> None:
+        """依編排決策執行派作業／週報 agent 並持久化產出。
+
+        在 _refresh_directive 的背景執行緒內呼叫，絕不進即時路徑。
+
+        三個原則：
+        1. **編排只做決策，執行在這裡。** orchestrator.decide_next_actions 不呼叫
+           B/C，由本函式依 actions 決定要不要真的跑——kill-switch 與失敗降級
+           因此集中在 pipeline 一處，而不是散在三個 agent 裡。
+        2. **allow_cloud 一路傳下去。** 漏傳任何一個，斷網示範時就會有元件
+           偷偷出境，那正是 NETCUT 要防的事。
+        3. **每個 agent 各自 try。** 一個爆掉不得拖垮另一個，更不得讓
+           _refresh_directive 整個失敗（directive 停更 = 導師層悄悄死掉）。
+        """
+        from server.agents import homework, orchestrator, report
+
+        sid = self.student_id or config.STUDENT_ID
+        try:
+            profile = store.get_profile(sid) or {}
+        except Exception:
+            profile = {}
+
+        try:
+            decision = orchestrator.decide_next_actions(
+                profile, diag, diagnoses, self._turn_count, allow_cloud=allow_cloud,
+            )
+            actions = list(decision.get("actions") or [])
+        except Exception:
+            # 編排失敗：寧可什麼都不派，也不要亂派
+            _log.exception("編排決策失敗，本輪不派發任何 agent 產出")
+            return
+
+        if "homework" in actions:
+            try:
+                store.add_agent_output(
+                    "homework",
+                    homework.generate_homework(profile, diag, allow_cloud=allow_cloud),
+                    student_id=sid,
+                )
+            except Exception:
+                _log.exception("派作業 agent 失敗，略過本輪作業")
+
+        if "report" in actions:
+            try:
+                store.add_agent_output(
+                    "report",
+                    report.generate_report(profile, diagnoses, allow_cloud=allow_cloud),
+                    student_id=sid,
+                )
+            except Exception:
+                _log.exception("週報 agent 失敗，略過本輪週報")
 
     async def _synth_tts(self, result: TurnResult, emit, segments: list[tuple[str, str]]) -> None:
         """階段：TTS 合成（to_thread；不可用/失敗 → tts_wav=None，前端降級）。

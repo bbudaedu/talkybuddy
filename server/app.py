@@ -321,6 +321,20 @@ async def api_diagnoses(student: str | None = None,
     return store.list_diagnoses(student_id=sid)
 
 
+@app.get("/api/agent_outputs")
+async def api_agent_outputs(kind: str | None = None, limit: int = 20,
+                            student: str | None = None,
+                            authorization: str | None = Header(default=None)):
+    """agent 產出（派作業／週報），新→舊；student 讀自己，tutor/device 需帶 ?student=。
+
+    權限比照 /api/diagnoses——產出內含孩子的學習弱項與家長週報敘述，
+    與診斷同級的個資，不可裸奔。
+    """
+    claims = identity_from_header(authorization)
+    sid = _resolve_student(claims, student)
+    return store.list_agent_outputs(kind=kind, limit=limit, student_id=sid)
+
+
 class SyncBody(BaseModel):
     interactions: list[dict]
 
