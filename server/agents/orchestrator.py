@@ -143,8 +143,13 @@ def _should_throttle(kind: str, student_id: str | None = None) -> bool:
     否則下次還是查不到。
     """
     threshold_s = _THROTTLE_HOMEWORK_S if kind == "homework" else _THROTTLE_REPORT_S
+    # student_id 缺失時**不可以**原樣傳 None：store.list_agent_outputs(None)
+    # 是「所有學生」（不加 WHERE），於是任何一個孩子剛拿到作業，就會把其他
+    # 所有孩子一起擋住。寫入端（store.add_agent_output）在 student_id 省略時
+    # 用的是 config.STUDENT_ID，讀取端必須對齊同一個預設值。
+    sid = student_id if student_id else store.default_student_id()
     try:
-        recent = store.list_agent_outputs(kind=kind, limit=1, student_id=student_id)
+        recent = store.list_agent_outputs(kind=kind, limit=1, student_id=sid)
     except Exception:
         # 環境問題（DB 不可讀）：不影響決策，保守起見不節流
         _log.warning("節流查詢 store 失敗，本次不節流", exc_info=True)
@@ -437,7 +442,7 @@ def decide_next_actions(
     """決策判斷 agent 主入口。
 
     流程：
-    1. allow_cloud=False → 直接走規則式，不碰任何雲端呼叫。
+    1. allow_cloud=False 或未取得家長同意 → 直接走規則式，不碰任何雲端呼叫。
     2. allow_cloud=True → 嘗試 Bedrock Converse：
        a. 去識別化 profile / diagnosis / history 自由文字欄位。
        b. 呼叫 bedrock_converse.converse_text（cfg=resolve_config(role="diag")）。
@@ -446,16 +451,40 @@ def decide_next_actions(
        e. 任何例外 → 靜默 log 後降級。
     3. 規則式（離線 fallback）永遠保底，一定能產出合法結果。
 
-    任何情況都不往外拋例外。
+    任何情況都不往外拋例外——**包含規則式路徑自己爆掉**。
     """
-    # 防禦性正規化
-    profile = profile or {}
-    diagnosis = diagnosis or {}
-    history = list(history or [])
-    turn_count = int(turn_count) if turn_count else 0
+    try:
+        return _decide_next_actions(
+            profile, diagnosis, history, turn_count, allow_cloud=allow_cloud
+        )
+    except Exception:
+        _log.exception("decide_next_actions 全數路徑失敗，本輪不派發任何行動")
+        return _minimal_decision()
 
-    # allow_cloud=False：最高優先閘門，連 resolve_config 都不呼叫
-    if not allow_cloud:
+
+def _minimal_decision() -> dict:
+    """最小合法決策：什麼都不派。決策層失效時，寧可不派也不要亂派。"""
+    return {
+        "actions": [],
+        "reason": "決策資料暫時無法判讀，本輪維持觀察，不派發新的作業或報告。",
+        "priority": "low",
+        "source": "rule",
+    }
+
+
+def _decide_next_actions(profile, diagnosis, history, turn_count, *, allow_cloud: bool) -> dict:
+    # 防禦性正規化
+    profile = profile if isinstance(profile, dict) else {}
+    diagnosis = diagnosis if isinstance(diagnosis, dict) else {}
+    history = list(history) if isinstance(history, (list, tuple)) else []
+    try:
+        turn_count = int(turn_count) if turn_count else 0
+    except (TypeError, ValueError):
+        turn_count = 0
+
+    # allow_cloud=False：最高優先閘門，連 resolve_config 都不呼叫。
+    # consent 同級：家長同意是資料出境的 chokepoint（見 diagnose.py）。
+    if not allow_cloud or not guardrails.consent_granted():
         return _rule_based_decision(profile, diagnosis, history, turn_count)
 
     # 雲端路徑。後端優先序：AgentCore Harness → Bedrock Converse → 規則式。

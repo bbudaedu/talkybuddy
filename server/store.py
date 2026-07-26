@@ -19,9 +19,12 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import sqlite3
 import threading
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # 設定來源：優先使用 config.py；尚未存在時用可容錯的預設值
@@ -64,6 +67,29 @@ def _device_id() -> str:
 def _student_id() -> str:
     cfg = _load_config()
     return getattr(cfg, "STUDENT_ID", _FALLBACK_STUDENT_ID) if cfg else _FALLBACK_STUDENT_ID
+
+
+def _safe_limit(limit, default: int) -> int:
+    """把外部傳進來的 limit 收斂成正整數；非正數或無法解析時退回預設值。
+
+    SQLite 的 `LIMIT -1` 等於**無上限**。`?limit=-1` 一路傳到這裡，
+    就把整張表撈出來了。端點層另有 ge/le 驗證，這裡是第二道——
+    非 HTTP 的呼叫端（背景任務、腳本）不會經過那一道。
+    """
+    try:
+        n = int(limit)
+    except (TypeError, ValueError):
+        return default
+    return n if n > 0 else default
+
+
+def default_student_id() -> str:
+    """寫入端在 student_id 省略時採用的預設學生（demo 單一學生）。
+
+    公開出來是為了讓**讀取端**能對齊同一個值。讀寫用不同預設值會產生
+    「寫進 A、查 B 查不到」這種只在多學生情境才現形的 bug。
+    """
+    return _student_id()
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +209,7 @@ def list_interactions(limit: int = 50, student_id: str | None = None) -> list[di
     items = [_row_to_interaction(seq, payload, synced) for seq, payload, synced in rows]
     if student_id is not None:
         items = [it for it in items if it.get("student_id") == student_id]
-    return items[:limit]
+    return items[:_safe_limit(limit, 50)]
 
 
 def interaction_exists(student_id: str, device_id: str, client_ts: str) -> bool:
@@ -253,6 +279,10 @@ def list_diagnoses(student_id: str | None = None) -> list[dict]:
 # 編排 agent（子專案 E）之後若新增類型，加在這裡即可，不必改 schema。
 AGENT_OUTPUT_KINDS = ("homework", "report")
 
+# 讀取端（list_agent_outputs）會把這些 DB 欄位攤平進 payload。
+# payload 自帶同名鍵會被無條件覆寫，故在寫入端就擋下來。
+_RESERVED_OUTPUT_KEYS = frozenset({"seq", "kind", "student_id", "ts"})
+
 
 def add_agent_output(kind: str, payload: dict, student_id: str | None = None) -> int:
     """新增一筆 agent 產出，回傳自增 seq。
@@ -267,6 +297,15 @@ def add_agent_output(kind: str, payload: dict, student_id: str | None = None) ->
     if kind not in AGENT_OUTPUT_KINDS:
         raise ValueError(f"未知的 agent 產出類型：{kind!r}（可用：{AGENT_OUTPUT_KINDS}）")
     body = dict(payload)
+    # 保留鍵衝突當場失敗，理由同 kind 打錯字：讀取端會把 DB 欄位攤平進
+    # payload 並無條件覆寫同名鍵，所以 payload 自帶的 ts 寫進去、讀出來
+    # 會變成別的值，而且沒有任何跡象。靜默的資料損毀比當場拋錯難查太多。
+    clashes = sorted(_RESERVED_OUTPUT_KEYS & set(body))
+    if clashes:
+        raise ValueError(
+            f"agent 產出 payload 不得含保留鍵 {clashes}"
+            f"（讀取端會用 DB 欄位覆寫它們）"
+        )
     sid = student_id if student_id is not None else _student_id()
     ts = datetime.datetime.now(
         datetime.timezone(datetime.timedelta(hours=8))
@@ -307,13 +346,21 @@ def list_agent_outputs(
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY seq DESC LIMIT ?"
-    params.append(int(limit))
+    params.append(_safe_limit(limit, 20))
     with _lock:
         conn = _get_conn()
         rows = conn.execute(sql, tuple(params)).fetchall()
     out: list[dict] = []
     for seq, k, sid, ts, payload in rows:
         d = json.loads(payload)
+        # DB 欄位是這四個鍵的權威來源。寫入端已擋掉同名 payload 鍵
+        # （_RESERVED_OUTPUT_KEYS），舊資料若仍有衝突，這裡留下痕跡再覆寫。
+        stale = _RESERVED_OUTPUT_KEYS & set(d)
+        if stale:
+            _log.warning(
+                "agent 產出 seq=%s 的 payload 含保留鍵 %s，以 DB 欄位為準",
+                seq, sorted(stale),
+            )
         d["seq"] = int(seq)
         d["kind"] = k
         d["student_id"] = sid

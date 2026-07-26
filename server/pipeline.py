@@ -362,7 +362,10 @@ class VoicePipeline:
 
             self._directive = await asyncio.to_thread(_work)
         except Exception:
-            pass  # 更新失敗維持舊 directive（或 None），即時路徑不受影響
+            # 更新失敗維持舊 directive（或 None），即時路徑不受影響——但必須
+            # 留下日誌。無聲的 `except: pass` 正是本專案吃過虧的形狀：導師層
+            # 在現場悄悄停更，畫面照跑，沒有任何人會發現。
+            _log.exception("背景 directive 刷新失敗，沿用前一版 directive")
         finally:
             self._directive_refreshing = False
 

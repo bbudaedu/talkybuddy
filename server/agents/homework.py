@@ -218,6 +218,33 @@ def _pick_vocab_entries(dim: str, n: int = 5) -> list[dict]:
     return entries[:n]
 
 
+# 契約下限：一份作業至少 3 題（與 _validate_cloud_response 的 3–5 一致）。
+_MIN_ITEMS = 3
+
+# 最後保底題庫：完全不依賴 scaffold.VOCAB，連詞庫讀壞都還能產出合法作業。
+# 只在規則式路徑也失敗、或詞庫湊不滿下限時才用得到，並且一定伴隨 warning。
+_FALLBACK_ITEMS: list[dict] = [
+    {"target_en": "I have a dog.",
+     "prompt_zh": "說說看，你有養什麼動物？",
+     "why": "冠詞 a 搭配子音開頭名詞，最基礎的句型"},
+    {"target_en": "I want to eat an apple.",
+     "prompt_zh": "說說看，你想吃什麼？",
+     "why": "冠詞 an 搭配母音開頭名詞，與 a 對照練習"},
+    {"target_en": "I like the blue book.",
+     "prompt_zh": "說說看，你喜歡哪一本書？",
+     "why": "定冠詞 the 指特定的東西，練習前先想清楚指的是哪一個"},
+]
+
+
+def _minimal_homework() -> dict:
+    """最小合法作業：所有其他路徑都失敗時的保底，永遠符合公開 schema。"""
+    return {
+        "focus": "文法（grammar）",
+        "items": [dict(it) for it in _FALLBACK_ITEMS],
+        "source": "rule",
+    }
+
+
 def _build_rule_items(dim: str) -> list[dict]:
     """規則式產出 3-5 道習題，題目全取自 scaffold.VOCAB。"""
     entries = _pick_vocab_entries(dim, n=5)
@@ -242,8 +269,23 @@ def _build_rule_items(dim: str) -> list[dict]:
             "prompt_zh": prompt_zh,
             "why": why,
         })
-    # 保證至少 3 題（entries 來自 VOCAB，最少有 44 個詞條，不可能 < 3）
-    return items[:5] if len(items) >= 3 else items
+    # 契約下限保底。原本這裡寫「entries 來自 VOCAB，最少 44 個詞條，不可能 < 3」——
+    # 但 sent 去重會壓縮數量，詞庫也可能被換掉或讀壞。真的少於 3 題時，
+    # 儀表板上就是一份殘缺的作業，而現場沒有任何線索指向詞庫。
+    # 補到下限並留下 warning：湊數的題目看得出來，靜默的殘缺看不出來。
+    if len(items) < _MIN_ITEMS:
+        _log.warning(
+            "規則式作業只湊出 %d 題（下限 %d），詞庫可能異常，以保底題庫補齊",
+            len(items), _MIN_ITEMS,
+        )
+        used = {it["target_en"] for it in items}
+        for fallback in _FALLBACK_ITEMS:
+            if len(items) >= _MIN_ITEMS:
+                break
+            if fallback["target_en"] not in used:
+                items.append(dict(fallback))
+                used.add(fallback["target_en"])
+    return items[:5]
 
 
 def _rule_based_homework(profile: dict, diagnosis: dict) -> dict:
@@ -367,7 +409,7 @@ def generate_homework(
     """派作業 agent 主入口。
 
     流程：
-    1. allow_cloud=False → 直接走規則式，不碰任何雲端呼叫。
+    1. allow_cloud=False 或未取得家長同意 → 直接走規則式，不碰任何雲端呼叫。
     2. allow_cloud=True → 嘗試 Bedrock Converse：
        a. 去識別化 profile / diagnosis 自由文字。
        b. 呼叫 bedrock_converse.converse_text（cfg=resolve_config(role="diag")）。
@@ -376,14 +418,26 @@ def generate_homework(
        e. 任何例外 → 靜默 log 後降級。
     3. 規則式（離線 fallback）永遠是保底，一定能產出合法結果。
 
-    任何情況都不往外拋例外。
+    任何情況都不往外拋例外——**包含規則式路徑自己爆掉**。呼叫端
+    （pipeline._run_agents）的 try 只能做到「這一輪什麼都不派」，
+    產出合法結果是本函式的責任，不是它的。
     """
-    # 防禦性正規化：None 輸入轉成空 dict
-    profile = profile or {}
-    diagnosis = diagnosis or {}
+    try:
+        return _generate_homework(profile, diagnosis, allow_cloud=allow_cloud)
+    except Exception:
+        _log.exception("generate_homework 全數路徑失敗，回傳最小合法作業")
+        return _minimal_homework()
 
-    # allow_cloud=False：最高優先閘門，連 resolve_config 都不呼叫
-    if not allow_cloud:
+
+def _generate_homework(profile, diagnosis, *, allow_cloud: bool) -> dict:
+    # 防禦性正規化：None／型別錯誤的輸入轉成空 dict
+    profile = profile if isinstance(profile, dict) else {}
+    diagnosis = diagnosis if isinstance(diagnosis, dict) else {}
+
+    # allow_cloud=False：最高優先閘門，連 resolve_config 都不呼叫。
+    # consent 同級：B4-5 家長同意是資料出境的 chokepoint，diagnose.py 有這道
+    # 閘門，agent 沒有的話同一份資料換條路徑就出境了。
+    if not allow_cloud or not guardrails.consent_granted():
         return _rule_based_homework(profile, diagnosis)
 
     # 雲端路徑。後端優先序：AgentCore Harness → Bedrock Converse → 規則式。

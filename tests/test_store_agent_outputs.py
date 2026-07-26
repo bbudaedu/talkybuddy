@@ -141,3 +141,27 @@ def test_student_id_omitted_returns_all(tmp_db):
     store.add_agent_output("homework", _HOMEWORK, student_id="alice")
     store.add_agent_output("report", _REPORT, student_id="bob")
     assert len(store.list_agent_outputs()) == 2
+
+
+# ---------------------------------------------------------------------------
+# 保留鍵衝突（code review W6）
+# ---------------------------------------------------------------------------
+
+def test_payload_reserved_keys_are_rejected(tmp_db):
+    """payload 帶 seq / kind / student_id / ts 時必須當場失敗，不得靜默覆寫。
+
+    讀取端會把 DB 欄位攤平進 payload，無條件覆寫同名鍵。若 payload 自己
+    也有 ts，寫進去的值讀出來就變成別的東西，而且沒有任何跡象——
+    這種靜默的資料損毀，比當場拋錯難查一個數量級。
+    """
+    import pytest
+
+    for reserved in ("seq", "kind", "student_id", "ts"):
+        with pytest.raises(ValueError):
+            store.add_agent_output("homework", dict(_HOMEWORK, **{reserved: "x"}))
+
+
+def test_normal_payload_still_accepted(tmp_db):
+    """反例：沒有保留鍵的 payload 照常寫入。"""
+    seq = store.add_agent_output("homework", _HOMEWORK)
+    assert seq > 0

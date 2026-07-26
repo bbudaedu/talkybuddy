@@ -73,6 +73,10 @@ def test_repeated_decisions_do_not_spam_homework(tmp_db):
 
     孩子每兩回合收到一份新作業是騷擾不是服務。這條測試模擬真實迴圈，
     不 mock 任何東西。
+
+    斷言必須是**恰好 1 次**，不是「小於 6 次」：節流窗（數小時）遠大於這
+    6 次迴圈的耗時，所以第一次派發之後全部都該被擋下。寫成 `< 6` 的話，
+    派 5 次也會過——那等於沒驗到節流。
     """
     issued = 0
     for turn in range(12, 24, 2):
@@ -85,4 +89,4 @@ def test_repeated_decisions_do_not_spam_homework(tmp_db):
                 "homework", {"focus": "x", "items": [], "source": "rule"},
                 student_id="demo",
             )
-    assert issued < 6, f"6 次決策派了 {issued} 次作業，節流未生效"
+    assert issued == 1, f"6 次決策派了 {issued} 次作業，節流未生效（正解是 1）"

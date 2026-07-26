@@ -20,7 +20,7 @@ import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -43,6 +43,11 @@ WEB_DIR: Path = config.BASE_DIR / "web"
 AUDIO_DEBOUNCE_S: float = 0.35
 
 logger = logging.getLogger("talkybuddy.wake")
+
+# 列表端點的 limit 上限。回的是孩子的互動逐字稿與學習弱項（與診斷同級的個資），
+# 不能讓外部輸入決定回傳量——未驗證時 `?limit=-1` 在 SQLite 等於無上限。
+# 200 對儀表板（一頁數十筆）已經寬鬆。
+_MAX_LIST_LIMIT = 200
 
 # ---------------------------------------------------------------------------
 # 全域單例：引擎與 VoicePipeline
@@ -304,7 +309,8 @@ def _resolve_student(claims: dict, student_query: str | None) -> str:
 
 
 @app.get("/api/interactions")
-async def api_interactions(limit: int = 50, student: str | None = None,
+async def api_interactions(limit: int = Query(default=50, ge=1, le=_MAX_LIST_LIMIT),
+                           student: str | None = None,
                            authorization: str | None = Header(default=None)):
     """最近互動紀錄（新→舊）；student 讀自己，tutor/device 需帶 ?student=。"""
     claims = identity_from_header(authorization)
@@ -322,7 +328,8 @@ async def api_diagnoses(student: str | None = None,
 
 
 @app.get("/api/agent_outputs")
-async def api_agent_outputs(kind: str | None = None, limit: int = 20,
+async def api_agent_outputs(kind: str | None = None,
+                            limit: int = Query(default=20, ge=1, le=_MAX_LIST_LIMIT),
                             student: str | None = None,
                             authorization: str | None = Header(default=None)):
     """agent 產出（派作業／週報），新→舊；student 讀自己，tutor/device 需帶 ?student=。

@@ -472,6 +472,38 @@ def _build_suggestions(weakest: str, overall_trend: str) -> list[str]:
     return result if result else ["每天撥出 5 分鐘，陪孩子說說英文，讓練習成為日常習慣"]
 
 
+def _dedupe_across(*fields: list[str]) -> tuple[list[str], ...]:
+    """跨欄位去重：先出現的欄位保留，後面的欄位剔除重複句。
+
+    只在真的重複時才會動到內容；欄位可能因此變空，那是正確的——
+    同一句話在兩個欄位裡出現，本來就只該算一次。
+    """
+    seen: set[str] = set()
+    out: list[list[str]] = []
+    for field in fields:
+        kept: list[str] = []
+        for item in field:
+            key = str(item).strip()
+            if key and key not in seen:
+                seen.add(key)
+                kept.append(item)
+        out.append(kept)
+    return tuple(out)
+
+
+def _minimal_report() -> dict:
+    """最小合法週報：所有其他路徑都失敗時的保底，永遠符合公開 schema。"""
+    return {
+        "period": "本次練習",
+        "summary": "系統暫時無法整理完整的學習週報，以下僅供參考；"
+                   "詳細的學習狀況請以教師端的診斷紀錄為準。",
+        "highlights": [],
+        "concerns": [],
+        "suggestions": ["每天撥出 5 分鐘，陪孩子說說英文，讓練習成為日常習慣"],
+        "source": "rule",
+    }
+
+
 def _rule_based_report(profile: dict, diagnoses: list[dict]) -> dict:
     """規則式週報（完全離線，零外部依賴）。
 
@@ -553,10 +585,10 @@ def _rule_based_report(profile: dict, diagnoses: list[dict]) -> dict:
     concerns = _build_concerns(dim_trends, weakest, overall_trend)
     suggestions = _build_suggestions(weakest, overall_trend)
 
-    # 最終去重（所有 list 欄位合起來掃一次），避免跨欄位出現同一句話
-    all_items = set(highlights) | set(concerns) | set(suggestions)
-    # 各欄位內部去重已在各 _build_* 完成；這裡再次確保同一句不跨欄重複
-    # （理論上不應發生，但作為防禦層保留）
+    # 跨欄位去重：各欄位內部去重已在各 _build_* 完成，這裡確保同一句話不會
+    # 同時出現在 highlights 與 concerns。原本這裡只算了一個沒人用的集合，
+    # 註解卻宣稱有防禦——那比沒有防禦更糟，因為讀的人以為有。
+    highlights, concerns, suggestions = _dedupe_across(highlights, concerns, suggestions)
 
     return {
         "period": period,
@@ -681,7 +713,7 @@ def generate_report(
     """週報 agent 主入口。
 
     流程：
-    1. allow_cloud=False → 直接走規則式，不碰任何雲端呼叫。
+    1. allow_cloud=False 或未取得家長同意 → 直接走規則式，不碰任何雲端呼叫。
     2. allow_cloud=True → 嘗試 Bedrock Converse：
        a. 去識別化 profile / diagnoses 自由文字欄位。
        b. 呼叫 bedrock_converse.converse_text（cfg=resolve_config(role="diag")）。
@@ -690,14 +722,23 @@ def generate_report(
        e. 任何例外 → 靜默 log 後降級。
     3. 規則式（離線 fallback）永遠保底，一定能產出合法結果。
 
-    任何情況都不往外拋例外。
+    任何情況都不往外拋例外——**包含規則式路徑自己爆掉**。
     """
-    # 防禦性正規化
-    profile = profile or {}
-    diagnoses = list(diagnoses or [])
+    try:
+        return _generate_report(profile, diagnoses, allow_cloud=allow_cloud)
+    except Exception:
+        _log.exception("generate_report 全數路徑失敗，回傳最小合法週報")
+        return _minimal_report()
 
-    # allow_cloud=False：最高優先閘門，連 resolve_config 都不呼叫
-    if not allow_cloud:
+
+def _generate_report(profile, diagnoses, *, allow_cloud: bool) -> dict:
+    # 防禦性正規化
+    profile = profile if isinstance(profile, dict) else {}
+    diagnoses = list(diagnoses) if isinstance(diagnoses, (list, tuple)) else []
+
+    # allow_cloud=False：最高優先閘門，連 resolve_config 都不呼叫。
+    # consent 同級：家長同意是資料出境的 chokepoint（見 diagnose.py）。
+    if not allow_cloud or not guardrails.consent_granted():
         return _rule_based_report(profile, diagnoses)
 
     # 雲端路徑。後端優先序：AgentCore Harness → Bedrock Converse → 規則式。

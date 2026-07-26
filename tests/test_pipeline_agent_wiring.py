@@ -152,3 +152,75 @@ async def test_orchestrator_failure_falls_back_to_no_actions(tmp_db, monkeypatch
     await _pipeline()._refresh_directive()  # 不得拋出
 
     assert store.list_agent_outputs() == []
+
+
+# ---------------------------------------------------------------------------
+# code review W9：不 monkeypatch 任何 agent 的端到端接線
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_real_agents_end_to_end_without_any_monkeypatch(tmp_db):
+    """三個 agent 全用真的跑一輪，產出必須符合公開 schema 並落進 store。
+
+    上面幾條測試把 decide_next_actions（有時連 homework / report 一起）
+    換成 lambda，驗的是「pipeline 有沒有照 actions 做事」——那是接線，
+    不是行為。agent 自己在真實資料上會不會產出合法結果，被 mock 蓋掉了：
+    先前兩個 blocker 就是在全綠的情況下藏著的。
+
+    edge 模式跑（allow_cloud=False），確保完全不觸網。
+    """
+    # 餵連續退步且文法嚴重偏弱的資料，讓決策真的派出作業與週報——
+    # 用預設空資料庫跑會得到「觀察中、什麼都不派」，測試就空轉了。
+    def _d(date: str, grammar: int) -> dict:
+        return {
+            "date": date,
+            "scores": {"pronunciation": 80 - grammar // 10, "fluency": 70,
+                       "vocabulary": 68, "grammar": grammar},
+            "strengths": ["願意開口嘗試"],
+            "weaknesses": ["冠詞 a/an 仍不穩定"],
+            "emotional_status": "有點挫折",
+        }
+
+    diagnoses = [_d("2026-07-20", 62), _d("2026-07-22", 50), _d("2026-07-24", 38)]
+    diag = diagnoses[-1]
+
+    _pipeline("edge")._run_agents(diag, diagnoses, allow_cloud=False)
+
+    rows = store.list_agent_outputs()
+    assert rows, "連續退步 + 文法嚴重偏弱時，決策不該什麼都不派"
+
+    for row in rows:
+        assert row["source"] == "rule", "edge 模式不得有雲端產出"
+        if row["kind"] == "homework":
+            assert isinstance(row["focus"], str) and row["focus"].strip()
+            assert 3 <= len(row["items"]) <= 5, f"作業題數違反契約：{len(row['items'])}"
+            for item in row["items"]:
+                for key in ("target_en", "prompt_zh", "why"):
+                    assert isinstance(item.get(key), str) and item[key].strip()
+        else:
+            assert isinstance(row["summary"], str) and row["summary"].strip()
+            for key in ("highlights", "concerns", "suggestions"):
+                assert isinstance(row[key], list)
+
+
+@pytest.mark.anyio
+async def test_directive_refresh_failure_is_logged_not_swallowed(tmp_db, monkeypatch, caplog):
+    """W2：背景刷新失敗必須留下日誌。
+
+    無聲的 `except: pass` 會讓導師層在現場悄悄停更——畫面照跑，
+    directive 卻永遠停在舊值，沒有任何人會發現。
+    """
+    import logging
+
+    from server import diagnose
+
+    monkeypatch.setattr(
+        diagnose, "generate_diagnosis",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("診斷爆了")),
+    )
+
+    with caplog.at_level(logging.ERROR):
+        await _pipeline()._refresh_directive()  # 不得拋出
+
+    assert any("directive" in r.message for r in caplog.records), \
+        f"背景刷新失敗未留下日誌：{[r.message for r in caplog.records]}"
