@@ -289,3 +289,29 @@ def test_module_import_does_not_load_boto3(_clean_env):
         elif isinstance(node, ast.ImportFrom):
             names.append(node.module or "")
     assert not any(n.startswith("boto") for n in names), names
+
+
+def test_invoke_never_forwards_a_skills_override(_clean_env, monkeypatch):
+    """InvokeHarness 的 skills 欄位不得由呼叫端決定。
+
+    官方 harness 文件的安全注意事項：skill 內容（含它帶的腳本）會被當成
+    **可信輸入**注入 agent context，而且**沒有 IAM condition key 能限制
+    per-invocation 的 skills 欄位**——invoke 時同名的 skill 會覆蓋 harness
+    上掛好的那份。也就是說，只要有一條路徑能把外部輸入帶到這個欄位，
+    就等於讓外部指定 agent 讀什麼指令。
+
+    本層的參數是固定組出來的，沒有 kwargs 透傳。這條測試把「參數只有這
+    四個鍵」釘死，避免日後有人為了方便加一個 **extra 就把洞開了。
+    """
+    fake = _FakeClient(_ok("ok"))
+    monkeypatch.setattr(agentcore, "_build_client", lambda region, timeout_s: fake)
+
+    agentcore.invoke(
+        {"region": "r", "harness_arn": "a", "memory_arn": "m"},
+        "hi", session_id="s", actor_id="s1",
+    )
+
+    assert set(fake.captured) == {"harnessArn", "runtimeSessionId", "messages", "actorId"}, \
+        f"送出的參數多了：{set(fake.captured) - {'harnessArn', 'runtimeSessionId', 'messages', 'actorId'}}"
+    assert "skills" not in fake.captured
+    assert "systemPrompt" not in fake.captured

@@ -110,6 +110,63 @@ Harness 已能執行代理迴圈（串流回傳 `messageStop`），但底層模�
 
 **驗證超過 2 小時請寄 `aws-verification@amazon.com`。**
 
+## 自訂 skill：`taiwan-elementary-english`（待掛載）
+
+三個 agent 共用的教學依據（課綱字彙分級、主題與溝通功能、國小語言形式
+上限、兒童安全用語）不塞進三份 system prompt，而是做成一份 Harness skill。
+改一次三個 agent 一起生效。
+
+檔案由腳本產生，**不要手改**：
+
+```bash
+python3 scripts/generate_agent_skill.py
+# → deploy/aws/skills/taiwan-elementary-english/SKILL.md
+```
+
+內容全部取自 `data/curriculum/moe_english_2018.json`（教育部領綱官方抽取）
+與專案既有常數（`guardrails.CHILD_SAFETY_CLAUSE`、`curriculum._TARGET_FORM`）。
+課綱資料更新或安全條款改字時重跑一次即可，不會靜默過期。
+
+### 掛上去（AWS 放行後才做，目前**未執行過**）
+
+`skills` 的四種來源是 `path` / `s3` / `git` / `awsSkills`（union，擇一）。
+本專案用 S3：
+
+```bash
+R=ap-southeast-1
+BUCKET=<你的 bucket>
+aws s3 sync deploy/aws/skills/ s3://$BUCKET/skills/ --region $R
+
+# ⚠️ update-harness 不是 patch 語意——只傳 skills 會讓 model / maxTokens /
+#    maxIterations / timeoutSeconds 掉回預設（本專案被它咬過一次）。
+#    三個 harness 各跑一次，每次都要把上限一起重傳。
+aws bedrock-agentcore-control update-harness --region $R \
+  --harness-id TalkyBuddyHomework-jTJ4Czs45L \
+  --skills "[{\"s3\":{\"uri\":\"s3://$BUCKET/skills/taiwan-elementary-english/\"}}]" \
+  --model '{"bedrockModelConfig":{"modelId":"global.anthropic.claude-sonnet-4-5-20250929-v1:0","maxTokens":1024,"apiFormat":"converse_stream"}}' \
+  --max-iterations 8 --max-tokens 1024 --timeout-seconds 60 \
+  --memory '{"agentCoreMemoryConfiguration":{"arn":"'"$AGENTCORE_MEMORY_ARN"'"}}'
+```
+
+掛完後回讀確認欄位沒被重置：
+
+```bash
+aws bedrock-agentcore-control get-harness --region $R --harness-id <id> \
+  --query '{skills:skills,maxTokens:maxTokens,maxIterations:maxIterations,timeoutSeconds:timeoutSeconds}'
+```
+
+### 安全注意（官方文件的 harness skills 段）
+
+skill 的內容——**包含它帶的任何腳本**——會被當成**可信輸入**注入 agent
+context，而且**沒有 IAM condition key 能限制 per-invocation 的 `skills`
+欄位**：invoke 時傳同名 skill 會覆蓋 harness 上掛好的那份。
+
+所以 S3 bucket 要當成程式碼來管（限制寫入權限、開版本控制），而且
+應用層絕不可以把外部輸入透傳到 `InvokeHarness` 的 `skills`。
+本專案的 `agentcore.invoke()` 參數是固定組出來的、沒有 kwargs 透傳，
+`tests/test_agentcore_client.py::test_invoke_never_forwards_a_skills_override`
+把送出的參數鍵集合釘死，避免日後有人加一個 `**extra` 就把洞開了。
+
 ## 清理指令（決賽後）
 
 ```bash

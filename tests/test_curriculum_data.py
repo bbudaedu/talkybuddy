@@ -173,3 +173,42 @@ async def test_curriculum_endpoint_returns_a_verifiable_citation():
     assert len(body["source"]["sha256"]) == 64
     assert body["counts"]["basic_1200"] > 1000
     assert body["our_vocab_coverage"]["ratio"] >= 0.95
+
+
+# ---------------------------------------------------------------------------
+# AgentCore 自訂 skill：內容必須與課綱資料同步
+# ---------------------------------------------------------------------------
+
+def test_generated_skill_is_in_sync_with_the_curriculum_data():
+    """SKILL.md 是產生的。有人手改、或課綱資料更新後忘了重跑，這裡會紅。
+
+    skill 的內容會被 Harness 當成可信輸入注入 agent context——它過期
+    等於三個 agent 一起拿著舊的教學依據在出題，而且沒有任何跡象。
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    skill = root / "deploy" / "aws" / "skills" / "taiwan-elementary-english" / "SKILL.md"
+    assert skill.exists(), "skill 檔不存在，跑 scripts/generate_agent_skill.py"
+
+    before = skill.read_text(encoding="utf-8")
+    subprocess.run([sys.executable, str(root / "scripts" / "generate_agent_skill.py")],
+                   check=True, capture_output=True, cwd=root)
+    after = skill.read_text(encoding="utf-8")
+    assert before == after, "SKILL.md 與來源資料不同步，請重跑 generate_agent_skill.py"
+
+
+def test_generated_skill_carries_the_verifiable_citation():
+    """skill 裡要帶得走出處：agent 引用課綱時，依據是可查的。"""
+    from pathlib import Path
+
+    skill = (Path(__file__).resolve().parent.parent / "deploy" / "aws" / "skills"
+             / "taiwan-elementary-english" / "SKILL.md").read_text(encoding="utf-8")
+    meta = cd.source_meta()
+    assert meta["sha256"] in skill
+    assert meta["url"] in skill
+    # 兒童安全條款是不可協商的部分，一定要在
+    from server import guardrails
+    assert guardrails.CHILD_SAFETY_CLAUSE in skill
