@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from edge.npu_spike.fix_shape import build_fix_shape_argv, run_fix_shape
 from edge.npu_spike.inspect_model import (
     describe_graph_io,
     format_metadata_map,
@@ -123,3 +126,48 @@ def test_format_metadata_map_empty_dict_fixed_string():
 def test_format_metadata_map_sorted_key_value_lines():
     result = format_metadata_map({"blank_id": "0", "lfr_window_size": "7"})
     assert result == "blank_id = 0\nlfr_window_size = 7"
+
+
+def test_build_fix_shape_argv_dim_param_form():
+    argv = build_fix_shape_argv("a.onnx", "b.onnx", dim_param="T", dim_value=200)
+    assert argv[argv.index("--dim_param") + 1] == "T"
+    assert argv[argv.index("--dim_value") + 1] == "200"
+    assert argv[-2:] == ["a.onnx", "b.onnx"]
+
+
+def test_build_fix_shape_argv_input_shape_form():
+    argv = build_fix_shape_argv(
+        "a.onnx", "b.onnx", input_name="x", input_shape=[1, 200, 80]
+    )
+    assert argv[argv.index("--input_name") + 1] == "x"
+    assert argv[argv.index("--input_shape") + 1] == "1,200,80"
+    assert argv[-2:] == ["a.onnx", "b.onnx"]
+
+
+def test_build_fix_shape_argv_raises_when_both_forms_given():
+    with pytest.raises(ValueError):
+        build_fix_shape_argv(
+            "a.onnx",
+            "b.onnx",
+            dim_param="T",
+            dim_value=200,
+            input_name="x",
+            input_shape=[1, 200, 80],
+        )
+
+
+def test_build_fix_shape_argv_raises_when_neither_form_given():
+    with pytest.raises(ValueError):
+        build_fix_shape_argv("a.onnx", "b.onnx")
+
+
+def test_run_fix_shape_oserror_returns_minus_one(monkeypatch):
+    import edge.npu_spike.fix_shape as fix_shape_module
+
+    def _raise(*args, **kwargs):
+        raise OSError("boom")
+
+    monkeypatch.setattr(fix_shape_module.subprocess, "run", _raise)
+    returncode, output = run_fix_shape(["fake", "argv"])
+    assert returncode == -1
+    assert "boom" in output
