@@ -29,7 +29,7 @@ import json
 import logging
 import re
 
-from server import agentcore, bedrock_converse, guardrails
+from server import agentcore, bedrock_converse, guardrails, srs
 from server.agents import privacy
 from server.scaffold import VOCAB
 
@@ -158,7 +158,7 @@ def _deidentify_diagnosis(diagnosis: dict) -> dict:
 # 規則式路徑（離線 fallback，永遠可用）
 # ---------------------------------------------------------------------------
 
-def _pick_vocab_entries(dim: str, n: int = 5) -> list[dict]:
+def _pick_vocab_entries(dim: str, n: int = 5, due_words: list[str] | None = None) -> list[dict]:
     """從 scaffold.VOCAB 按弱項維度挑出 n 個詞條。
 
     使用 round-robin 跨分類交錯取題：每輪從各 preferred_cat 各取 1 個，
@@ -166,6 +166,10 @@ def _pick_vocab_entries(dim: str, n: int = 5) -> list[dict]:
     - 每個 preferred_cat 都有貢獻（解決 D4 同維度題目單調問題）
     - 不同 cat 的 sent 句型不同，避免 n 題同句型（解決 D5）
     - 不足時從其他分類補齊
+
+    ``due_words``（間隔重複已到期的詞，見 server/srs.py）排在最前面：
+    這個孩子上次沒說對、而且已經到了該複習的時間的詞，比「這個維度的
+    第一個詞」有價值得多。到期詞不足 n 個時，其餘照原本的邏輯補。
 
     所有題目都來自 VOCAB，不自編。
     """
@@ -181,6 +185,16 @@ def _pick_vocab_entries(dim: str, n: int = 5) -> list[dict]:
     # seen_sents 對 target_en（即 sent）去重，避免同份作業出現一字不差的重複題（D6）
     entries: list[dict] = []
     seen_sents: set[str] = set()
+
+    # 到期的複習詞優先。只取得出 VOCAB 詞條的（題目一律來自詞庫，不自編）。
+    for word in (due_words or []):
+        if len(entries) >= n:
+            break
+        info = VOCAB.get(word)
+        if info and info["sent"] not in seen_sents:
+            entries.append({"zh_key": word, **info})
+            seen_sents.add(info["sent"])
+
     cat_indices = {cat: 0 for cat in preferred_cats}
     while len(entries) < n:
         added_this_round = False
@@ -245,9 +259,9 @@ def _minimal_homework() -> dict:
     }
 
 
-def _build_rule_items(dim: str) -> list[dict]:
+def _build_rule_items(dim: str, due_words: list[str] | None = None) -> list[dict]:
     """規則式產出 3-5 道習題，題目全取自 scaffold.VOCAB。"""
-    entries = _pick_vocab_entries(dim, n=5)
+    entries = _pick_vocab_entries(dim, n=5, due_words=due_words)
     why_base = _DIM_WHY_TEMPLATE.get(dim, "加強練習")
     items: list[dict] = []
     for i, entry in enumerate(entries[:5]):
@@ -289,11 +303,18 @@ def _build_rule_items(dim: str) -> list[dict]:
 
 
 def _rule_based_homework(profile: dict, diagnosis: dict) -> dict:
-    """規則式派作業（完全離線，零外部依賴）。"""
+    """規則式派作業（完全離線，零外部依賴）。
+
+    間隔重複的到期詞優先出題（server/srs.py）。那一層讀 DB，失敗時回空
+    清單而不拋——所以這裡不必再包一層 try：離線／DB 壞掉時就退回原本的
+    「依弱項維度取題」，作業照樣出得來。
+    """
     scores = (diagnosis or {}).get("scores") or {}
     dim = _find_lowest_dim(scores)
     focus = f"{_DIM_ZH.get(dim, dim)}（{dim}）"
-    items = _build_rule_items(dim)
+    student_id = (profile or {}).get("student_id")
+    due = srs.due_words(student_id, limit=5) if student_id else []
+    items = _build_rule_items(dim, due_words=due)
     return {
         "focus": focus,
         "items": items,

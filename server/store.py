@@ -159,6 +159,22 @@ def init_db() -> None:
             conn.execute(
                 "ALTER TABLE agent_outputs ADD COLUMN student_id TEXT NOT NULL DEFAULT ''"
             )
+        # 間隔重複的複習排程（見 server/srs.py）。一個孩子一個詞一列。
+        # last_seq 記著這個詞算過的最大互動 seq——背景刷新每次都讀最近 10 筆，
+        # 沒有它同一筆互動會被反覆計分。
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS word_reviews ("
+            " student_id TEXT NOT NULL,"
+            " word TEXT NOT NULL,"
+            " last_seen TEXT NOT NULL,"
+            " ease REAL NOT NULL DEFAULT 2.5,"
+            " interval_days INTEGER NOT NULL DEFAULT 0,"
+            " reps INTEGER NOT NULL DEFAULT 0,"
+            " lapses INTEGER NOT NULL DEFAULT 0,"
+            " last_seq INTEGER NOT NULL DEFAULT 0,"
+            " due_at TEXT NOT NULL,"
+            " PRIMARY KEY (student_id, word))"
+        )
         conn.commit()
 
 
@@ -367,6 +383,75 @@ def list_agent_outputs(
         d["ts"] = ts
         out.append(d)
     return out
+
+
+# ---------------------------------------------------------------------------
+# 間隔重複的複習排程（見 server/srs.py）
+# ---------------------------------------------------------------------------
+
+_WORD_REVIEW_COLS = (
+    "student_id", "word", "last_seen", "ease", "interval_days",
+    "reps", "lapses", "last_seq", "due_at",
+)
+
+
+def _row_to_word_review(row) -> dict:
+    return dict(zip(_WORD_REVIEW_COLS, row))
+
+
+def get_word_review(student_id: str, word: str) -> dict | None:
+    """取回某學生某個詞的複習狀態；沒練過回 None。"""
+    with _lock:
+        conn = _get_conn()
+        row = conn.execute(
+            f"SELECT {', '.join(_WORD_REVIEW_COLS)} FROM word_reviews"
+            " WHERE student_id = ? AND word = ?",
+            (student_id, word),
+        ).fetchone()
+    return _row_to_word_review(row) if row else None
+
+
+def upsert_word_review(student_id: str, word: str, state: dict, *, last_seq: int = 0) -> None:
+    """寫入（或覆寫）某學生某個詞的複習狀態。state 由 srs.schedule 產生。"""
+    with _lock:
+        conn = _get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO word_reviews"
+            " (student_id, word, last_seen, ease, interval_days, reps, lapses, last_seq, due_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                student_id, word,
+                str(state.get("last_seen") or ""),
+                float(state.get("ease") or 2.5),
+                int(state.get("interval_days") or 0),
+                int(state.get("reps") or 0),
+                int(state.get("lapses") or 0),
+                int(last_seq or 0),
+                str(state.get("due_at") or ""),
+            ),
+        )
+        conn.commit()
+
+
+def list_due_word_reviews(student_id: str, *, now: str | None = None,
+                          limit: int = 20) -> list[dict]:
+    """列出已到期的複習詞：最久到期的排前面，同時到期則答錯次數多的優先。
+
+    due_at 是 ISO8601 且時區固定（+08:00），字串比較與時間比較同序，
+    所以直接在 SQL 內比大小，不必把整張表撈回 Python。
+    """
+    moment = now or datetime.datetime.now(
+        datetime.timezone(datetime.timedelta(hours=8))
+    ).isoformat(timespec="seconds")
+    with _lock:
+        conn = _get_conn()
+        rows = conn.execute(
+            f"SELECT {', '.join(_WORD_REVIEW_COLS)} FROM word_reviews"
+            " WHERE student_id = ? AND due_at <= ?"
+            " ORDER BY due_at ASC, lapses DESC LIMIT ?",
+            (student_id, moment, _safe_limit(limit, 20)),
+        ).fetchall()
+    return [_row_to_word_review(r) for r in rows]
 
 
 def get_profile(student_id: str | None = None) -> dict | None:

@@ -224,3 +224,24 @@ async def test_directive_refresh_failure_is_logged_not_swallowed(tmp_db, monkeyp
 
     assert any("directive" in r.message for r in caplog.records), \
         f"背景刷新失敗未留下日誌：{[r.message for r in caplog.records]}"
+
+
+@pytest.mark.anyio
+async def test_background_refresh_updates_word_reviews(tmp_db):
+    """間隔重複的排程要真的在背景刷新裡被更新，不是只有函式存在。
+
+    排程若沒被呼叫，word_reviews 永遠是空的，出題端的「優先挑到期詞」
+    就變成一段永遠走不到的死碼——而且測試會照樣全綠。
+    """
+    store.add_interaction({
+        "student_id": "STUDENT-AMING-004",
+        "student_text": "I have a dog.",
+        "ai_response_text": "很好！",
+        "asr_confidence": 0.95,
+        "scores": {"pronunciation": 70, "fluency": 70, "vocabulary": 70, "grammar": 70},
+    })
+
+    await _pipeline("edge")._refresh_directive()
+
+    assert store.get_word_review("STUDENT-AMING-004", "狗") is not None, \
+        "背景刷新沒有更新複習排程"

@@ -347,6 +347,14 @@ class VoicePipeline:
                 recent = store.list_interactions(limit=10)
                 diagnoses = store.list_diagnoses()
                 prev = diagnoses[-1] if diagnoses else None
+                # 間隔重複：把這幾回合折算成複習排程（純本地、不出境）。
+                # 放在診斷之前，派作業 agent 這一輪就讀得到最新的到期詞。
+                # 每個詞記著自己算過的 seq，重跑不會重複計分。
+                try:
+                    from server import srs
+                    srs.record_interactions(recent, self.student_id or config.STUDENT_ID)
+                except Exception:
+                    _log.warning("複習排程更新失敗，本輪照原邏輯出題", exc_info=True)
                 diag = diagnose.generate_diagnosis(recent, prev, allow_cloud=allow_cloud)
                 store.add_diagnosis(diag)  # 持久化（含 companion_directive）
                 # 子專案 B/C/E：診斷產出後才做編排決策——它要看的就是這份新診斷。
