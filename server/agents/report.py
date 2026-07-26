@@ -30,7 +30,7 @@ import json
 import logging
 import re
 
-from server import bedrock_converse, guardrails
+from server import agentcore, bedrock_converse, guardrails
 
 _log = logging.getLogger(__name__)
 
@@ -726,11 +726,12 @@ def generate_report(
     if not allow_cloud:
         return _rule_based_report(profile, diagnoses)
 
-    # 雲端路徑
+    # 雲端路徑。後端優先序：AgentCore Harness → Bedrock Converse → 規則式。
     try:
-        cfg = bedrock_converse.resolve_config(role="diag")
-        if cfg is None:
-            # 未啟用 Bedrock provider → 直接走規則式
+        ac_cfg = agentcore.resolve_config("report")
+        cfg = None if ac_cfg else bedrock_converse.resolve_config(role="diag")
+        if ac_cfg is None and cfg is None:
+            # 兩個雲端後端都沒設定 → 直接走規則式
             return _rule_based_report(profile, diagnoses)
 
         # 去識別化（上雲前對自由文字遮罩個資）
@@ -741,13 +742,21 @@ def generate_report(
         period = _period_desc(diagnoses)
         user_prompt = _build_user_prompt(profile_safe, diags_safe, period)
 
-        raw_text = bedrock_converse.converse_text(
-            _SYSTEM_PROMPT,
-            user_prompt,
-            cfg=cfg,
-            max_tokens=1024,
-            timeout_s=_TIMEOUT_S,
-        )
+        if ac_cfg is not None:
+            # AgentCore：system prompt 在 Harness 建立時已宣告，這裡只送訊息。
+            raw_text = agentcore.invoke(
+                ac_cfg, user_prompt,
+                actor_id=(profile or {}).get("student_id"),
+                session_id=f"rpt-{(diagnoses or [{}])[-1].get('date') or 'na'}",
+            )
+        else:
+            raw_text = bedrock_converse.converse_text(
+                _SYSTEM_PROMPT,
+                user_prompt,
+                cfg=cfg,
+                max_tokens=1024,
+                timeout_s=_TIMEOUT_S,
+            )
 
         # 護欄：整體回傳字串過安全過濾
         if not guardrails.passes_guardrail(raw_text):

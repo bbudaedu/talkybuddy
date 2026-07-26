@@ -142,6 +142,34 @@ def _extract_text(payload: dict) -> str:
     return "".join(parts)
 
 
+def try_invoke(
+    role: str,
+    user_message: str,
+    *,
+    actor_id: str | None = None,
+    session_id: str | None = None,
+    timeout_s: float = DEFAULT_TIMEOUT_S,
+) -> str | None:
+    """若該角色已啟用 AgentCore 就呼叫並回傳文字；**未啟用回 None**。
+
+    三個 agent 的雲端分支共用這一層，避免把後端優先序邏輯抄三份。
+
+    回傳值的兩種 None 語意要分清楚：
+    - 回 `None` = 「沒啟用」，呼叫端應往下試 bedrock_converse。
+    - 拋例外 = 「啟用了但失敗」，呼叫端的外層 except 會降級回規則式。
+
+    刻意不在這裡吞例外：靜默失敗會讓「AgentCore 其實沒在跑」這件事
+    永遠查不出來，而那正是決賽現場最不能發生的誤會。
+    """
+    cfg = resolve_config(role)
+    if cfg is None:
+        return None
+    return invoke(
+        cfg, user_message,
+        session_id=session_id, actor_id=actor_id, timeout_s=timeout_s,
+    )
+
+
 def invoke(
     cfg: dict,
     user_message: str,
