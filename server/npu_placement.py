@@ -36,9 +36,18 @@ process 的 fd 2（stderr 的檔案描述符本身），而不是透過 Python �
 
 from __future__ import annotations
 
+import contextlib
+import os
 import re
+import tempfile
+from dataclasses import dataclass
 
 PLACEMENT_MARKER = "VerifyEachNodeIsAssignedToAnEp"
+
+# T-10-04（DoS，medium，mitigate）：verbose 日誌對大 graph 可能極長，
+# 無上限的擷取緩衝等於把 session 初始化變成記憶體風險；超過此上限即截斷
+# 並設 truncated 旗標，而非無限成長。
+MAX_CAPTURE_BYTES = 2_000_000
 
 _PROVIDER_LINE_RE = re.compile(r"Provider:\s*\[(\w+)\]:\s*(.*)")
 _NODE_PAIR_RE = re.compile(r"\w+\s*\(([^()]+)\)")
@@ -135,3 +144,56 @@ def format_placement_line(summary: dict) -> str:
     ops_accelerated = summary.get("ops_accelerated", 0)
     ops_total = summary.get("ops_total", 0)
     return f"{prefix}, {ops_accelerated}/{ops_total} ops accelerated"
+
+
+@dataclass
+class CapturedOutput:
+    """capture_fd_output 的擷取結果。text 為擷取到的文字，truncated 標示是否
+    超過 MAX_CAPTURE_BYTES 而被截斷。"""
+
+    text: str = ""
+    truncated: bool = False
+
+
+@contextlib.contextmanager
+def capture_fd_output(fd: int = 2):
+    """以 os.dup2 在 fd 層級攔截寫入，擷取 ONNX Runtime C++ 層直接寫到
+    該 fd（預設 2 = stderr）的 verbose 日誌。
+
+    Python 的 `contextlib.redirect_stderr` 只替換 `sys.stderr` 這個物件
+    參照，C 層寫入完全繞過它——這是本函式存在的唯一理由，不是為了通用
+    日誌收集。用法：
+
+        with capture_fd_output() as buf:
+            ...（觸發會寫到 fd 2 的 C 層輸出，例如建立啟用 verbose
+                logging 的 onnxruntime.InferenceSession）...
+        # buf.text 為擷取到的文字，可直接餵給 parse_ep_placement_log。
+
+    呼叫端有義務在使用完 `ort.set_default_logger_severity(0)` 開啟
+    verbose 模式後，把 severity 調回原值（正式引擎路徑在 10-05 落實）；
+    本函式本身只負責擷取，不負責管理 ORT 的 logger severity。
+
+    還原順序：無論正常結束或拋出例外，都在 `finally` 內先把 fd 還原
+    （`os.dup2` 導回原 fd 並關閉暫存的已保存 fd），再讀出暫存檔內容——
+    還原必須排在讀取之前，避免讀檔期間的任何輸出又被吞掉。
+    """
+    saved_fd = os.dup(fd)
+    tmp_file = tempfile.TemporaryFile()
+    os.dup2(tmp_file.fileno(), fd)
+    result = CapturedOutput()
+    try:
+        yield result
+    finally:
+        os.dup2(saved_fd, fd)
+        os.close(saved_fd)
+
+        tmp_file.flush()
+        tmp_file.seek(0)
+        raw = tmp_file.read(MAX_CAPTURE_BYTES + 1)
+        tmp_file.close()
+
+        if len(raw) > MAX_CAPTURE_BYTES:
+            result.truncated = True
+            raw = raw[:MAX_CAPTURE_BYTES]
+
+        result.text = raw.decode("utf-8", errors="replace")
