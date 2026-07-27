@@ -116,7 +116,9 @@ async def test_post_network_mode_cloud_returns_new_diagnosis():
         "emotional_status", "instructions",
         "companion_directive",  # B1：新增陪聊策略欄位（向後相容）
         "level_state",          # B3：新增 CEFR 難度階梯欄位（向後相容）
+        "source",               # TCLOUD-02：來源標記（"cloud" | "rule"）
     }
+    assert diag["source"] in ("cloud", "rule")
     assert diag["companion_directive"]["difficulty"] in ("up", "hold", "down")
     assert set(diag["scores"].keys()) == {"pronunciation", "fluency", "vocabulary", "grammar"}
 
