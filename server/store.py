@@ -265,6 +265,34 @@ def mark_all_synced() -> list[dict]:
     return just_synced
 
 
+def mark_synced(seqs) -> int:
+    """依明確 seq 清單標記已同步，回傳實際被更新的列數。
+
+    與 ``mark_all_synced()`` 的差別是呼叫端明確指定要標記哪幾筆，供部分
+    失敗時只標記確定已被雲端處理的紀錄，不誤標整批（見 sync_client.push_pending
+    的「全數處理才標記」邏輯）。
+
+    seqs 可為任何可迭代的 seq（list/tuple/set）；無法轉 int 的元素直接跳過，
+    不拋例外（垃圾輸入不炸，符合本檔既有的保守風格）。空輸入直接回 0，
+    不開交易。只更新目前 synced=0 的列，回傳值即「本次真正促成的變更數」。
+    """
+    ids: list[int] = []
+    for s in seqs:
+        try:
+            ids.append(int(s))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return 0
+    placeholders = ", ".join(["?"] * len(ids))
+    sql = "UPDATE interactions SET synced = 1 WHERE seq IN (" + placeholders + ") AND synced = 0"
+    with _lock:
+        conn = _get_conn()
+        cur = conn.execute(sql, tuple(ids))
+        conn.commit()
+    return int(cur.rowcount)
+
+
 def add_diagnosis(d: dict) -> None:
     """新增（或覆寫同日期的）一筆診斷。"""
     date = str(d["date"])
