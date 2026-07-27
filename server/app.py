@@ -27,7 +27,7 @@ from pydantic import BaseModel
 
 from server import (
     auth, config, diagnose, guardrails, lesson, nova_sonic, profile,
-    pronunciation, scaffold, store,
+    pronunciation, scaffold, store, sync_client,
 )
 from server.asr import ASREngine
 from server.llm import EdgeLLM
@@ -257,8 +257,9 @@ async def api_network_mode(body: NetworkModeBody,
     """切換網路模式（D-01 的 kill-switch）。
 
     - edge：只更新模式。
-    - cloud：mark_all_synced() → 近 10 筆互動 generate_diagnosis（prev=最新
-      診斷）→ add_diagnosis → 回 {"synced": n, "new_diagnosis": {...}}。
+    - cloud：sync_client.opportunistic_sync()（D-03(a) 機會式補傳）→
+      近 10 筆互動 generate_diagnosis（prev=最新診斷）→ add_diagnosis →
+      回 {"synced": n, "new_diagnosis": {...}}。
 
     此端點是主持人宣稱「現在完全離線」的操作者可觀察保證，而 uvicorn 綁
     0.0.0.0（見 edge/runtime/run_edge.sh:63，既有已接受風險）——同網段任何
@@ -286,7 +287,10 @@ async def api_network_mode(body: NetworkModeBody,
         return {"network_mode": "edge", "synced": 0, "new_diagnosis": None}
 
     # cloud：補同步 + 產出新診斷（mock Hermes/Bedrock 雲端層）
-    just_synced = store.mark_all_synced()
+    # D-03(a)：network_mode 由 edge 轉 cloud 的瞬間，立即補傳一次待同步紀錄，
+    # 讓主持人插回網路後不必等孩子再說話，儀表板就會出現新診斷。
+    sync_result = sync_client.opportunistic_sync()
+    synced_n = sync_result.get("synced", 0)
     new_diag = None
     try:
         recent = store.list_interactions(limit=10)
@@ -309,7 +313,7 @@ async def api_network_mode(body: NetworkModeBody,
         new_diag = None
     return {
         "network_mode": "cloud",
-        "synced": len(just_synced),
+        "synced": synced_n,
         "new_diagnosis": new_diag,
     }
 
