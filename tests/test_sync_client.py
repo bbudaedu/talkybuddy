@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from server import store, sync_client
+from server import config, store, sync_client
 
 
 def test_push_pending_sends_unsynced_and_marks():
@@ -78,3 +78,120 @@ def test_project_for_upload_output_keys_are_subset_of_upload_fields():
         }
     )
     assert set(out) <= sync_client.UPLOAD_FIELDS
+
+
+# --- push_pending()（Task 3：D-02 consent 閘門 + 部分失敗安全標記）---
+
+
+def test_push_pending_blocks_network_when_consent_not_granted(monkeypatch):
+    """consent 未授權時，http_post 完全未被呼叫，pending 全數留在佇列。"""
+    store.add_interaction(
+        {"student_text": "t1", "device_id": "D1", "client_ts": "2026-07-10T10:00:00"}
+    )
+    monkeypatch.setattr(config, "CONSENT_GRANTED", False)
+    called = []
+
+    def fake_post(url, json, headers):
+        called.append(url)
+        return {"accepted": 1, "skipped": 0}
+
+    res = sync_client.push_pending("http://cloud", "tok", fake_post)
+    assert called == []
+    assert store.pending_count() == 1
+    assert res.get("consent_required") is True
+
+
+def test_push_pending_marks_synced_when_all_accepted(monkeypatch):
+    store.add_interaction(
+        {"student_text": "t1", "device_id": "D1", "client_ts": "2026-07-10T10:00:00"}
+    )
+    monkeypatch.setattr(config, "CONSENT_GRANTED", True)
+
+    def fake_post(url, json, headers):
+        return {"accepted": 1, "skipped": 0}
+
+    sync_client.push_pending("http://cloud", "tok", fake_post)
+    assert store.pending_count() == 0
+
+
+def test_push_pending_partial_failure_leaves_all_pending(monkeypatch):
+    """雲端只回收一部分（部分失敗）時，一筆都不標記，全數留在佇列等補傳（D-02 前置）。"""
+    for i in range(3):
+        store.add_interaction(
+            {"student_text": f"t{i}", "device_id": "D1", "client_ts": f"2026-07-10T10:0{i}:00"}
+        )
+    monkeypatch.setattr(config, "CONSENT_GRANTED", True)
+
+    def fake_post(url, json, headers):
+        return {"accepted": 1, "skipped": 0}
+
+    sync_client.push_pending("http://cloud", "tok", fake_post)
+    assert store.pending_count() == 3
+
+
+def test_push_pending_marks_synced_when_accepted_plus_skipped_covers_all(monkeypatch):
+    """雲端回應 accepted+skipped 等於送出總數（全數已處理）時才標記已同步。"""
+    for i in range(3):
+        store.add_interaction(
+            {"student_text": f"t{i}", "device_id": "D1", "client_ts": f"2026-07-10T10:0{i}:00"}
+        )
+    monkeypatch.setattr(config, "CONSENT_GRANTED", True)
+
+    def fake_post(url, json, headers):
+        return {"accepted": 1, "skipped": 2}
+
+    sync_client.push_pending("http://cloud", "tok", fake_post)
+    assert store.pending_count() == 0
+
+
+def test_push_pending_no_pending_skips_network():
+    called = []
+
+    def fake_post(url, json, headers):
+        called.append(url)
+        return {"accepted": 0, "skipped": 0}
+
+    res = sync_client.push_pending("http://cloud", "tok", fake_post)
+    assert called == []
+    assert res == {"accepted": 0, "skipped": 0}
+
+
+def test_push_pending_sent_payload_keys_are_whitelisted(monkeypatch):
+    store.add_interaction(
+        {
+            "student_text": "hi",
+            "device_id": "D1",
+            "client_ts": "2026-07-10T10:00:00",
+            "latency_ms": {"asr": 100},
+            "audio_path": "/tmp/x.wav",
+        }
+    )
+    monkeypatch.setattr(config, "CONSENT_GRANTED", True)
+    captured = {}
+
+    def fake_post(url, json, headers):
+        captured["interactions"] = json["interactions"]
+        return {"accepted": 1, "skipped": 0}
+
+    sync_client.push_pending("http://cloud", "tok", fake_post)
+    for item in captured["interactions"]:
+        assert set(item) <= sync_client.UPLOAD_FIELDS
+
+
+def test_push_pending_does_not_mutate_local_sqlite_text(monkeypatch):
+    """D-01：deidentify 只在上傳瞬間套用，本地 SQLite 原文不變。"""
+    store.add_interaction(
+        {
+            "student_text": "我家電話 0912345678",
+            "device_id": "D1",
+            "client_ts": "2026-07-10T10:00:00",
+        }
+    )
+    monkeypatch.setattr(config, "CONSENT_GRANTED", True)
+
+    def fake_post(url, json, headers):
+        return {"accepted": 1, "skipped": 0}
+
+    sync_client.push_pending("http://cloud", "tok", fake_post)
+    rows = store.list_interactions(limit=10)
+    assert rows[0]["student_text"] == "我家電話 0912345678"

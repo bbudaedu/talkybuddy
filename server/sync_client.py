@@ -84,16 +84,36 @@ def project_for_upload(item: dict) -> dict:
 
 
 def push_pending(base_url: str, token: str, http_post) -> dict:
-    """讀本地未同步互動 → POST /api/sync → 成功則 mark_all_synced。
+    """讀本地未同步互動 → consent 閘門 → 白名單投影＋去識別化 → POST /api/sync
+    → 全數處理才標記已同步。
 
-    回傳雲端回應 {"accepted", "skipped"}；無待同步時回 0/0（不打網路）。
+    處理順序（不可調換，D-02/D-04 的具體實作）：
+    1. 無 pending 時直接回 {"accepted": 0, "skipped": 0}，不打網路（既有行為）。
+    2. consent 閘門：``guardrails.consent_granted()`` 為 False 時，在組 payload
+       與呼叫 http_post 之前就立即返回 {"accepted": 0, "skipped": 0,
+       "consent_required": True}——不打任何網路、不標記任何紀錄，全數留在
+       pending 佇列等日後補傳（D-02）。
+    3. 白名單投影＋去識別化：project_for_upload() 逐筆組 payload（D-01+D-04）。
+    4. 全數處理才標記：/api/sync 只回兩個彙總數字（accepted + skipped），
+       沒有逐筆明細，發送端無從得知是哪幾筆被拒。只有當 accepted + skipped
+       == len(pending) 時才呼叫 store.mark_synced(seqs)；否則一筆都不標記，
+       全數留著等下次補傳。由於每筆都帶 client_ts，/api/sync 的
+       (student_id, device_id, client_ts) 去重會把重送的已收紀錄計入
+       skipped，因此重送冪等、不會產生重複列。
+
+    誠實限制：``guardrails.deidentify()`` 不遮中文人名（見其 docstring 自承
+    需語意層），所以上雲文字仍可能含中文姓名——「已呼叫 deidentify」不等於
+    「已完成去識別化」。
     """
     pending = [it for it in store.list_interactions(limit=100000) if not it.get("synced")]
     if not pending:
         return {"accepted": 0, "skipped": 0}
-    payload = {"interactions": pending}
+    if not guardrails.consent_granted():
+        return {"accepted": 0, "skipped": 0, "consent_required": True}
+    seqs = [it["seq"] for it in pending]
+    payload = {"interactions": [project_for_upload(it) for it in pending]}
     headers = {"Authorization": f"Bearer {token}"}
     resp = http_post(f"{base_url}/api/sync", payload, headers)
-    if resp.get("accepted", 0) or resp.get("skipped", 0):
-        store.mark_all_synced()
+    if resp.get("accepted", 0) + resp.get("skipped", 0) == len(pending):
+        store.mark_synced(seqs)
     return resp
