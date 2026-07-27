@@ -72,6 +72,48 @@ def test_pending_count_and_mark_all_synced():
     assert store.mark_all_synced() == []
 
 
+def test_mark_synced_marks_only_given_seq():
+    """mark_synced：傳入其中一筆 seq，只標記那一筆，另一筆仍 pending。"""
+    seq_a = store.add_interaction(_sample_interaction("a", synced=False))
+    store.add_interaction(_sample_interaction("b", synced=False))
+
+    n = store.mark_synced([seq_a])
+
+    assert n == 1
+    assert store.pending_count() == 1
+    remaining = [r for r in store.list_interactions(limit=50) if not r["synced"]]
+    assert remaining[0]["student_text"] == "b"
+
+
+def test_mark_synced_empty_list_marks_nothing():
+    """mark_synced：傳入空清單，回傳 0，不動任何列。"""
+    store.add_interaction(_sample_interaction("a", synced=False))
+
+    n = store.mark_synced([])
+
+    assert n == 0
+    assert store.pending_count() == 1
+
+
+def test_mark_synced_nonexistent_seq_returns_zero():
+    """mark_synced：傳入不存在的 seq，回傳 0，不拋例外。"""
+    store.add_interaction(_sample_interaction("a", synced=False))
+
+    n = store.mark_synced([9999])
+
+    assert n == 0
+    assert store.pending_count() == 1
+
+
+def test_mark_synced_already_synced_seq_returns_zero():
+    """mark_synced：傳入已經 synced 的 seq，回傳 0（只計實際變更的列）。"""
+    seq_a = store.add_interaction(_sample_interaction("a", synced=True))
+
+    n = store.mark_synced([seq_a])
+
+    assert n == 0
+
+
 def test_add_and_list_diagnoses_sorted_by_date_ascending():
     """add_diagnosis / list_diagnoses：依 date 升冪排序。"""
     store.add_diagnosis(_sample_diagnosis("2026-07-02"))
