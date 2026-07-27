@@ -99,3 +99,9 @@ tmp/
 
 # NP8 Converter 專用 Python 3.11 環境（mtk_converter 需 3.11，專案主環境為 3.12）
 .venv-np8/
+
+# NP8 SDK 下載物與轉換產物（大檔，從 MediaTek NeuroPilot 取得，不入版控）
+edge/np8/*.zip
+edge/np8/_extract/
+edge/np8/_mobilenet/
+edge/np8_out/
