@@ -96,3 +96,6 @@ tmp/
 
 # Kiro IDE 自動生成的本機工具設定（LSP 等），非專案產出
 .kiro/settings/
+
+# NP8 Converter 專用 Python 3.11 環境（mtk_converter 需 3.11，專案主環境為 3.12）
+.venv-np8/
