@@ -3,7 +3,7 @@ status: testing
 phase: 09-network-cut-demo-hardening
 source: [09-VERIFICATION.md]
 started: 2026-07-25T21:30:00Z
-updated: 2026-07-25T21:30:00Z
+updated: 2026-07-26T08:58:04+08:00
 ---
 
 ## Current Test
@@ -24,14 +24,15 @@ result: [pending]
 
 ### 2. modeBadge pulse 動效與 5 秒輪詢靜默的瀏覽器實測
 expected: 開學生頁點一下 airplaneSwitch，徽章明顯播放一次縮放動效；靜置 ≥15 秒（≥3 拍輪詢）徽章保持靜止不閃動。
-result: [pending]
+result: pass
+notes: "使用者於區網 http://192.168.100.200:8787/（本機開發伺服器，非 Genio 520 真機）以自己的瀏覽器實測 cloud→edge 與 edge→cloud 兩個方向切換，皆確認徽章播放一次 pulse 動效；使用者回報通過。"
 
 ## Summary
 
 total: 2
-passed: 0
+passed: 1
 issues: 0
-pending: 2
+pending: 1
 skipped: 0
 blocked: 0
 

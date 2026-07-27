@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: 2
 milestone_name: — Genio 520 決賽 Edge MVP
-current_phase: 10
-current_phase_name: npu-accelerated-perception
+current_phase: 11
+current_phase_name: cloud-teacher-closed-loop
 status: executing
-stopped_at: Phase 11 context gathered
-last_updated: "2026-07-27T02:09:30.301Z"
-last_activity: 2026-07-26
-last_activity_desc: Phase 10 execution started
+stopped_at: Phase 12 context gathered
+last_updated: "2026-07-27T06:23:44.491Z"
+last_activity: 2026-07-27
+last_activity_desc: Phase 11 execution started
 progress:
   total_phases: 12
-  completed_phases: 3
-  total_plans: 18
-  completed_plans: 16
-  percent: 25
+  completed_phases: 4
+  total_plans: 22
+  completed_plans: 20
+  percent: 33
 ---
 
 # Project State
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-18)
 
 **Core value:** 孩子能喊「說說學伴」進行自然、可 barge-in 的口說繁中對話，同時教學並評估，且自架串流與 Nova Sonic 兩路徑皆能達成。
-**Current focus:** Phase 10 — npu-accelerated-perception
+**Current focus:** Phase 11 — cloud-teacher-closed-loop
 
 ## Current Position
 
-Phase: 10 (npu-accelerated-perception) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 10
-Last activity: 2026-07-26 — Phase 10 execution started
+Phase: 11 (cloud-teacher-closed-loop) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 11
+Last activity: 2026-07-27 — Phase 11 execution started
 
 ## Performance Metrics
 
@@ -126,6 +126,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-07-27T02:09:30.296Z
-Stopped at: Phase 11 context gathered
-Resume file: .planning/phases/11-cloud-teacher-closed-loop/11-CONTEXT.md
+Last session: 2026-07-27T06:23:44.487Z
+Stopped at: Phase 12 context gathered
+Resume file: .planning/phases/12-nova-sonic-online-staging-final-rehearsal/12-CONTEXT.md
