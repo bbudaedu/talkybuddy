@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: 2
 milestone_name: — Genio 520 決賽 Edge MVP
-current_phase: 09
-current_phase_name: Network-Cut Demo Hardening
+current_phase: 10
+current_phase_name: npu-accelerated-perception
 status: executing
-stopped_at: Completed 09-04-PLAN.md
-last_updated: "2026-07-25T12:35:12.620Z"
-last_activity: 2026-07-25
-last_activity_desc: "09-01 executed: fixed NETCUT-01 core bug (conn_pipe.network_mode was never re-synced from the global on an already-open /ws/talk session) + added JWT gate to POST /api/network_mode; full test suite green (333 passed)"
+stopped_at: Phase 11 context gathered
+last_updated: "2026-07-27T02:09:30.301Z"
+last_activity: 2026-07-26
+last_activity_desc: Phase 10 execution started
 progress:
   total_phases: 12
   completed_phases: 3
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 18
+  completed_plans: 16
   percent: 25
 ---
 
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-18)
 
 **Core value:** 孩子能喊「說說學伴」進行自然、可 barge-in 的口說繁中對話，同時教學並評估，且自架串流與 Nova Sonic 兩路徑皆能達成。
-**Current focus:** Phase 09 — Network-Cut Demo Hardening
+**Current focus:** Phase 10 — npu-accelerated-perception
 
 ## Current Position
 
-Phase: 09 (Network-Cut Demo Hardening) — IN PROGRESS
-Plan: 4 of 4 done. Next: Phase 09 Plan 02 (timeout hardening — see 09-02-PLAN.md)
-Status: Executing — 09-01 committed, ready to continue with 09-02
-Last activity: 2026-07-25 — 09-01 executed: fixed NETCUT-01 core bug (conn_pipe.network_mode was never re-synced from the global on an already-open /ws/talk session) + added JWT gate to POST /api/network_mode; full test suite green (333 passed)
+Phase: 10 (npu-accelerated-perception) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 10
+Last activity: 2026-07-26 — Phase 10 execution started
 
 ## Performance Metrics
 
@@ -126,6 +126,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-07-25T12:35:12.616Z
-Stopped at: Completed 09-04-PLAN.md
-Resume file: None
+Last session: 2026-07-27T02:09:30.296Z
+Stopped at: Phase 11 context gathered
+Resume file: .planning/phases/11-cloud-teacher-closed-loop/11-CONTEXT.md

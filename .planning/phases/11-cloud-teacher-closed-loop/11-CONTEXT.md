@@ -15,7 +15,7 @@
 | ROADMAP SC | 狀態 | 證據 |
 |---|---|---|
 | SC3 — `diagnose.py` 經 direct `boto3 bedrock-runtime.converse()` | ✅ 已實作 | `server/bedrock_converse.py`；`server/diagnose.py:625-661` 走 `bedrock_converse.converse_text` / `resolve_config(role="diag")` |
-| SC4 — 教師儀表板顯示診斷 | 🟡 元件齊全，端到端未驗 | `web/teacher.html`、`/api/diagnoses`、`server/app.py:293-298` 持久化帶 `student_id` |
+| SC4 — 教師儀表板顯示診斷 | 🟡 元件齊全，端到端未驗；**學生姓名仍是硬編 mock**（見 D-05） | `web/teacher.html`、`/api/diagnoses`、`server/app.py:293-298` 持久化帶 `student_id`；`web/teacher.html:196` 硬編「阿明」 |
 | SC2 — `/api/sync` 端點 | 🟡 端點在，機會式觸發缺 | `server/app.py:375-397` |
 | SC1 — `push_pending()` 隱私閘門 | ❌ **未做，本 phase 主要工作** | `server/sync_client.py:17-25` 零閘門 |
 
@@ -46,8 +46,25 @@
   - 理由：`store.add_interaction()`（`server/store.py:187-202`）把 body 整包 `json.dumps` 進 payload，**沒有 schema**。黑名單在此情況下不可靠：日後任何人新增一個欄位（例如音檔路徑）就預設外洩。白名單是「音檔絕不出裝置」唯一可稽核的寫法。
   - 推論：白名單需搭配測試——新增一個未列入白名單的欄位，必須被剝除。
 
+### 教師儀表板的學生身分顯示（SC4）
+- **D-05（鎖定，使用者於 2026-07-27 討論中追加）：** 教師儀表板**必須顯示學生完整姓名**。
+
+  **現況是 mock**：`web/teacher.html:196` 把姓名硬編為字串「阿明」，`:200` 與 `:260` 硬編 `STUDENT-AMING-004`。`server/store.py` 只有 `student_id`（`_FALLBACK_STUDENT_ID = "STUDENT-AMING-004"`），`student_profile` 表存自由 payload、無姓名欄位定義。因此本項屬 SC4「顯示**真實（非 mock）**診斷資料」的一部分，不是新增能力。
+
+  **與 D-01 的關係——這兩件事不衝突，executor 不得混淆：**
+
+  | | 適用對象 | 是否經 deidentify |
+  |---|---|---|
+  | **身分欄位** | `student_id`、學生姓名 | **否** |
+  | **對話內容** | `student_text` 等逐字稿欄位 | **是**（上傳瞬間） |
+
+  理由：教師儀表板的整個用途就是「**這一個**學生的學習診斷」，抽掉身分就沒有價值。`deidentify()` 的目的是遮掉**對話內容裡偶發提到的個資**（住址、電話、他人姓名），不是移除受評學生本人的身分。會出現「逐字稿裡的名字被遮成 `[名字]`、但頁面標題顯示完整姓名」的畫面，這是預期行為，不是 bug。
+
+  **姓名不進上傳白名單**：姓名存在 server 端（即儀表板讀取的同一個 DB），裝置端 `push_pending()` 只送 `student_id` 供綁定，不送姓名。裝置不必傳它，因此它不該出現在白名單裡——這讓 D-04 的隱私邊界維持乾淨。
+
 ### Claude's Discretion
-- 白名單的具體欄位清單，由 planner／executor 依 `store` 既有 payload 實際欄位與 `/api/sync` 契約決定；但必須是顯式常數、有測試覆蓋，且預設拒絕。
+- 白名單的具體欄位清單，由 planner／executor 依 `store` 既有 payload 實際欄位與 `/api/sync` 契約決定；但必須是顯式常數、有測試覆蓋，且預設拒絕。**`student_id` 必須在白名單內**（`/api/sync` 靠它綁定學生）；**姓名必須不在**（見 D-05）。
+- 姓名的資料來源與 API 形態（`student_profile` payload 加 `display_name` 欄位 vs 獨立名冊表 vs auth 帳號帶 name），由 planner／executor 決定。考量 demo 為單一學生且僅剩決賽前 3 天，傾向最小改動；但硬編字串必須消失，儀表板要從 API 讀。
 - 兩層觸發的實作位置（`pipeline` hook vs `app.py` 端點 vs `sync_client` 自身），依現有程式碼慣例決定，不視為新決策。
 - `mark_all_synced()` 的部分失敗修法（見 `<specifics>`）的具體形式（改為依 seq 標記 vs 依回應明細標記）由 executor 決定。
 
