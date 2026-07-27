@@ -35,6 +35,7 @@ _FALLBACK_BASE_DIR = Path(__file__).resolve().parent.parent
 _FALLBACK_DB_PATH = _FALLBACK_BASE_DIR / "data" / "talkybuddy.db"
 _FALLBACK_DEVICE_ID = "GENIO-520-X992"
 _FALLBACK_STUDENT_ID = "STUDENT-AMING-004"
+_FALLBACK_STUDENT_NAME = "阿明"
 
 
 def _load_config():
@@ -90,6 +91,28 @@ def default_student_id() -> str:
     「寫進 A、查 B 查不到」這種只在多學生情境才現形的 bug。
     """
     return _student_id()
+
+
+def student_display_name(student_id: str | None = None) -> str:
+    """教師儀表板顯示用的學生完整姓名，逐點鏡像 ``_student_id()`` 的三層解析。
+
+    以 ``getattr(cfg, "STUDENT_NAME", _FALLBACK_STUDENT_NAME)`` 取值；
+    ``cfg`` 為 None（config 尚未就緒）時直接回 ``_FALLBACK_STUDENT_NAME``。
+
+    ``student_id`` 參數目前**不參與解析**（單一學生 demo），只是保留在
+    簽章上作為未來多學生名冊的介面預留——不要誤以為傳入不同 student_id
+    會查到不同姓名，本函式目前對任何 student_id（含 None）都回同一個值。
+
+    刻意不經 ``guardrails.deidentify()``：教師儀表板的用途就是識別「這一個」
+    學生，deidentify() 的目的是遮掉對話內容裡偶發提到的個資，不是移除受評
+    學生本人的身分（見 11-CONTEXT.md D-05）。
+
+    **不得**把回傳值寫進 ``student_profile`` payload——``server/profile.py::
+    build_profile()`` 全量重算，只帶回 ``student_id`` 一個鍵，寫進去的姓名
+    會在下一次 cloud 同步時被靜默清掉。
+    """
+    cfg = _load_config()
+    return getattr(cfg, "STUDENT_NAME", _FALLBACK_STUDENT_NAME) if cfg else _FALLBACK_STUDENT_NAME
 
 
 # ---------------------------------------------------------------------------
