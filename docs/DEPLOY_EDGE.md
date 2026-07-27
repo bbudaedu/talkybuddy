@@ -77,11 +77,17 @@ HTTP server）native binary 生成、送上裝置並拉起：
 1. **`build.sh` 交叉編譯**：開發機需先裝好 aarch64 交叉工具鏈
    （`sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake`）。
    `build.sh` 會 clone 官方 `ggml-org/llama.cpp`（`third_party/llama.cpp/`，不使用
-   任何第三方 fork/預編譯 binary），以 build flag `-march=armv8.2-a+dotprod+i8mm`
+   任何第三方 fork/預編譯 binary），以 build flag `-march=armv8.2-a+dotprod`
    `-DGGML_NATIVE=OFF`（D-02；`armv8.7-a`/`GGML_NATIVE=ON` 會編出 Cortex-A78 不
    支援的 ISA，runtime SIGILL）交叉編譯出 `llama-server`/`llama-bench`/
    `llama-cli`，產物置於 `edge/deploy/bin/`，並記錄編譯的 commit hash到
    `edge/deploy/bin/LLAMACPP_COMMIT.txt`。
+
+   > **2026-07-25 真機修正**：本旗標原為 `-march=armv8.2-a+dotprod+i8mm`。
+   > 這顆 Genio 520（6×Cortex-A55 + 2×Cortex-A78）的 `/proc/cpuinfo` Features
+   > **只有 `asimddp`（=dotprod）、沒有 `i8mm`**，含 `+i8mm` 編出的 binary
+   > 一進入推論就 SIGILL。已移除，`edge/deploy/build.sh:90-91` 為準。
+   > **換板卡或重新燒錄時，務必先核對 `/proc/cpuinfo` Features 再決定旗標，不可沿用假設。**
    **D-03 交叉工具鏈 fallback**：若真機 `--version`/`ldd` 顯示 glibc ABI 不相容
    （版本落差造成動態連結失敗），立即改用 `~/hackathon/` 的 Genio Yocto BSP SDK
    官方 cross-toolchain 重編一次（`TALKYBUDDY_CROSS_CC`/`TALKYBUDDY_CROSS_CXX`
