@@ -55,11 +55,6 @@ class EdgeLLM:
         "英文句必須逐字使用我提供的目標句，不可改寫。"
         "三、全部回覆總長不超過60個字。"
         "四、禁止使用 markdown 符號、emoji 表情、以及英文以外的其他外語。"
-        # 這句原本放在 user 訊息尾巴。它完全固定，卻因為排在每回合都變的
-        # student_text 之後，KV cache 每輪都要重算它——開機暖身完全焐不到。
-        # 移到 system 段（system 段逐字固定）後，暖身才真的能預熱它。
-        "每次回覆都照上述規則：先一句繁體中文稱讚鼓勵，"
-        "再用「跟我說一遍：<英文句>」帶讀我給的目標英文句。"
     ) + guardrails.CHILD_SAFETY_CLAUSE
 
     def available(self) -> bool:
@@ -115,18 +110,12 @@ class EdgeLLM:
             directive_block = (
                 f"\n{directive.strip()}\n" if directive and directive.strip() else ""
             )
-            # 排序是效能決策，不是風格偏好：llama.cpp 的 KV cache 從第一個
-            # 相異字元起全部失效，因此必須「越穩定的越前面」。
-            #   目標英文句 — 同一課內固定
-            #   directive  — 每 5 回合才換一次
-            #   student_text — 每回合必變，所以放最後
-            # Phase 8 實測單回合 llm 佔 4170ms／全程 5852ms，其中 prompt 重算
-            # 2.05s；原本的順序（student_text 在最前）讓兩回合的共同前綴只有
-            # 8 個字，等於整段 prompt 每輪重算。
             user_prompt = (
+                f"學生剛剛說：「{student_text}」\n"
                 f"目標英文句：{target or ''}\n"
                 f"{directive_block}"
-                f"學生剛剛說：「{student_text}」"
+                "請照規則回覆：先一句繁體中文稱讚鼓勵，"
+                "再用「跟我說一遍：<英文句>」帶讀目標英文句。"
             )
             messages = [
                 {"role": "system", "content": self._SYSTEM_PROMPT},
