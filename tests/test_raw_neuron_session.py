@@ -95,6 +95,31 @@ def test_choose_better_summary_survives_garbage(junk):
 # ---------------------------------------------------------------------------
 
 
+def test_build_neuron_providers_can_omit_cpu_fallback():
+    """MediaTek 官方 NeuronEP 指南明載「Omit fallback providers」。
+
+    帶著 CPUExecutionProvider 會讓 ORT 在兩個 EP 之間切分圖並插入 memcpy，
+    官方文件記錄的 `Execution type 'XnnpackExecutionProvider' doesn't support
+    memcpy` 就是這條路徑上的已知錯誤。SenseVoice 的 `unordered_map::at` 崩潰
+    也發生在同一個 partition 階段，因此必須能在**不帶 fallback** 的情況下重測。
+    """
+    providers = build_neuron_providers(cpu_fallback=False)
+    assert len(providers) == 1
+    assert providers[0][0] == "NeuronExecutionProvider"
+    assert "CPUExecutionProvider" not in providers
+
+
+def test_build_neuron_providers_cpu_fallback_defaults_on():
+    """預設維持既有行為，避免既有呼叫端語意被靜默改變。"""
+    assert "CPUExecutionProvider" in build_neuron_providers()
+
+
+def test_build_neuron_providers_no_fallback_keeps_explicit_empty_options():
+    """A2 重試形態（顯式空 options）與 no-fallback 必須能並存。"""
+    providers = build_neuron_providers({}, cpu_fallback=False)
+    assert providers == [("NeuronExecutionProvider", {})]
+
+
 def test_build_neuron_providers_default_options():
     providers = build_neuron_providers()
     assert len(providers) == 2

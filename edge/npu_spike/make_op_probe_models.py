@@ -50,6 +50,11 @@ OP_PROBES: tuple[str, ...] = (
     # 而那代表任何含 Transpose/Gather/Softmax 的真實模型都不可能部分加速——
     # 「換一個 Conv 為主的模型」這條路也就不成立。
     "ConvStackPlusUnsupported",
+    # 規模探針。通過的最大圖只有 9 個節點，SenseVoice 有 9082 個；規模是
+    # 崩潰假設中唯一還沒被控制的變因。BigConvStack 用同一種已知會被接受的
+    # Conv+Relu 結構堆到數百節點，若它崩潰就指向規模／編譯器上限，若通過
+    # 則規模也可以被排除。
+    "BigConvStack",
 )
 
 
@@ -214,6 +219,27 @@ def _build_single_op_model(op_type: str):
             prev = f"r{layer}"
         # 尾端掛一個已實測被 MDLA 拒收的算子。
         nodes.append(helper.make_node("Softmax", [prev], ["y"], axis=-1))
+        f32_out("y", [1, 8, 16, 16])
+
+    elif op_type == "BigConvStack":
+        f32_in("x", [1, 8, 16, 16])
+        prev = "x"
+        depth = 120  # 120 對 Conv+Relu = 240 節點，遠超已通過的 9 節點
+        for layer in range(depth):
+            w_name = f"W{layer}"
+            const(w_name, (np.zeros((8, 8, 3, 3), dtype=np.float32) + 0.01))
+            nodes.append(
+                helper.make_node(
+                    "Conv",
+                    [prev, w_name],
+                    [f"c{layer}"],
+                    kernel_shape=[3, 3],
+                    pads=[1, 1, 1, 1],
+                )
+            )
+            out_name = "y" if layer == depth - 1 else f"r{layer}"
+            nodes.append(helper.make_node("Relu", [f"c{layer}"], [out_name]))
+            prev = out_name
         f32_out("y", [1, 8, 16, 16])
 
     else:  # pragma: no cover -- probe_op_names 已界定範圍

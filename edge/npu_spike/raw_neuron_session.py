@@ -54,17 +54,30 @@ _DTYPE_TO_NUMPY = {
 }
 
 
-def build_neuron_providers(options: dict[str, str] | None = None) -> list:
+def build_neuron_providers(
+    options: dict[str, str] | None = None, cpu_fallback: bool = True
+) -> list:
     """組出 `onnxruntime.InferenceSession(providers=...)` 用的 provider 清單。
 
     `options=None`（未提供）時套用 `DEFAULT_NEURON_OPTIONS`；`options={}`
     （顯式給空 dict）是 A2 假設錯誤時的重試形態，必須原樣保留、不得被
-    default 覆蓋——這是一等公民而非特例分支。回傳結構固定為
-    `[("NeuronExecutionProvider", options_or_default), "CPUExecutionProvider"]`，
-    CPU fallback 排第二順位以確保 session 一定建得起來。
+    default 覆蓋——這是一等公民而非特例分支。
+
+    `cpu_fallback=False` 時只回傳 `[("NeuronExecutionProvider", options)]`。
+    MediaTek 官方 NeuronEP 指南明載 **"Omit fallback providers; use only
+    ("NeuronExecutionProvider", options)"**：帶著 CPU fallback 會讓 ORT 在兩個
+    EP 之間切分圖並插入 memcpy 節點，官方記載的
+    `Execution type 'XnnpackExecutionProvider' doesn't support memcpy` 就出自
+    這條路徑。SenseVoice 的 `unordered_map::at` 也崩在同一個 partition 階段，
+    因此這個開關是重測該模型的必要條件。
+
+    預設仍為 `True`，以免既有呼叫端的語意被靜默改變。
     """
     resolved_options = DEFAULT_NEURON_OPTIONS if options is None else options
-    return [("NeuronExecutionProvider", resolved_options), "CPUExecutionProvider"]
+    providers: list = [("NeuronExecutionProvider", resolved_options)]
+    if cpu_fallback:
+        providers.append("CPUExecutionProvider")
+    return providers
 
 
 def build_zero_feeds(io_specs: list[dict]) -> dict[str, object]:
@@ -226,6 +239,14 @@ def main() -> None:
         action="store_true",
         help="預設關閉；開啟才會真的呼叫一次 session.run（Day-1 只需要 graph partition 結果）",
     )
+    parser.add_argument(
+        "--no-cpu-fallback",
+        action="store_true",
+        help=(
+            "只用 NeuronExecutionProvider、不掛 CPU fallback。"
+            "MediaTek 官方 NeuronEP 指南要求如此（見 build_neuron_providers docstring）"
+        ),
+    )
     args = parser.parse_args()
 
     if not args.model:
@@ -279,6 +300,7 @@ def main() -> None:
                 capture_fd_output=capture_fd_output,
                 parse_ep_placement_log=parse_ep_placement_log,
                 summarize_placement=summarize_placement,
+                cpu_fallback=not args.no_cpu_fallback,
             )
             # 取兩輪較好者，不無條件覆蓋——見 choose_better_summary docstring。
             summary = choose_better_summary(summary, retry_summary)
@@ -308,9 +330,10 @@ def _probe_once(
     capture_fd_output,
     parse_ep_placement_log,
     summarize_placement,
+    cpu_fallback: bool = True,
 ) -> dict:
     """建立一次 session、擷取放置日誌並摘要——`main()` 兩段式重試流程的單輪實作。"""
-    providers = build_neuron_providers(options)
+    providers = build_neuron_providers(options, cpu_fallback=cpu_fallback)
 
     with capture_fd_output(2) as buf:
         session = None
