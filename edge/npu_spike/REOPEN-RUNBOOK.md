@@ -1,6 +1,23 @@
 # NPU 重開真機執行手冊（2026-07-27）
 
-對應 `ADR-npu-path.md` §7。**執行前這些步驟一步都沒跑過**——本檔是待執行的腳本，不是結果紀錄。
+對應 `ADR-npu-path.md` §7。
+
+> **狀態：Step 1–3 已於 2026-07-27 執行完畢。** 結果見 §6 與 ADR §7。
+> Step 4（FP32 SenseVoice）進行中。
+
+## 執行時踩到的三個坑（重跑前必讀）
+
+首次執行**沒有量到 NPU，而是量到三個 probe 自身的缺陷**——三個之中任一個都足以把「NPU 正常運作」誤報成 FAIL。已於 commit `46b39c5` 全數修好，此處保留紀錄以免重蹈：
+
+1. **IR version 不相容**：`make_toy_model.py` 原本讓 `onnx` 1.22 寫出預設的 IR version 13，而裝置端 ORT 1.20.2 上限是 10 → `Unsupported model IR version: 13`。模型連載入都沒成功，探針量到的是版本不相容而不是 NPU。已釘為 7（與 SenseVoice 系列一致）。
+2. **Parser 少認一種日誌格式**：ORT 只在圖被切分到多個 EP 時才印逐節點的 `Provider: [X]: [...]`；**整張圖都落在同一個 EP 時走的是彙總捷徑** `All nodes placed on [X]. Number of nodes: N`——也就是「完全加速」這個最好的結果，反而是舊 parser 唯一看不懂的格式，被記成 0/0。
+3. **重試覆蓋成功**：第 2 點的誤判觸發了「零加速就換空 options 重試」，而空 options 拿掉 `NEURON_FLAG_USE_FP16` 後必然失敗（MDLA 不吃 FP32），失敗結果又被無條件寫回，把第一輪的成功抹掉。
+
+**連帶結論**：ADR §5 的假設 A2（provider options 鍵名未驗證）已可結案——`NEURON_FLAG_USE_FP16` 不只鍵名有效，而且是 **MDLA 能吃下 FP32 圖的必要條件**。
+
+---
+
+**執行前這些步驟一步都沒跑過**——以下為原始腳本內容，仍是重跑時的正確流程。
 
 判讀規則只有一條，與 Day-1 完全相同、不放寬：**per-op placement 的 NPU ops > 0 才算通過。** provider 出現在清單裡、session 建得起來、`mtk-mdla` 被列舉，都不算。
 
@@ -104,3 +121,26 @@ Phase 8 實測三引擎峰值 ≈2723 MB／4 GB 上限（33.5% 餘裕）。FP32 
    - 取得 NPU ops > 0 → `NPU_PATH_DECISION: NPU-VIABLE-FP32`，10-05/10-06 解除 gate
    - 全數 FAIL → `NPU_PATH_DECISION: STOP-LOSS-CPU-BASELINE-CONFIRMED`，這次的停損有二分診斷背書
 4. **不得**把 provider presence、session 建立成功或 `mtk-mdla` 列舉寫成任何形式的「NPU 加速」宣稱。
+
+---
+
+## 6. Step 1–3 實際結果（2026-07-27，裝置 `root@192.168.31.78`）
+
+判準未放寬，仍是 per-op placement NPU ops > 0。
+
+| Probe | 判定 | exit | 原文關鍵行 |
+|---|---|---|---|
+| `toy_conv.onnx`（Conv+Relu，FP32 靜態） | **PASS 1/1** | 0 | `All nodes placed on [NeuronExecutionProvider]. Number of nodes: 1`；`[apusys][info]apusysSession: Seesion(0xaaab1193a150)` |
+| `toy_matmul.onnx`（MatMul+Add，FP32 靜態） | FAIL 0/2（退 CPU） | 1 | `All nodes placed on [CPUExecutionProvider]. Number of nodes: 2`；`MDLA: Cannot support Float32 input/output`、`BatchMatMulLayer{BATCH_MATMUL}` 於 EDMA/GPU/MDLA 三個 target 皆 unsupported |
+
+### 二分診斷結論
+
+**世界 (B)：環境可用，Day-1 的失敗是模型問題。** `toy_conv` 取得整圖 NPU 放置並建立 apusys session，證明這顆 Genio 520 的 NeuronEP 能編譯並執行子圖。因此 2026-07-26 對 `model.int8.fixed.onnx` 的 `unordered_map::at` 不能再被解讀為「NPU 不可用」。
+
+### 一個 ROADMAP 成功條件已就地滿足
+
+`toy_matmul` 的結果同時是 **SC3（算子不支援時自動退 CPU，且 fallback 可在 log/HUD 被觀察到，不得靜默偽成功）** 的實證：NeuronEP 拒收 BatchMatMul 後，ORT 把節點放上 CPU、session 照常成立，而 `format_placement_line` 印出 `NPU: OFF, 0/2 ops accelerated`——降級是**可觀察**的，不是靜默的。
+
+### 對 SenseVoice 的預期（尚未驗證，勿當結論）
+
+MDLA 接受 Conv 但拒收 BatchMatMul。SenseVoice 的骨幹是 transformer：FP32 版有 421 個 `MatMul`、僅 70 個 `Conv`（共 9082 節點）。若 BatchMatMul 的拒收在 SenseVoice 上同樣成立，**可預期只有零星 Conv 子圖上得了 NPU**，未必構成有意義的加速。Step 4 的實測數字才算數。
