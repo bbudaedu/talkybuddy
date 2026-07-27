@@ -9,7 +9,7 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
 ## Milestones
 
 - **Milestone 1 — Delivered Baseline** (Phases 1–6): 由 30 份既有設計/計畫文件 ingest 而成，經 2026-07-18 對照 codebase 逐 phase 驗證確認**功能已實作**。4、5 完整交付；1、2、3、6 交付但有已登錄缺口（見下方標記與 STATE.md「Known-Gaps Backlog」）。此 milestone 視為 baseline，不再新開發，缺口以 backlog 追蹤。
-- **Milestone 2 — Genio 520 決賽 Edge MVP** (Phases 7–12): 12 天衝刺（決賽 ≈2026-07-30），交付邊緣離線 MVP + NPU 感知加速 + 現場斷網橋段 + 雲端教師閉環；Nova Sonic 連網 staging 為最低優先、進度落後時第一個可犧牲。詳見下方 Phase Details。
+- **Milestone 2 — Genio 520 決賽 Edge MVP** (Phases 7–12): 衝刺至決賽 2026-08-01（使用者於 2026-07-27 更正，先前誤記為 ≈07-30），交付邊緣離線 MVP + NPU 感知加速 + 現場斷網橋段 + 雲端教師閉環；Nova Sonic 連網 staging 為最低優先、進度落後時第一個可犧牲。詳見下方 Phase Details。
 
 ## Phases
 

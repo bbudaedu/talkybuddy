@@ -34,7 +34,7 @@ TalkyBuddy（說說學伴）是一款給兒童使用的語音 AI 繁體中文（
 - 離線隱私：兒童語音不出裝置；只上傳衍生文字/分數（順帶收斂 G1 consent 缺口）。
 - 4GB 記憶體預算與模型裁剪（峰值估 ~2.6–3.1GB，需留 headroom）。
 
-**Key context:** 決賽評分（主題 25%／應用 20%／可行 20%／創意 20%／完成 15%／國產晶片 +2）；約剩 12 天（決賽 ≈2026-07-30）。勝負手＝邊緣離線實機 + 斷網橋段 + 教師閉環。範圍砍除（沿用 28 天 MVP 規劃書）：三源 RAG、雙雲 LLM、**on-device 音素級發音評分**、裝置端多用戶。成敗準則：端側智慧須有感，若淪為音箱則全案失敗。來源：`~/hackathon/`（決賽評分/demo 腳本、28 天 MVP 規劃書、技術 SPEC v2、Hti G520 SDK）。
+**Key context:** 決賽評分（主題 25%／應用 20%／可行 20%／創意 20%／完成 15%／國產晶片 +2）；決賽 2026-08-01（使用者於 2026-07-27 更正，先前誤記為 ≈07-30）。勝負手＝邊緣離線實機 + 斷網橋段 + 教師閉環。範圍砍除（沿用 28 天 MVP 規劃書）：三源 RAG、雙雲 LLM、**on-device 音素級發音評分**、裝置端多用戶。成敗準則：端側智慧須有感，若淪為音箱則全案失敗。來源：`~/hackathon/`（決賽評分/demo 腳本、28 天 MVP 規劃書、技術 SPEC v2、Hti G520 SDK）。
 
 > ⚠ 張力：12 天衝刺（強收斂）vs.「三者都要」（Path1+Nova Sonic+教師閉環，範圍最大）。roadmap 將把 demo 勝負手排最前確保可上台，Nova Sonic 為加值、時間不足時第一個可犧牲。
 
@@ -93,7 +93,7 @@ TalkyBuddy（說說學伴）是一款給兒童使用的語音 AI 繁體中文（
 | Route A — `/ws/live`（Nova Sonic）為發音評估主線，本地聲學評分掛在其 PCM buffer | 來源文件 user-confirmed 2026-07-14；但無鎖定 ADR frontmatter | — Pending（proposed，未鎖定） |
 | 雲端情感 TTS 走 ElevenLabs，靜默降級到 edge Piper | 來源「使用者決策（已確認）」；文件狀態「設計待實作」 | — Pending（proposed，未鎖定） |
 | Nova Sonic live S2S Phase 1 vertical slice（`/ws/live` bidi + transcript 持久化） | 來源含決策摘要 + 2026-07-13 修訂；無鎖定 ADR | — Pending（proposed，未鎖定） |
-| **[M2] 決賽 Edge MVP 綁定 ≈12 天期程（決賽 2026-07-30）** | POC 過關優先於完整性；範圍向 demo 腳本收斂 | ✓ Good（M2 使用者鎖定） |
+| **[M2] 決賽 Edge MVP 期程綁定決賽日 2026-08-01**（2026-07-27 更正，先前誤記 07-30） | POC 過關優先於完整性；範圍向 demo 腳本收斂 | ✓ Good（M2 使用者鎖定） |
 | **[M2] NPU 管感知(ASR/TTS via Neuron Delegate)、CPU 管生成(llama.cpp)** | 免 NDA(NeuroPilot Public)、真用國產晶片 NPU；CPU 保底 + NPU 一等交付 | ✓ Good（M2 使用者鎖定） |
 | **[M2] 先測 Android 14 → 改燒官方 Yocto BSP（不自建 OS）** | 4GB/效能預期不足；官方映像降風險 | ✓ Good（M2 使用者鎖定） |
 | **[M2] 沿用 28 天 MVP 規劃書砍除清單（含 on-device 音素發音評分）** | 12 天內收斂風險；發音評分改 LLM 整體評語或退雲端 | ✓ Good（M2 使用者鎖定） |

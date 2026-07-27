@@ -7,7 +7,7 @@
 # Milestone 2 — Genio 520 決賽 Edge MVP（Active）
 
 **Defined:** 2026-07-19
-**Goal:** 在 MediaTek Genio 520（Hti hub G520，MT8371 / MDLA 5.3 / Android 14 / 4GB）上跑出決賽可上台的**離線**「聽 ASR → 想 LLM → 說 TTS」中英雙語鷹架帶讀 MVP——NPU 管感知、CPU 管生成、現場斷網橋段，並以雲端教師閉環加值。約剩 12 天（決賽 ≈2026-07-30）。**原則：POC 過關且驚豔優先，效能/品質優化列下一步。**
+**Goal:** 在 MediaTek Genio 520（Hti hub G520，MT8371 / MDLA 5.3 / Android 14 / 4GB）上跑出決賽可上台的**離線**「聽 ASR → 想 LLM → 說 TTS」中英雙語鷹架帶讀 MVP——NPU 管感知、CPU 管生成、現場斷網橋段，並以雲端教師閉環加值。決賽 2026-08-01（使用者於 2026-07-27 更正，先前誤記為 07-30）。**原則：POC 過關且驚豔優先，效能/品質優化列下一步。**
 
 > **優先序原則**：demo 存亡關鍵（離線迴路 + 斷網橋段）排最前並先用已驗證的 CPU 引擎；NPU 加速與 Nova Sonic 為 time-boxed 加值、含 stop-loss，落後時 Nova Sonic 第一個可犧牲。研究來源見 `.planning/research/SUMMARY.md`。
 
