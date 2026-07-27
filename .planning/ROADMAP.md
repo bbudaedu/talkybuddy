@@ -241,7 +241,13 @@ Plans:
   3. `diagnose.py` 經 direct `boto3 bedrock-runtime.converse()` 產出四維診斷（不走 Hermes Agent，依 2026-07-04 內部架構評審）
   4. 既有教師儀表板（5 秒輪詢，維持不變）顯示源自邊緣 session 的真實（非 mock）診斷資料
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 11-01-PLAN.md — 上傳隱私 chokepoint：consent 閘門、白名單投影、上傳瞬間去識別化、部分失敗安全標記（wave 1）
+- [ ] 11-02-PLAN.md — D-03 兩層機會式觸發：edge→cloud 轉換瞬間 + 回合結束兜底（wave 2）
+- [ ] 11-03-PLAN.md — 教師儀表板學生姓名真實化：config/store/API/前端去硬編（wave 3）
+- [ ] 11-04-PLAN.md — 診斷來源標記與端到端彩排驗證（wave 4，含真機 checkpoint）
 
 ### Phase 12: Nova Sonic Online Staging & Final Rehearsal
 
