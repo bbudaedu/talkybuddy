@@ -226,7 +226,7 @@
     <!-- 4. 最新 AI 診斷卡 -->
     <section class="card col-diag">
       <h2>最新 AI 診斷</h2>
-      <div class="diag-src"><span class="pulse"></span>由 Hermes Agent（持久記憶）＋ AWS Bedrock（Claude）產出</div>
+      <div class="diag-src"><span class="badge edge" id="diagSrc"><span class="dot"></span><span class="lbl">來源未知</span></span></div>
       <div id="diagBody"><div class="empty">尚無診斷資料</div></div>
     </section>
 
@@ -584,6 +584,28 @@ function renderStudentIdentity() {
   document.getElementById('stuDevice').textContent = (p && p.device_id) || '–';
 }
 
+/* 診斷來源徽章（Task 3 / T-11-18）：文案必須誠實反映最新診斷的實際 source
+ * 欄位，不得無條件宣稱走了 Bedrock——這正是本 phase 要消滅的畫面。視覺
+ * 沿用 Agent 產出區塊既有的 .badge.cloud / .badge.edge 樣式，不另創 CSS
+ * class；值以 textContent 指派，不經 innerHTML。 */
+function renderDiagnosisSource() {
+  var el = document.getElementById('diagSrc');
+  if (!el) return;
+  var lbl = el.querySelector('.lbl');
+  var latest = state.diagnoses.length ? state.diagnoses[state.diagnoses.length - 1] : null;
+  var src = latest ? latest.source : null;
+  if (src === 'cloud') {
+    el.className = 'badge cloud';
+    if (lbl) lbl.textContent = '由 AWS Bedrock（Claude）direct converse 產出';
+  } else if (src === 'rule') {
+    el.className = 'badge edge';
+    if (lbl) lbl.textContent = '離線規則式產出（未走雲端）';
+  } else {
+    el.className = 'badge edge';
+    if (lbl) lbl.textContent = '來源未知';
+  }
+}
+
 function renderAll() {
   var diags = state.diagnoses, inters = state.interactions;
 
@@ -626,6 +648,7 @@ function renderAll() {
   }).join('');
 
   /* 診斷卡 */
+  renderDiagnosisSource();
   document.getElementById('diagBody').innerHTML = buildDiagCard(latest);
 
   /* Agent 產出（/api/agent_outputs 已是新→舊，取每種最新一筆） */
