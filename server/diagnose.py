@@ -654,6 +654,13 @@ def generate_diagnosis(interactions: list[dict], prev: dict | None,
     network_mode 為 edge（D-01 kill-switch 已切斷雲端）時，呼叫端須傳入
     allow_cloud=False——構成 consent 之外的第三道出境閘門，見
     VoicePipeline._refresh_directive（09-RESEARCH.md Pitfall 4）。
+
+    回傳恆帶 ``source``（"cloud" | "rule"）：降級鏈（Bedrock → relay →
+    規則式）是**刻意靜默**的——失敗不阻塞、不拋錯是 demo 韌性的既有設計，
+    不因為新增這個標記而改變。但靜默也代表呼叫端與儀表板事後無從分辨
+    這份診斷究竟是雲端真跑出來的還是本地規則式湊出來的。沒有這個欄位，
+    ROADMAP SC4「顯示真實（非 mock）診斷」就無法被稽核——`source` 就是
+    那個可稽核依據，鍵名/值域沿用 `server/agents/homework.py` 既有慣例。
     """
     cfg = anthropic_relay.resolve_config()
     # role="diag"：診斷是非同步路徑（_API_TIMEOUT_SEC=12s），可用推理品質
@@ -679,8 +686,13 @@ def generate_diagnosis(interactions: list[dict], prev: dict | None,
             except Exception:
                 # 雲端層失敗：不拋錯、不阻塞，改用邊緣端規則式診斷
                 result = None
+        if result is not None:
+            # 雲端分支（Bedrock 或 relay）成功回傳才標 cloud。
+            result["source"] = "cloud"
     if result is None:
         result = _rule_based_diagnosis(interactions, prev)
+        # 未進雲端分支、或雲端全數失敗落到規則式兜底，一律誠實標 rule。
+        result["source"] = "rule"
     # 收斂保底：不論走 API 或規則式，最終一定有合法 companion_directive
     flags = _detect_patterns(interactions or [])
     if not result.get("companion_directive"):
