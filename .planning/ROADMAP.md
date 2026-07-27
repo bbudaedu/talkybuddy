@@ -244,10 +244,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 11-01-PLAN.md — 上傳隱私 chokepoint：consent 閘門、白名單投影、上傳瞬間去識別化、部分失敗安全標記（wave 1）
-- [ ] 11-02-PLAN.md — D-03 兩層機會式觸發：edge→cloud 轉換瞬間 + 回合結束兜底（wave 2）
-- [ ] 11-03-PLAN.md — 教師儀表板學生姓名真實化：config/store/API/前端去硬編（wave 3）
-- [ ] 11-04-PLAN.md — 診斷來源標記與端到端彩排驗證（wave 4，含真機 checkpoint）
+- [x] 11-01-PLAN.md — 上傳隱私 chokepoint：consent 閘門、白名單投影、上傳瞬間去識別化、部分失敗安全標記（wave 1）
+- [x] 11-02-PLAN.md — D-03 兩層機會式觸發：edge→cloud 轉換瞬間 + 回合結束兜底（wave 2）
+- [x] 11-03-PLAN.md — 教師儀表板學生姓名真實化：config/store/API/前端去硬編（wave 3）
+- [~] 11-04-PLAN.md — 診斷來源標記與端到端彩排驗證（wave 4）：Tasks 1–3 完成（`source: cloud|rule` 來源標記、儀表板誠實徽章、12 個端到端測試、`docs/TCLOUD_VERIFY.md` 彩排腳本）；**Task 4 真機彩排 checkpoint 待人工執行**，未自我核准
 
 ### Phase 12: Nova Sonic Online Staging & Final Rehearsal
 
@@ -282,5 +282,5 @@ Plans:
 | 8. CPU-Only Offline Edge Turn Loop | 5/5 | Delivered | 2026-07-25 |
 | 9. Network-Cut Demo Hardening | 4/4 | Complete   | 2026-07-25 |
 | 10. NPU-Accelerated Perception | 4/6 | In progress — 停損後重開（2026-07-27） | - |
-| 11. Cloud Teacher Closed-Loop | 0/4 | Planning | - |
+| 11. Cloud Teacher Closed-Loop | 3.75/4 | Awaiting device rehearsal (11-04 Task 4) | - |
 | 12. Nova Sonic Online Staging & Final Rehearsal | 0/? | Not started | - |
