@@ -106,6 +106,46 @@ def build_zero_feeds(io_specs: list[dict]) -> dict[str, object]:
     return feeds
 
 
+def choose_better_summary(first: object, second: object) -> dict:
+    """在兩段式重試的兩輪結果中挑出較好的一輪——重試絕不能讓失敗覆蓋成功。
+
+    排序準則：有加速優於沒加速；同樣有加速時取 `ops_accelerated` 較大者；
+    完全平手則保留第一輪（重試是保險機制，不是預設優先）。非 dict／缺欄位
+    的輸入視為「沒有加速的空結果」，不拋例外。
+
+    存在理由（2026-07-27 Genio 520 真機）：第一輪帶 `NEURON_FLAG_USE_FP16`
+    其實整圖成功放上 NeuronEP，卻因 parser 少認一種日誌格式被誤判為 0/0，
+    於是觸發空-options 重試；空 options 因 MDLA 不支援 FP32 而編譯失敗，
+    該失敗結果被無條件寫回，把成功抹掉。parser 已修，但覆蓋這個缺陷獨立
+    存在，必須各自修。
+    """
+
+    def _score(summary: object) -> tuple[int, int]:
+        if not isinstance(summary, dict):
+            return (0, 0)
+        accelerated = 1 if summary.get("accelerated") else 0
+        try:
+            ops = int(summary.get("ops_accelerated") or 0)
+        except (TypeError, ValueError):
+            ops = 0
+        return (accelerated, ops)
+
+    first_score = _score(first)
+    second_score = _score(second)
+
+    winner = second if second_score > first_score else first
+    if isinstance(winner, dict):
+        return winner
+    # 兩輪都不是可用的 dict：回一個明確「沒加速」的結果，絕不讓缺資料被
+    # 讀成通過（比照 format_probe_verdict 對缺資料的處置）。
+    return {
+        "ops_accelerated": 0,
+        "ops_total": 0,
+        "providers": {},
+        "accelerated": False,
+    }
+
+
 def format_probe_verdict(summary: dict) -> str:
     """把 `summarize_placement` 的輸出格式化成 Day-1 停損檢查點的判定字串。
 
@@ -230,7 +270,7 @@ def main() -> None:
 
         if not summary.get("accelerated") and not args.no_provider_options:
             print("第一輪（帶 provider_options）未偵測到加速，改以空 options 重試一次...")
-            summary = _probe_once(
+            retry_summary = _probe_once(
                 model_path=args.model,
                 options={},
                 io_specs=io_specs,
@@ -240,6 +280,8 @@ def main() -> None:
                 parse_ep_placement_log=parse_ep_placement_log,
                 summarize_placement=summarize_placement,
             )
+            # 取兩輪較好者，不無條件覆蓋——見 choose_better_summary docstring。
+            summary = choose_better_summary(summary, retry_summary)
 
         for provider_name, count in summary.get("providers", {}).items():
             print(f"  {provider_name}: {count} ops")

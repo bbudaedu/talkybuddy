@@ -18,6 +18,7 @@ from __future__ import annotations
 import pytest
 
 from edge.npu_spike.make_toy_model import (
+    TOY_IR_VERSION,
     TOY_SUMMARY_PREFIX,
     TOY_VARIANTS,
     build_toy_spec,
@@ -79,6 +80,21 @@ def test_build_toy_spec_node_count_stays_tiny():
     for variant in TOY_VARIANTS:
         spec = build_toy_spec(variant)
         assert len(spec["op_types"]) <= 3, f"{variant} 的 toy graph 過大"
+
+
+@pytest.mark.parametrize("variant", ["conv", "matmul"])
+def test_build_toy_spec_pins_ir_version_to_device_limit(variant):
+    """真機 ORT 1.20.2 的 IR version 上限是 10；onnx 1.22 預設產出 13 會直接載入失敗。
+
+    2026-07-27 首次真機執行就是踩到這個坑：`Unsupported model IR version: 13,
+    max supported IR version: 10`——診斷根本沒跑到 NPU 就死了。釘在 7 是為了
+    與 SenseVoice 模型（實測 ir_version=7）完全一致，讓 toy 與正式模型之間
+    不存在 IR version 這個額外變因。
+    """
+    assert TOY_IR_VERSION == 7
+    spec = build_toy_spec(variant)
+    assert spec["ir_version"] == TOY_IR_VERSION
+    assert spec["ir_version"] <= 10
 
 
 def test_build_toy_spec_rejects_unknown_variant():

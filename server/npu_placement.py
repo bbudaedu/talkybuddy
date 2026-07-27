@@ -52,6 +52,18 @@ MAX_CAPTURE_BYTES = 2_000_000
 _PROVIDER_LINE_RE = re.compile(r"Provider:\s*\[(\w+)\]:\s*(.*)")
 _NODE_PAIR_RE = re.compile(r"\w+\s*\(([^()]+)\)")
 
+# ORT 有兩種放置日誌形態。逐節點形態（上面的 `Provider: [X]: [...]`）只在
+# 圖被切分到多個 EP 時出現；當**整張圖都落在同一個 EP** 時，ORT 走的是這條
+# 彙總捷徑，只印總數、不印節點名：
+#   `... VerifyEachNodeIsAssignedToAnEp]  All nodes placed on [X]. Number of nodes: N`
+# 2026-07-27 的 Genio 520 真機實測就是這一種——只認逐節點格式的話，會把一次
+# 貨真價實的整圖 NPU 放置誤判成 0/0 FAIL。這個誤判不是無害的保守：它會觸發
+# 呼叫端的「零加速就換空 options 重試」，而空 options 因 MDLA 不支援 FP32
+# 必然失敗，於是失敗結果反過來覆蓋掉原本成功的第一輪。
+_ALL_NODES_RE = re.compile(
+    r"All nodes placed on\s*\[(\w+)\]\.\s*Number of nodes:\s*(\d+)"
+)
+
 
 def parse_ep_placement_log(log_text: str) -> dict[str, list[str]]:
     """把 ORT 的 VerifyEachNodeIsAssignedToAnEp verbose 日誌解析成結構化資料。
@@ -76,6 +88,25 @@ def parse_ep_placement_log(log_text: str) -> dict[str, list[str]]:
         i = 0
         while i < n:
             line = lines[i]
+
+            # 彙總形態優先比對：它是單行自足的，不需要跨行累積方括號。節點名
+            # 在這個形態下並不存在，因此以合成名稱佔位——`summarize_placement`
+            # 只計數不看名稱，佔位不會讓任何判準變寬鬆（CPU 的彙總行一樣只會
+            # 增加 ops_total，accelerated 仍由 accel_provider 的計數決定）。
+            all_nodes_match = _ALL_NODES_RE.search(line)
+            if all_nodes_match:
+                provider = all_nodes_match.group(1)
+                try:
+                    count = int(all_nodes_match.group(2))
+                except ValueError:
+                    count = 0
+                if count > 0:
+                    result.setdefault(provider, []).extend(
+                        f"<all-nodes-{provider}-{k}>" for k in range(count)
+                    )
+                i += 1
+                continue
+
             match = _PROVIDER_LINE_RE.search(line)
             if not match:
                 i += 1

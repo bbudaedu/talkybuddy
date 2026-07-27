@@ -21,8 +21,73 @@ from edge.npu_spike.raw_neuron_session import (
     PROBE_VERDICT_PREFIX,
     build_neuron_providers,
     build_zero_feeds,
+    choose_better_summary,
     format_probe_verdict,
 )
+
+
+# ---------------------------------------------------------------------------
+# choose_better_summary — 兩段式重試不得讓失敗覆蓋成功
+#
+# 2026-07-27 Genio 520 真機實測踩到的第二個坑：第一輪（帶
+# NEURON_FLAG_USE_FP16）其實整圖成功放上 NeuronEP，但當時 parser 少認一種
+# 日誌格式而誤判 0/0，於是觸發空-options 重試；空 options 因 MDLA 不支援
+# FP32 而編譯失敗，該失敗結果被無條件寫回 summary，把成功抹掉。parser 已
+# 修好，但「重試覆蓋」這個缺陷獨立存在——即使第一輪只有部分加速、第二輪
+# 全滅，也不該讓第二輪的結果取代第一輪。
+# ---------------------------------------------------------------------------
+
+
+def _summary(accelerated: bool, ops: int = 1, total: int = 1) -> dict:
+    return {
+        "ops_accelerated": ops if accelerated else 0,
+        "ops_total": total,
+        "providers": {},
+        "accelerated": accelerated,
+    }
+
+
+def test_choose_better_summary_keeps_accelerated_first_round():
+    first = _summary(True, ops=1, total=1)
+    second = _summary(False, ops=0, total=0)
+    assert choose_better_summary(first, second) is first
+
+
+def test_choose_better_summary_takes_accelerated_second_round():
+    first = _summary(False, ops=0, total=0)
+    second = _summary(True, ops=3, total=5)
+    assert choose_better_summary(first, second) is second
+
+
+def test_choose_better_summary_prefers_more_accelerated_ops():
+    """兩輪都有加速時取加速算子多的那輪。"""
+    first = _summary(True, ops=2, total=10)
+    second = _summary(True, ops=7, total=10)
+    assert choose_better_summary(first, second) is second
+
+
+def test_choose_better_summary_ties_keep_first():
+    """平手保留第一輪——重試是保險，不是預設優先。"""
+    first = _summary(True, ops=4, total=4)
+    second = _summary(True, ops=4, total=4)
+    assert choose_better_summary(first, second) is first
+
+
+def test_choose_better_summary_both_failed_keeps_first():
+    first = _summary(False, ops=0, total=9)
+    second = _summary(False, ops=0, total=0)
+    assert choose_better_summary(first, second) is first
+
+
+@pytest.mark.parametrize("junk", [None, {}, "nope", 42, []])
+def test_choose_better_summary_survives_garbage(junk):
+    """診斷工具不得因輸入異常而拋例外。"""
+    good = _summary(True)
+    assert choose_better_summary(good, junk) is good
+    assert choose_better_summary(junk, good) is good
+    result = choose_better_summary(junk, junk)
+    assert isinstance(result, dict)
+    assert result.get("accelerated") is not True
 
 
 # ---------------------------------------------------------------------------

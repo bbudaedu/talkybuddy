@@ -35,6 +35,13 @@ TOY_SUMMARY_PREFIX = "TOY_MODEL:"
 
 TOY_VARIANTS = ("conv", "matmul")
 
+# 真機 Yocto 的 ORT 1.20.2 最高只吃 IR version 10；`onnx` 1.22 預設寫出 13，
+# 模型會在 `Model::Model` 就以 `Unsupported model IR version` 載入失敗，連
+# graph partition 都到不了（2026-07-27 首次真機執行實際踩到）。釘在 7 是為了
+# 與 SenseVoice 系列模型（實測 ir_version=7）完全對齊，讓 toy 與正式模型之間
+# 不多出 IR version 這個變因——toy 的全部價值就在於「只剩一個變因」。
+TOY_IR_VERSION = 7
+
 # 兩個 variant 的形狀刻意選小：診斷要的是「有沒有 placement」，不是效能數字。
 # graph 越小，FAIL 時「大概是哪個算子不支援」的模糊空間就越小。
 _TOY_SPECS: dict[str, dict] = {
@@ -80,6 +87,7 @@ def build_toy_spec(variant: str = "conv") -> dict:
 
     spec = copy.deepcopy(_TOY_SPECS[variant])
     spec["variant"] = variant
+    spec["ir_version"] = TOY_IR_VERSION
     return spec
 
 
@@ -184,6 +192,10 @@ def build_toy_model(spec: dict):
     model = helper.make_model(
         graph, opset_imports=[helper.make_opsetid("", 13)], producer_name="talkybuddy-npu-spike"
     )
+    # 必須在 check_model 之前覆寫：`make_model` 會套用**本機 onnx 版本**的預設
+    # IR version（onnx 1.22 為 13），而真機 ORT 1.20.2 上限是 10。不覆寫的話
+    # 模型在裝置端連載入都失敗，探針量到的就不是 NPU 而是版本不相容。
+    model.ir_version = spec.get("ir_version", TOY_IR_VERSION)
     onnx.checker.check_model(model)
     return model
 

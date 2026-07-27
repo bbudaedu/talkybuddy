@@ -80,6 +80,67 @@ def test_parse_ep_placement_log_format_drift_skips_malformed_line():
     assert result == {"CPUExecutionProvider": ["Gather_3"]}
 
 
+# --------------------------------------------------------------------------
+# Genio 520 真機實測格式（2026-07-27）：ORT 在「整張圖都落在同一個 EP」時
+# 走的是彙總行，不逐節點列出。原本的 parser 只認 `Provider: [X]: [...]`
+# 逐節點格式，於是把一次成功的 NPU 放置誤判成 0/0 FAIL，並觸發不必要的
+# 空-options 重試——那次重試因 MDLA 不支援 FP32 而失敗，反過來覆蓋掉第一
+# 輪的成功。整段誤判的起點就是這裡少解析一種格式。
+# --------------------------------------------------------------------------
+
+_REAL_DEVICE_ALL_NODES_LOG = (
+    "2026-07-27 02:37:28.428231561 [V:onnxruntime:, session_state.cc:1148 "
+    "VerifyEachNodeIsAssignedToAnEp] Node placements\n"
+    "2026-07-27 02:37:28.428236561 [V:onnxruntime:, session_state.cc:1151 "
+    "VerifyEachNodeIsAssignedToAnEp]  All nodes placed on "
+    "[NeuronExecutionProvider]. Number of nodes: 1\n"
+)
+
+
+def test_parse_ep_placement_log_all_nodes_summary_form():
+    """真機彙總行必須被解析成該 provider 的節點，否則成功會被誤判成 FAIL。"""
+    placement = parse_ep_placement_log(_REAL_DEVICE_ALL_NODES_LOG)
+    assert "NeuronExecutionProvider" in placement
+    assert len(placement["NeuronExecutionProvider"]) == 1
+
+
+def test_summarize_placement_accelerated_from_all_nodes_summary_form():
+    """端到端：真機彙總行 → accelerated 為 True、ops 計數正確。"""
+    summary = summarize_placement(parse_ep_placement_log(_REAL_DEVICE_ALL_NODES_LOG))
+    assert summary["accelerated"] is True
+    assert summary["ops_accelerated"] == 1
+    assert summary["ops_total"] == 1
+    assert format_placement_line(summary) == "NPU: ON, 1/1 ops accelerated"
+
+
+def test_parse_ep_placement_log_all_nodes_summary_multi_node_count():
+    """節點數必須照實反映，不能永遠回 1。"""
+    log = (
+        "[V:onnxruntime:, session_state.cc:1151 VerifyEachNodeIsAssignedToAnEp]"
+        "  All nodes placed on [NeuronExecutionProvider]. Number of nodes: 337\n"
+    )
+    assert len(parse_ep_placement_log(log)["NeuronExecutionProvider"]) == 337
+
+
+def test_parse_ep_placement_log_all_nodes_summary_cpu_is_not_accelerated():
+    """同一格式落在 CPU 上時，accelerated 必須是 False——格式支援不得放寬判準。"""
+    log = (
+        "[V:onnxruntime:, session_state.cc:1151 VerifyEachNodeIsAssignedToAnEp]"
+        "  All nodes placed on [CPUExecutionProvider]. Number of nodes: 12\n"
+    )
+    summary = summarize_placement(parse_ep_placement_log(log))
+    assert summary["accelerated"] is False
+    assert summary["ops_accelerated"] == 0
+    assert summary["ops_total"] == 12
+
+
+def test_parse_ep_placement_log_both_forms_in_one_log():
+    """逐節點格式與彙總格式並存時，兩者都要算進去。"""
+    log = FIXTURE_TWO_PROVIDERS + _REAL_DEVICE_ALL_NODES_LOG
+    placement = parse_ep_placement_log(log)
+    assert len(placement.get("NeuronExecutionProvider", [])) >= 1
+
+
 def test_summarize_placement_normal_path():
     placement = parse_ep_placement_log(FIXTURE_TWO_PROVIDERS)
     summary = summarize_placement(placement)
