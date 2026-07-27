@@ -12,7 +12,13 @@
 
 from __future__ import annotations
 
-from server import config, store
+from starlette.testclient import TestClient
+
+from server import app as app_mod, auth, config, store
+
+
+def _tok(sub, role):
+    return auth.issue_token(sub, role)
 
 
 def test_student_display_name_returns_nonempty_by_default():
@@ -37,3 +43,50 @@ def test_student_display_name_accepts_any_student_id_without_raising():
     assert store.student_display_name(student_id=None)
     assert store.student_display_name(student_id="STUDENT-AMING-004")
     assert store.student_display_name(student_id="anything-not-registered")
+
+
+# ---------------------------------------------------------------------------
+# GET /api/student_profile — 沿用既有 identity_from_header + _resolve_student
+# 授權模型（Task 2）
+# ---------------------------------------------------------------------------
+
+def test_student_profile_requires_token():
+    """無 Authorization header → 401。"""
+    client = TestClient(app_mod.app)
+    assert client.get("/api/student_profile").status_code == 401
+
+
+def test_student_profile_rejects_bad_token():
+    """壞掉的 token → 401。"""
+    client = TestClient(app_mod.app)
+    h = {"Authorization": "Bearer not-a-real-token"}
+    assert client.get("/api/student_profile", headers=h).status_code == 401
+
+
+def test_student_profile_tutor_without_student_query_400():
+    """tutor token 但未帶 ?student= → 400（沿用 _resolve_student 既有行為）。"""
+    client = TestClient(app_mod.app)
+    h = {"Authorization": f"Bearer {_tok('TUTOR-001', 'tutor')}"}
+    assert client.get("/api/student_profile", headers=h).status_code == 400
+
+
+def test_student_profile_tutor_with_student_query_returns_identity_fields():
+    """tutor token 帶 ?student= → 200，回應含 student_id / display_name / device_id 三個鍵。"""
+    client = TestClient(app_mod.app)
+    h = {"Authorization": f"Bearer {_tok('TUTOR-001', 'tutor')}"}
+    resp = client.get("/api/student_profile?student=STUDENT-AMING-004", headers=h)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body.keys()) == {"student_id", "display_name", "device_id"}
+    assert body["student_id"] == "STUDENT-AMING-004"
+    assert body["display_name"] == store.student_display_name()
+    assert body["device_id"] == config.DEVICE_ID
+
+
+def test_student_profile_student_role_sees_only_own_id():
+    """student token（不帶 query）→ 200，且回應的 student_id 等於 token 的 sub（不能讀到別人的）。"""
+    client = TestClient(app_mod.app)
+    h = {"Authorization": f"Bearer {_tok('STUDENT-AMING-004', 'student')}"}
+    resp = client.get("/api/student_profile", headers=h)
+    assert resp.status_code == 200
+    assert resp.json()["student_id"] == "STUDENT-AMING-004"

@@ -372,6 +372,25 @@ async def api_agent_outputs(kind: str | None = None,
     return store.list_agent_outputs(kind=kind, limit=limit, student_id=sid)
 
 
+@app.get("/api/student_profile")
+async def api_student_profile(student: str | None = None,
+                              authorization: str | None = Header(default=None)):
+    """學生身分三欄（student_id / display_name / device_id）；student 讀自己，
+    tutor/device 需帶 ?student=。
+
+    權限比照 /api/diagnoses——回的是可識別個人的姓名，與診斷同級的個資，
+    不可裸奔。沿用既有 identity_from_header + _resolve_student 授權模型，
+    不新增授權面。只回身分三欄，不夾帶任何對話文字或診斷內容——本端點職責單一。
+    """
+    claims = identity_from_header(authorization)
+    sid = _resolve_student(claims, student)
+    return {
+        "student_id": sid,
+        "display_name": store.student_display_name(sid),
+        "device_id": config.DEVICE_ID,
+    }
+
+
 class SyncBody(BaseModel):
     interactions: list[dict]
 
