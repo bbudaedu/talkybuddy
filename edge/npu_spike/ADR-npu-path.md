@@ -105,4 +105,59 @@ NPU_PATH_DECISION: REOPENED-PENDING-BISECT
 
 10-05／10-06 的 gate 從「不執行」改為「待 toy 二分診斷結果」。**PASS 條件維持不變且不放寬**：per-op placement 中 NPU ops > 0；provider 存在、session 建得起來、`mtk-mdla` 被列舉，一律不構成通過。§4 對「provider presence 不等於加速」的判準在重開後完全沿用。
 
-**尚未執行：** 本節所有真機步驟都還沒跑——2026-07-27 當下 `ssh genio-520-evk` 回 `Could not resolve hostname`，裝置不可達。本節只記錄重開授權、技術理由與已備妥的輸入，不宣稱任何 NPU 能力。
+---
+
+## 8. 重開後的真機實測結果（2026-07-27，裝置 `root@192.168.31.78`）
+
+判準全程未放寬：per-op placement 的 NPU ops > 0。
+
+### 8.1 NPU 可用——已證明
+
+| Probe | 節點數 | 判定 | 證據 |
+|---|---|---|---|
+| `toy_conv`（Conv+Relu） | 2 | **PASS 1/1** | `All nodes placed on [NeuronExecutionProvider]`；`[apusys][info]apusysSession` |
+| `ConvStackPlusUnsupported`（4×Conv+4×Relu+Softmax） | 9 | **PASS 1/1** | 同上，整圖融合為 1 個 fused node |
+| `BigConvStack`（120×(Conv+Relu)） | 240 | **PASS 1/1** | 同上 |
+
+「Number of nodes: 1」是 EP 把接管的子圖替換成單一 fused node 的標準表示法，不是「只加速一個算子」。
+
+### 8.2 §7 的重開理由已被自己的實測推翻
+
+§7 主張失敗主因是 int8 的 `DynamicQuantizeLinear`/`MatMulInteger`。**這是錯的。** FP32 版（零量化算子、已固定 shape、checksum 相符）在同一階段以完全相同的 `unordered_map::at` 崩潰。量化不是原因。
+
+### 8.3 崩潰原因仍未定位；以下假設皆已由實測排除
+
+| 假設 | 狀態 | 反證 |
+|---|---|---|
+| dynamic-quant 算子 | **排除** | FP32 版同樣崩潰 |
+| 形狀／控制流算子無 map 項目（Range/Tile/ConstantOfShape/Where/Expand/Equal/Sin/Cos/Softmax/ReduceMean/Transpose/Gather） | **排除** | 12 個單算子探針無一崩潰，全部乾淨退回 CPU |
+| int64 圖輸入的 dtype 查表失敗 | **排除** | `Int64Input`、`MultiInput`（仿 SenseVoice 4 輸入簽章）皆未崩潰 |
+| CPU fallback 造成跨 EP partition 失敗 | **排除** | 依官方指南加 `--no-cpu-fallback` 重測，仍崩潰 |
+| 圖規模／編譯器上限 | **排除** | 240 節點 Conv 堆疊 PASS |
+
+**誠實記錄：崩潰原因未知。** 不以任何未經證實的推測填補此空白。
+
+### 8.4 官方文件澄清的事（MediaTek Genio Community，NeuronEP 指南）
+
+- `NEURON_FLAG_USE_FP16` **是強制的**——原文「This flag is mandatory, as the NPU does not support FP32 execution」。這與真機 target report 的 `MDLA: Cannot support Float32 input/output` 完全一致。**ADR §5 假設 A2 據此結案：鍵名有效且必要。**
+- `NEURON_FLAG_MIN_GROUP_SIZE` 為子圖 offload 的最小節點數。
+- 動態 shape 必須先固定（本輪已做）。
+- INT8 須為 **QDQ**，非 dynamic quant——與 int8 版失敗一致，但**無法**解釋 FP32 版為何同樣失敗。
+- 建議省略 fallback providers（本輪已依此重測）。
+
+### 8.5 對 NPU-02 的現況判定
+
+`toy` 證明 NPU 可用，但 **SenseVoice ASR 經 ORT-NeuronEP 加速尚未達成**，且有兩道各自獨立的阻擋：
+
+1. session 初始化崩潰（原因未定位，使該模型連 partition 都到不了）；
+2. 即使崩潰解除，MDLA 對 `BatchMatMul` 的拒收有明確 target report 佐證，而 SenseVoice 的 transformer 骨幹含 421 個 `MatMul`。
+
+**使用者於 2026-07-27 決定改走「換一個 Conv 為主的感知模型上 NPU」**，不再在 SenseVoice 上加碼。§8.1 的三個 PASS 使該路徑具備實證基礎。
+
+### 8.6 已滿足的 ROADMAP 成功條件
+
+- **SC3（算子不支援時自動退 CPU，且 fallback 可被觀察，不得靜默偽成功）：已滿足。** `toy_matmul` 被拒收時 ORT 把圖放上 CPU、session 照常成立，`format_placement_line` 印出 `NPU: OFF, 0/2 ops accelerated`，降級可觀察。
+
+NPU_PATH_DECISION: REOPENED-NPU-PROVEN-ASR-PENDING
+
+**未達成、誠實登錄：** NPU-02（SenseVoice on NPU）與 NPU-03（FP32 vs INT8 繁中品質閘，依賴 NPU-02）。
