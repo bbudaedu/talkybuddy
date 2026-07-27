@@ -14,8 +14,13 @@
 from __future__ import annotations
 
 import pytest
+from starlette.testclient import TestClient
 
-from server import config, store, sync_client
+from server import app as app_mod, auth, config, diagnose, store, sync_client
+
+
+def _tok(sub="TUTOR-001", role="tutor"):
+    return auth.issue_token(sub, role)
 
 # --- Task 1: sync_client.opportunistic_sync() 統一入口 ---
 
@@ -93,3 +98,81 @@ def test_opportunistic_sync_never_raises_on_garbage_transport(monkeypatch):
     res = sync_client.opportunistic_sync(base_url="http://cloud", token="tok", http_post=bad_post)
 
     assert res == {"synced": 0, "error": True}
+
+
+# --- Task 2: D-03(a) — network_mode edge→cloud 轉換瞬間觸發 ---
+
+
+def test_network_mode_cloud_syncs_pending_and_reports_count():
+    store.add_interaction(
+        {"student_text": "t1", "device_id": "D1", "client_ts": "2026-07-10T10:00:00"}
+    )
+    store.add_interaction(
+        {"student_text": "t2", "device_id": "D1", "client_ts": "2026-07-10T10:01:00"}
+    )
+    client = TestClient(app_mod.app)
+    h = {"Authorization": f"Bearer {_tok()}"}
+
+    res = client.post("/api/network_mode", json={"mode": "cloud"}, headers=h)
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["synced"] == 2
+    assert store.pending_count() == 0
+
+
+def test_network_mode_edge_never_syncs():
+    store.add_interaction(
+        {"student_text": "t1", "device_id": "D1", "client_ts": "2026-07-10T10:00:00"}
+    )
+    client = TestClient(app_mod.app)
+    h = {"Authorization": f"Bearer {_tok()}"}
+
+    res = client.post("/api/network_mode", json={"mode": "edge"}, headers=h)
+
+    assert res.status_code == 200
+    assert store.pending_count() == 1
+
+
+def test_network_mode_cloud_without_consent_blocks_sync(monkeypatch):
+    store.add_interaction(
+        {"student_text": "t1", "device_id": "D1", "client_ts": "2026-07-10T10:00:00"}
+    )
+    monkeypatch.setattr(config, "CONSENT_GRANTED", False)
+    client = TestClient(app_mod.app)
+    h = {"Authorization": f"Bearer {_tok()}"}
+
+    res = client.post("/api/network_mode", json={"mode": "cloud"}, headers=h)
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["consent_required"] is True
+    assert body["network_mode"] == "edge"
+    assert store.pending_count() == 1
+
+
+def test_network_mode_requires_token():
+    client = TestClient(app_mod.app)
+    res = client.post("/api/network_mode", json={"mode": "cloud"})
+    assert res.status_code == 401
+
+
+def test_network_mode_cloud_syncs_even_when_diagnosis_raises(monkeypatch):
+    store.add_interaction(
+        {"student_text": "t1", "device_id": "D1", "client_ts": "2026-07-10T10:00:00"}
+    )
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("diagnosis backend unavailable")
+
+    monkeypatch.setattr(diagnose, "generate_diagnosis", boom)
+    client = TestClient(app_mod.app)
+    h = {"Authorization": f"Bearer {_tok()}"}
+
+    res = client.post("/api/network_mode", json={"mode": "cloud"}, headers=h)
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["synced"] == 1
+    assert body["new_diagnosis"] is None
+    assert store.pending_count() == 0
