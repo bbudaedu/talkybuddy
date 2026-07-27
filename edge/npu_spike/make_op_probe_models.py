@@ -44,6 +44,12 @@ OP_PROBES: tuple[str, ...] = (
     # float32 輸入。`.at()` 崩在 dtype→neuron-type 查表是很合理的解釋。
     "Int64Input",
     "MultiInput",
+    # 可行性關鍵探針：一大段**已知被接受**的 Conv+Relu，尾巴掛一個已知被拒收
+    # 的 Softmax。若 NeuronEP 有逐算子切分，前面 8 個 Conv/Relu 應該落在
+    # NeuronEP、只有 Softmax 退 CPU；若整張圖都退 CPU，就證實「全收或全不收」，
+    # 而那代表任何含 Transpose/Gather/Softmax 的真實模型都不可能部分加速——
+    # 「換一個 Conv 為主的模型」這條路也就不成立。
+    "ConvStackPlusUnsupported",
 )
 
 
@@ -188,6 +194,27 @@ def _build_single_op_model(op_type: str):
             nodes.append(helper.make_node("Add", [prev, f"{extra}_f"], [out_name]))
             prev = out_name
         f32_out("y", [1, 4, 8, 8])
+
+    elif op_type == "ConvStackPlusUnsupported":
+        f32_in("x", [1, 8, 16, 16])
+        prev = "x"
+        for layer in range(4):
+            w_name = f"W{layer}"
+            const(w_name, (np.zeros((8, 8, 3, 3), dtype=np.float32) + 0.05))
+            nodes.append(
+                helper.make_node(
+                    "Conv",
+                    [prev, w_name],
+                    [f"c{layer}"],
+                    kernel_shape=[3, 3],
+                    pads=[1, 1, 1, 1],
+                )
+            )
+            nodes.append(helper.make_node("Relu", [f"c{layer}"], [f"r{layer}"]))
+            prev = f"r{layer}"
+        # 尾端掛一個已實測被 MDLA 拒收的算子。
+        nodes.append(helper.make_node("Softmax", [prev], ["y"], axis=-1))
+        f32_out("y", [1, 8, 16, 16])
 
     else:  # pragma: no cover -- probe_op_names 已界定範圍
         raise ValueError(f"未知的 op probe {op_type!r}")
