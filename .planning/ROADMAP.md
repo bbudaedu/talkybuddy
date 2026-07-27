@@ -218,7 +218,16 @@ Plans:
   4. 以真實繁中決賽腳本音訊完成母語聽測 A/B（FP32 vs INT8），品質達到「有感但可上台」的驗收門檻，簽核後此 phase 才視為完成
   5. **停損點**：若中途檢查點未能展示可運作的 NPU 加速，直接以 Phase 8 的 CPU-only 基線作為完整可展示的 demo 收尾，不影響其他 phase 的交付
 
-**Plans**: TBD
+**Plans**: 4/6 executed — 2026-07-26 觸發停損，2026-07-27 經使用者授權重開
+
+- [x] 10-01-PLAN.md — `inspect_model` / `fix_shape` 診斷工具（NPU-01）
+- [x] 10-02-PLAN.md — `server/npu_placement.py` EP placement log parser + fd 層 stderr 擷取（NPU-02）
+- [x] 10-03-PLAN.md — raw `NeuronExecutionProvider` Day-1 probe（NPU-01/02）
+- [x] 10-04-PLAN.md — 真機 Day-1 判定：`DAY1_NPU_PROBE: FAIL 0/0 ops`（兩輪重現），依 D-02 觸發停損並簽核 ADR
+- [ ] 10-05-PLAN.md — `server/asr_npu.py` NPU ASR wiring（gate 曾為「不執行」，2026-07-27 改為待二分診斷結果）
+- [ ] 10-06-PLAN.md — NPU-03 FP32 vs INT8 繁中品質閘（同上）
+
+**重開紀錄（2026-07-27）**：停損只測過 `model.int8.fixed.onnx`，該模型含 281 個 `DynamicQuantizeLinear` + 281 個 `MatMulInteger`（NPU delegate 典型不支援算子），因此「環境不可用」與「此模型算子不支援」在 Day-1 證據下無法區分。已備妥 toy 二分診斷（`edge/npu_spike/make_toy_model.py`）與 FP32 SenseVoice（零量化算子）作為下一步；PASS 條件維持 per-op placement NPU ops > 0，不放寬。詳見 `edge/npu_spike/ADR-npu-path.md` §7 與 `edge/npu_spike/REOPEN-RUNBOOK.md`。**真機驗證尚未執行**（Tailscale 已登出，裝置不可達）。
 
 ### Phase 11: Cloud Teacher Closed-Loop
 
@@ -266,6 +275,6 @@ Plans:
 | 7. Day-0 Config Hardening & Board Bring-Up Spike | 3/3 | Delivered | 2026-07-25 |
 | 8. CPU-Only Offline Edge Turn Loop | 5/5 | Delivered | 2026-07-25 |
 | 9. Network-Cut Demo Hardening | 4/4 | Complete   | 2026-07-25 |
-| 10. NPU-Accelerated Perception | 0/? | Not started | - |
-| 11. Cloud Teacher Closed-Loop | 0/? | Not started | - |
+| 10. NPU-Accelerated Perception | 4/6 | In progress — 停損後重開（2026-07-27） | - |
+| 11. Cloud Teacher Closed-Loop | 0/4 | Planning | - |
 | 12. Nova Sonic Online Staging & Final Rehearsal | 0/? | Not started | - |
