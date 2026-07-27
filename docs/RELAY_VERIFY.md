@@ -188,16 +188,19 @@ curl -s "localhost:8000/api/diagnoses" | python3 -m json.tool | tail -40
 
 ### 3-4 教師儀表板
 
-`http://<host>:8000/teacher` — 雷達圖、14 天趨勢、最新診斷、互動紀錄。
+`http://<host>:8000/teacher`（demo 帳號 `tutor@demo` / `demo1234`）——
+雷達圖、14 天趨勢、最新診斷、**Agent 產出**、互動紀錄。
 
-> ⚠️ 三個 agent（派作業／週報／決策判斷）的產出**目前沒有畫面**。
-> `/api/agent_outputs` 有資料但儀表板沒有這一區，要看得下 curl：
-> ```bash
-> curl -s "localhost:8000/api/agent_outputs" \
->   -H "Authorization: Bearer <token>" | python3 -m json.tool
-> ```
-> 產出裡的 `source` 欄位是 `rule` 或 `cloud`——那是**唯一**能證明
-> 雲端真的在跑的欄位。
+「Agent 產出」那一區是現場的證據區：派作業與週報各有一個 **`source` badge**，
+`cloud`（藍）代表雲端 agent 產出、`rule`（黃）代表離線規則式。
+**那是唯一能當場證明雲端真的在跑的欄位**，斷網時會當著評審的面從藍變黃。
+
+要看原始資料的話：
+
+```bash
+curl -s "localhost:8000/api/agent_outputs" \
+  -H "Authorization: Bearer <token>" | python3 -m json.tool
+```
 
 ---
 

@@ -55,6 +55,7 @@
   .col-radar{grid-column:span 4}
   .col-trend{grid-column:span 4}
   .col-diag{grid-column:span 12}
+  .col-agents{grid-column:span 12}
   .col-table{grid-column:span 12}
   @media (max-width:980px){
     .col-student{grid-column:span 12}
@@ -229,7 +230,14 @@
       <div id="diagBody"><div class="empty">尚無診斷資料</div></div>
     </section>
 
-    <!-- 5. 互動紀錄表 -->
+    <!-- 5. Agent 產出（派作業／週報） -->
+    <section class="card col-agents">
+      <h2>Agent 產出</h2>
+      <div class="note">派作業與學習週報 · <code>cloud</code> 代表由雲端 agent 產出、<code>rule</code> 代表離線規則式</div>
+      <div id="agentBox"><div class="empty">尚無 agent 產出</div></div>
+    </section>
+
+    <!-- 6. 互動紀錄表 -->
     <section class="card col-table">
       <h2>互動紀錄</h2>
       <div class="note">最新 20 筆 · 每 5 秒自動更新</div>
@@ -501,9 +509,70 @@ function buildDiagCard(diag) {
 }
 
 /* =====================================================================
+ * 5. Agent 產出卡（純函式）
+ *
+ * 三個 agent（派作業／週報／決策判斷）的產出原本只存進 DB、沒有畫面，
+ * 台上沒有東西可以指。更重要的是 source 欄位——那是**唯一**能當場證明
+ * 「雲端真的在跑」的證據，斷網時它會從 cloud 變回 rule。
+ * ===================================================================== */
+function buildSourceBadge(source) {
+  /* 沿用互動紀錄的 cloud/edge badge 樣式：藍=雲端、黃=本地，視覺語彙一致。 */
+  var cloud = source === 'cloud';
+  return '<span class="badge ' + (cloud ? 'cloud' : 'edge') + '"><span class="dot"></span>' +
+    (cloud ? 'cloud' : 'rule') + '</span>';
+}
+
+function buildHomeworkCard(row) {
+  var items = (row.items || []).map(function (it, i) {
+    return '<div class="cell">' +
+      '<h3>第 ' + (i + 1) + ' 題　' + esc(it.target_en || '') + '</h3>' +
+      '<p>' + esc(it.prompt_zh || '') + '</p>' +
+      '<p style="color:var(--ink-3);margin-top:4px">' + esc(it.why || '') + '</p>' +
+      '</div>';
+  }).join('');
+  return '<div class="sec-lb">派作業　' + esc(tsToShort(row.ts)) + '　' +
+    buildSourceBadge(row.source) + '</div>' +
+    '<div class="emo">練習重點：' + esc(row.focus || '–') + '</div>' +
+    (items ? '<div class="instr" style="margin-top:10px">' + items + '</div>'
+           : '<div class="empty">這份作業沒有題目</div>');
+}
+
+function buildReportCard(row) {
+  function tags(list, cls) {
+    if (!list || !list.length) return '<div class="empty">–</div>';
+    return '<div class="tags">' + list.map(function (t) {
+      return '<span class="tag ' + cls + '"><span class="dot ' + cls + '"></span>' +
+        esc(t) + '</span>';
+    }).join('') + '</div>';
+  }
+  return '<div class="sec-lb">學習週報　' + esc(tsToShort(row.ts)) + '　' +
+    buildSourceBadge(row.source) + '</div>' +
+    '<div class="emo">' + esc(row.summary || '–') + '</div>' +
+    '<div class="sec-lb" style="margin-top:10px">期間</div>' +
+    '<div class="emo">' + esc(row.period || '–') + '</div>' +
+    '<div class="sec-lb" style="margin-top:10px">亮點</div>' + tags(row.highlights, 'good') +
+    '<div class="sec-lb" style="margin-top:10px">需要留意</div>' + tags(row.concerns, 'warn') +
+    '<div class="sec-lb" style="margin-top:10px">給家長的建議</div>' + tags(row.suggestions, 'good');
+}
+
+function buildAgentOutputs(rows) {
+  if (!rows || !rows.length) return '<div class="empty">尚無 agent 產出</div>';
+  /* 只取每種各一筆最新的：儀表板要的是「現在的狀態」，不是歷史流水帳。 */
+  var latest = {};
+  rows.forEach(function (r) {
+    if (r && r.kind && !latest[r.kind]) latest[r.kind] = r;
+  });
+  var out = [];
+  if (latest.homework) out.push(buildHomeworkCard(latest.homework));
+  if (latest.report) out.push(buildReportCard(latest.report));
+  if (!out.length) return '<div class="empty">尚無 agent 產出</div>';
+  return out.join('<div style="height:18px"></div>');
+}
+
+/* =====================================================================
  * DOM 接線層（node 驗證時不會執行）
  * ===================================================================== */
-var state = { diagnoses: [], interactions: [], trendMeta: null };
+var state = { diagnoses: [], interactions: [], agentOutputs: [], trendMeta: null };
 
 function renderAll() {
   var diags = state.diagnoses, inters = state.interactions;
@@ -546,6 +615,9 @@ function renderAll() {
 
   /* 診斷卡 */
   document.getElementById('diagBody').innerHTML = buildDiagCard(latest);
+
+  /* Agent 產出（/api/agent_outputs 已是新→舊，取每種最新一筆） */
+  document.getElementById('agentBox').innerHTML = buildAgentOutputs(state.agentOutputs);
 
   /* 互動表：依 ts 降冪取最新 20 筆 */
   var sorted = inters.slice().sort(function (a, b) {
@@ -608,10 +680,12 @@ function refresh() {
   var q = encodeURIComponent(STUDENT_QUERY);
   return Promise.all([
     fetch('/api/diagnoses?student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); }),
-    fetch('/api/interactions?limit=20&student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); })
+    fetch('/api/interactions?limit=20&student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); }),
+    fetch('/api/agent_outputs?limit=10&student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); })
   ]).then(function (res) {
     state.diagnoses = Array.isArray(res[0]) ? res[0] : [];
     state.interactions = Array.isArray(res[1]) ? res[1] : [];
+    state.agentOutputs = Array.isArray(res[2]) ? res[2] : [];
     document.getElementById('offline').classList.remove('show');
     renderAll();
   }).catch(function () {
