@@ -193,12 +193,12 @@
     <section class="card col-student">
       <h2>學生檔案</h2>
       <div class="stu-head">
-        <div class="stu-name">阿明</div>
+        <div class="stu-name" id="stuName">–</div>
         <div class="stu-class">三年級忠班</div>
       </div>
       <div class="stu-ids">
-        學生編號 <code>STUDENT-AMING-004</code><br>
-        配對裝置 <code>GENIO-520-X992</code>
+        學生編號 <code id="stuId">–</code><br>
+        配對裝置 <code id="stuDevice">–</code>
       </div>
       <div class="stats">
         <div class="stat"><div class="lb">總互動數</div><div class="v" id="statTotal">–</div></div>
@@ -256,7 +256,7 @@
 
 /* ---------- 身份 token（跨平台雲端登入） ---------- */
 var authToken = (typeof localStorage !== 'undefined' && localStorage.getItem('tb_token')) || '';
-/* demo：導師查看阿明的資料（tutor 角色需帶 ?student=） */
+/* demo：導師查看單一示範學生的資料（tutor 角色需帶 ?student=） */
 var STUDENT_QUERY = 'STUDENT-AMING-004';
 function authHeaders(extra) {
   var h = extra || {};
@@ -572,10 +572,22 @@ function buildAgentOutputs(rows) {
 /* =====================================================================
  * DOM 接線層（node 驗證時不會執行）
  * ===================================================================== */
-var state = { diagnoses: [], interactions: [], agentOutputs: [], trendMeta: null };
+var state = { diagnoses: [], interactions: [], agentOutputs: [], trendMeta: null, profile: null };
+
+/* 身分卡渲染（D-05）：姓名／學生編號／配對裝置皆來自 /api/student_profile，
+ * 一律以 textContent 指派（等同已轉義），不得用未轉義的 innerHTML 塞入外部
+ * 可控字串。無資料時填佔位符 '–'，與同區塊 statTotal 等既有寫法一致。 */
+function renderStudentIdentity() {
+  var p = state.profile;
+  document.getElementById('stuName').textContent = (p && p.display_name) || '–';
+  document.getElementById('stuId').textContent = (p && p.student_id) || '–';
+  document.getElementById('stuDevice').textContent = (p && p.device_id) || '–';
+}
 
 function renderAll() {
   var diags = state.diagnoses, inters = state.interactions;
+
+  renderStudentIdentity();
 
   /* 學生卡統計：總互動數以 max seq 估算（seq 為遞增序號） */
   var maxSeq = 0, pending = 0, lastTs = '';
@@ -681,11 +693,13 @@ function refresh() {
   return Promise.all([
     fetch('/api/diagnoses?student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); }),
     fetch('/api/interactions?limit=20&student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); }),
-    fetch('/api/agent_outputs?limit=10&student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); })
+    fetch('/api/agent_outputs?limit=10&student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); }),
+    fetch('/api/student_profile?student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); })
   ]).then(function (res) {
     state.diagnoses = Array.isArray(res[0]) ? res[0] : [];
     state.interactions = Array.isArray(res[1]) ? res[1] : [];
     state.agentOutputs = Array.isArray(res[2]) ? res[2] : [];
+    state.profile = res[3] && res[3].student_id ? res[3] : null;
     document.getElementById('offline').classList.remove('show');
     renderAll();
   }).catch(function () {

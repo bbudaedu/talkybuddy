@@ -12,9 +12,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from starlette.testclient import TestClient
 
-from server import app as app_mod, auth, config, store
+from server import app as app_mod, auth, config, store, sync_client
 
 
 def _tok(sub, role):
@@ -90,3 +92,33 @@ def test_student_profile_student_role_sees_only_own_id():
     resp = client.get("/api/student_profile", headers=h)
     assert resp.status_code == 200
     assert resp.json()["student_id"] == "STUDENT-AMING-004"
+
+
+# ---------------------------------------------------------------------------
+# D-05 與 D-04 的邊界（Task 3 隱私核心）：姓名不得進上傳白名單
+# ---------------------------------------------------------------------------
+
+def test_student_display_name_not_in_upload_projection():
+    """把姓名值塞進一筆互動的欄位，project_for_upload() 的輸出仍不含姓名。
+
+    這條測試存在的意義：日後有人為了方便把姓名塞進上傳 payload 時會當場失敗。
+    """
+    name = store.student_display_name()
+    item = {
+        "student_id": "STUDENT-AMING-004",
+        "display_name": name,
+        "student_name": name,
+        "name": name,
+        "student_text": f"{name}說今天天氣很好",
+    }
+    out = sync_client.project_for_upload(item)
+    assert all(v != name for v in out.values())
+    assert not ({"display_name", "student_name", "name"} & set(sync_client.UPLOAD_FIELDS))
+    assert not ({"display_name", "student_name", "name"} & set(out.keys()))
+
+
+def test_teacher_html_has_no_hardcoded_student_name():
+    """讀 web/teacher.html 原始碼，斷言硬編姓名字串已不存在於檔案中。"""
+    html_path = Path(__file__).resolve().parent.parent / "web" / "teacher.html"
+    src = html_path.read_text(encoding="utf-8")
+    assert "阿明" not in src
