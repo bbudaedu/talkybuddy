@@ -31,6 +31,12 @@ ASR_MODEL = "small"
 # 裝置與學生識別（決賽 demo 固定值）
 DEVICE_ID = "GENIO-520-X992"
 STUDENT_ID = "STUDENT-AMING-004"
+# 教師儀表板顯示用的學生完整姓名。刻意不經 guardrails.deidentify()——身分欄位
+# （student_id、姓名）與對話內容適用不同規則（見 11-CONTEXT.md D-05）：
+# deidentify() 的目的是遮掉逐字稿裡偶發提到的他人個資，不是移除受評學生
+# 本人的身分。此值不進上傳白名單（server/sync_client.py UPLOAD_FIELDS）——
+# 姓名只存在 server 端，裝置端 push_pending() 只送 student_id 供綁定。
+STUDENT_NAME = "阿明"
 
 # ASR 信心門檻：低於此值走兜底話術（PLAN.md §3：雜音干擾判定門檻 0.5）
 ASR_CONF_THRESHOLD = 0.5
