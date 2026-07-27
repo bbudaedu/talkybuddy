@@ -1,0 +1,772 @@
+INFO: STARTING!
+INFO: Log parameter values verbosely: [0]
+INFO: Min runs duration (seconds): [5]
+INFO: Graph: [sensevoice_float.tflite]
+INFO: Signature to run: []
+INFO: Use gpu: [0]
+INFO: Use NNAPI: [0]
+INFO: Delegate settings file path: [/usr/share/label_image/stable_delegate_settings.json]
+INFO: Use xnnpack: [0]
+INFO: Loaded model sensevoice_float.tflite
+INFO: dlopen libneuronusdk_adapter.mtk.so
+INFO: Got device name: mtk-gpu
+INFO: Got device name: mtk-mdla
+INFO: NeuronApi version: 8.2.16
+INFO: STABLE_DELEGATE delegate created.
+INFO: Neuron stable delegate version: 1.4.3
+ERROR: PreOpCheck: OP GATHER (v1) is not supported (Input type not in expected list kTfLiteFloat16, kTfLiteInt32, kTfLiteUInt8, kTfLiteInt8)
+ERROR: PreOpCheck: Fail validation because of above op.
+ERROR: OP GATHER (v1) is not supported (Input type not in expected list kTfLiteFloat16, kTfLiteInt32, kTfLiteUInt8, kTfLiteInt8)
+ERROR: OP GATHER (v1) is not supported (Input type not in expected list kTfLiteFloat16, kTfLiteInt32, kTfLiteUInt8, kTfLiteInt8)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 123
+ERROR: OP SELECT_V2 (v1) is not supported (Unsupported operation type.)
+WARNING: Unsupported operation type 126
+ERROR: OP BATCH_MATMUL (v1) is not supported (Unsupported operation type.)
+[apusys][info]apusysSession: Seesion(0xaaaaf46b5550): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4699990): total_vlm_size(700416) 
+[apusys][info]apusysSession: Seesion(0xaaaadf3ec5e0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf46a8130): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4703aa0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf494c440): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4990a00): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf47287b0): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf49fbec0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf495f6a0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf46da7e0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4932080): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf49b58d0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf490aaa0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf46b0dd0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4616f90): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4642270): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf462b5e0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4948cc0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf48cf660): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf496b2f0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf45d3a00): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4682940): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4694e00): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf49d0e60): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf49276b0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4610a80): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4641230): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf45b5810): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf491d430): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf46b9130): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf463e130): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5386070): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf45872b0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4707160): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4622760): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf46640e0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf53a56b0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf463a120): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4909da0): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf45c2ab0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4514f50): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf455a7b0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf53aa850): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf45bcc70): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf53a74f0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf48e2940): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf53a52a0): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf45b10c0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4e21fd0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf53b1240): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4521590): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf451bdd0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf48dad50): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf45a0f80): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf45e5f00): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf53411f0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4e968c0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf454d030): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4e1ea60): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5352920): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5364750): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf459aff0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4e57a70): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4e7c670): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5371960): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4e4f330): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf44fe900): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4e7e2a0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf45ae420): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4e495d0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf536ae90): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf53a95a0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4e4ff00): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf53e18a0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf530a680): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5373fb0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf597c2c0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4e36270): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf52fabf0): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf49a1cd0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf48c8150): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4625fa0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf4e59d70): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4537b80): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf59cb290): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4e92170): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf59a2f30): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4e8cd70): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf52729f0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf52abf90): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf521e170): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf52240d0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf58a6910): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf59bc980): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf59bdaa0): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf52b0090): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5290ca0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf58503b0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5220270): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf46cfd80): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf529df90): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5245af0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5295ae0): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf52b9bf0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf524fc60): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf589a940): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf46c5dc0): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf59ad2a0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5974590): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5854550): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf45337a0): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5237130): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5756e00): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf527e8f0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf53bed60): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf562d3a0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf56c3ef0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf56a85d0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf53093b0): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5620e40): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf576ae00): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf565ae00): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf526bf50): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf59d8e10): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf52803a0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf56b6670): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf597a330): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf564be30): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5267ce0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf57d4ab0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf56e2a30): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf567e6f0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5672c40): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5878420): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5685b90): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5702250): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf52c80b0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf565d340): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf569e400): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf57a8370): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5797c60): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf57725d0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf58237f0): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf56ab150): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf59f9cb0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf56a4cd0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf57c1340): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf57d93e0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5a281d0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf537a860): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5807820): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf4654fb0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5831230): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf59fc480): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5a27670): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf59834c0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5f228d0): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf58473f0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5f172b0): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf57fd860): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5a2b340): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5694cd0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf5a672d0): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5983a70): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf570e410): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf59ec450): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf6043730): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf570ecd0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf464a050): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf59fe400): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf582b970): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5f3e2c0): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf6022480): total_vlm_size(425984) 
+[apusys][info]apusysSession: Seesion(0xaaaaf5f1b520): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaaaf600ac50): total_vlm_size(0) 
+[apusys][info]apusysSession: Seesion(0xaaaaf601b160): thd(benchmark_model) version(5) log(0)
+[apusys][error]memAlloc: alloc mem(16/4096/0/0x5) fail(Cannot allocate memory)
+ERROR: APUSysEngine::CmdBufAllocWithName() failed
+ERROR: APUSys failed to allocate cmd buffer!
+ERROR: Failed to build driver meta for MDLA_5_3
+ERROR: Failed to build APUSys command.
+ERROR: Fail to rewrite DLA
+ERROR: Fail to run APUSysRewritePass
+WARNING: Fail to run runtime CompiledGraph pipeline
+ERROR: Cannot prepare execution.
+ERROR: Neuron returned error NEURON_BAD_STATE at line 1339 while creating Neuron execution.
+
+ERROR: Node number 3755 (DELEGATE) failed to prepare.
+ERROR: Restored original execution plan after delegate application failure.
+ERROR: Failed to apply STABLE_DELEGATE delegate.
+ERROR: Benchmarking failed.

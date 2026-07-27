@@ -161,3 +161,80 @@ NPU_PATH_DECISION: REOPENED-PENDING-BISECT
 NPU_PATH_DECISION: REOPENED-NPU-PROVEN-ASR-PENDING
 
 **未達成、誠實登錄：** NPU-02（SenseVoice on NPU）與 NPU-03（FP32 vs INT8 繁中品質閘，依賴 NPU-02）。
+
+---
+
+## 9. TFLite + Neuron Stable Delegate 路徑的 PreOpCheck 結果（2026-07-27 15:2x CST）
+
+繞過 ORT-NeuronEP 崩潰後，以 `mtk_converter` 8.13.0 轉出的 `sensevoice_float.tflite`
+（937,080,400 bytes，節點 3807）在真機上跑 PreOpCheck。這是 §8.5 第 2 道阻擋
+（MDLA 拒收 `BatchMatMul`）的正面量測。
+
+**指令**（必須用 `/usr/sbin/benchmark_model`；`/root/benchmark_suite/` 下那兩個會靜默
+忽略 `--stable_delegate_settings_file`，量到的是 CPU 數字）：
+
+```bash
+cd /root/talkybuddy/edge/np8_out && /usr/sbin/benchmark_model \
+  --stable_delegate_settings_file=/usr/share/label_image/stable_delegate_settings.json \
+  --use_nnapi=false --use_xnnpack=false --use_gpu=false \
+  --min_secs=5 --graph=sensevoice_float.tflite
+```
+
+原始輸出：`edge/npu_spike/PREOPCHECK-SENSEVOICE-FLOAT-RAW.txt`（772 行）。
+Neuron stable delegate version 1.4.3。
+
+### 9.1 算子拒收清單（實測，非推估）
+
+| Op | 拒收次數 |
+|---|---|
+| `SELECT_V2` (v1) | 140 |
+| `BATCH_MATMUL` (v1) | 140 |
+| `GATHER` (v1) | 3 |
+
+`BATCH_MATMUL` 遭拒收**證實了 §8.5 第 2 道阻擋**。這 140 個是 transformer attention
+的核心運算、均勻散佈在整張圖中，代表即使編譯成功，圖也會被切成上百段 CPU↔NPU
+來回同步——加速幅度會被 handoff 成本吃掉。
+
+### 9.2 沒有延遲數字：delegate 連 prepare 都失敗
+
+```
+[apusys][error]memAlloc: alloc mem(16/4096/0/0x5) fail(Cannot allocate memory)
+ERROR: APUSysEngine::CmdBufAllocWithName() failed
+ERROR: Failed to build driver meta for MDLA_5_3
+ERROR: Fail to run APUSysRewritePass
+ERROR: Neuron returned error NEURON_BAD_STATE at line 1339 while creating Neuron execution.
+ERROR: Node number 3755 (DELEGATE) failed to prepare.
+ERROR: Restored original execution plan after delegate application failure.
+ERROR: Benchmarking failed.
+```
+
+量測前已 `pkill` llama-server，起跑時 `free -m` 顯示 available **3358MB**，仍然 OOM。
+裝置總記憶體僅 3794MB，float 模型本身就佔 937MB。
+
+**因此本次未取得 `Inference (avg)`，無法與 Phase 8 的 ASR CPU 基線 405ms 對照。**
+不以任何推估數字填補此空白。
+
+### 9.3 判定
+
+兩個**互相獨立**的否證，任一個單獨成立即足以擋下這條路：
+
+1. **算子面**：MDLA 拒收 140 個 `BatchMatMul` + 140 個 `SELECT_V2`，圖會被嚴重切碎。
+2. **記憶體面**：937MB float 版在 3.7GB 裝置上編不起來（與 §8 之後的交接檔預測一致）。
+
+要繞過第 2 點需要量化版，而量化需要真實 fbank 校準資料（**尚未進行**）；但即使量化成功，
+第 1 點仍在。**SenseVoice ASR 上 MDLA：NO-GO。**
+
+另有一項自 ORT 摺疊階段起就未解的疑慮，本次仍未觸及：`logits` 宣告 shape
+`{1,200,25055}` vs 實際 `{1,204,25055}`，**是否影響輸出正確性未驗證**。
+
+### 9.4 對後續投入的意涵
+
+依 2026-07-27 讀命題文件後的評分結構分析（見 `.planning/HANDOFF-2026-07-27.md`），
+國產晶片加分**至多 2 分**且條件為「近端原型演示」——Phase 8 真機跑完整離線迴圈時
+即已到手。NPU/GPU 加速**不再增加任何分數**。
+
+本節結束 ASR-on-NPU 軌道。GPU（Mali-G57 + llama.cpp Vulkan）仍是唯一未被否證、
+且不需 NDA 的加速路徑，但同樣不帶來評分報酬，僅在明天 MediaTek 工作坊帶回
+低成本落地答案時才值得重啟。
+
+TFLITE_MDLA_ASR_DECISION: NO-GO（算子拒收 + 記憶體雙重否證，證據見 §9.1／§9.2）
