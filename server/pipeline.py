@@ -184,6 +184,8 @@ class VoicePipeline:
         self._turn_count: int = 0
         # 背景刷新防重入旗標
         self._directive_refreshing: bool = False
+        # D-03(b) 背景機會式同步防重入旗標
+        self._sync_pushing: bool = False
 
     # ---------- 對外入口 ----------
 
@@ -323,6 +325,13 @@ class VoicePipeline:
         if DIRECTIVE_REFRESH_EVERY > 0 and self._turn_count % DIRECTIVE_REFRESH_EVERY == 0:
             asyncio.create_task(self._refresh_directive())
 
+        # D-03(b) 回合尾兜底同步：cloud 模式下當輪紀錄在上面 add_interaction 當下
+        # 已標記 synced（見 "synced": self.network_mode == "cloud" 那一行），所以
+        # 這裡撈到的 pending 必定來自先前的離線視窗；用途是接住 D-03(a) 漏接的
+        # 情形（server 重啟、手動改 flag），避免 pending 永久卡在佇列。
+        if self.network_mode == "cloud" and store.pending_count() > 0:
+            asyncio.create_task(self._opportunistic_sync())
+
         await self._emit_state(emit, result, "idle")
         return result
 
@@ -376,6 +385,32 @@ class VoicePipeline:
             _log.exception("背景 directive 刷新失敗，沿用前一版 directive")
         finally:
             self._directive_refreshing = False
+
+    async def _opportunistic_sync(self) -> None:
+        """D-03(b) 回合尾兜底：cloud 模式下補傳先前離線期間累積的 pending。
+
+        比照 _refresh_directive 的骨架：再入旗標 + 進入背景任務當下就把
+        network_mode 取成區域變數（09-RESEARCH.md Pitfall 4 的側通道閘門，
+        讓閉包捕捉的是確定值而非執行緒真正跑到時才讀屬性，否則 kill-switch
+        會有競態）+ asyncio.to_thread（SQLite 寫入不得卡在事件迴圈上）+
+        _log.exception（絕不無聲吞例外）+ finally 復位。不接受也不傳遞
+        transport 參數，一律走 opportunistic_sync() 的本機路徑（同程序拓樸
+        下沒有跨程序邊界要跨，見 sync_client.opportunistic_sync 的 docstring）。
+        """
+        if self._sync_pushing:
+            return
+        self._sync_pushing = True
+        try:
+            allow_cloud = self.network_mode == "cloud"
+            if not allow_cloud:
+                return
+            from server import sync_client
+
+            await asyncio.to_thread(sync_client.opportunistic_sync)
+        except Exception:
+            _log.exception("背景機會式同步失敗，pending 留待下次補傳")
+        finally:
+            self._sync_pushing = False
 
     def _run_agents(self, diag: dict, diagnoses: list[dict], *, allow_cloud: bool) -> None:
         """依編排決策執行派作業／週報 agent 並持久化產出。
