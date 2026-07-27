@@ -189,3 +189,10 @@ None - no external service configuration required.
 ---
 *Phase: 11-cloud-teacher-closed-loop*
 *Completed: 2026-07-27*
+
+## Self-Check: PASSED
+
+All modified files found on disk (`server/store.py`, `server/sync_client.py`,
+`tests/test_store.py`, `tests/test_sync_client.py`) and all four task commits
+(`d8c726f`, `9c8a0a2`, `23708bc`) plus the SUMMARY commit (`caa9fcc`) confirmed
+present in `git log`.
