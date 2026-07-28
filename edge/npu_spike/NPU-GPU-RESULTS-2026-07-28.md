@@ -1,17 +1,16 @@
 # 方案 1／2／3 實測結果（2026-07-28，裝置 `root@192.168.31.78`）
 
 > 承 `NPU-NEXT-TARGET-ASSESSMENT.md` §4 的四個方案。本檔記錄當日真機實測結果。
-> 一句話總結：**方案 1（GPU）結論已撤回、待重測；方案 2（TTS vocoder 上 NPU）
-> 成功 8.0×；方案 3（KWS）發現架構前提有誤，需重新規劃。**
+> 一句話總結：**方案 1（GPU）經一次撤回與重測後確認 NO-GO（真實差距 6.5×，非首次宣稱的 28.9×）；
+> 方案 2（TTS vocoder 上 NPU）成功 8.0×；方案 3（KWS）發現架構前提有誤，需重新規劃。**
 
 ---
 
-## 方案 1：GPU Vulkan 打 LLM —— ⚠️ **結論已撤回，待重測**
+## 方案 1：GPU Vulkan 打 LLM —— ❌ NO-GO（**經公平比較後確認**）
 
-> **2026-07-28 稍晚更正：本節原本的 NO-GO 結論不成立，因為量測用的 build
-> 缺少整數點積 shader 路徑——是量測方法的瑕疵，不是硬體的結論。**
-> 詳見本節末的 §「更正」。以下 §建置／§實測 保留原始記錄以供對照，
-> **但不得據以宣稱 GPU 不可用**。
+> **本節經歷一次結論撤回與重測。** 首次量測的 build 缺少整數點積 shader 路徑，
+> 導致差距被灌水為 28.9×。修正後重測，**真實差距為 6.5×（prefill）／3.7×（decode）——
+> 方向不變但幅度更正，NO-GO 結論成立。** 完整經過見本節後半，保留以供追溯。
 
 ### 建置（開發機，全部可重現）
 
@@ -55,14 +54,16 @@ Available devices:
 
 `server/config.py:144` 註解「Genio 520 弱腦、無 GPU」確實是錯的——GPU 存在且 Vulkan 可用。
 
-### 實測：GPU 遠慢於 CPU
+### 首次實測（**build 有缺陷，數字已作廢，保留供追溯**）
 
 `llama-bench -m qwen2.5-1.5b-instruct-q4_k_m.gguf -p 128 -n 32 -r 2 -ngl 99`
 
 | 測試 | Mali-G57 (Vulkan) | CPU 基線（Phase 8） | 倍率 |
 |---|---|---|---|
-| prompt | **1.35 ± 0.00 tok/s** | 39.06 tok/s | **慢 28.9×** |
-| generation | **3.37 ± 0.01 tok/s** | 12.35 tok/s | **慢 3.7×** |
+| prompt | 1.35 ± 0.00 tok/s | 39.06 tok/s | 慢 28.9× |
+| generation | 3.37 ± 0.01 tok/s | 12.35 tok/s | 慢 3.7× |
+
+> ⚠️ **此表的 28.9× 已由重測推翻**，因該 build 缺整數點積路徑。正確數字見下方「重測完成」。
 
 ### 更正：`int dot: 0` 是**我的 build 造成的，不是硬體限制**
 
@@ -124,12 +125,59 @@ rsync 推送失敗。** 待裝置恢復後應跑三組同基準對照：
 3. CPU `-ngl 0`（**同一顆 binary**——先前的 39.06／12.35 來自 Phase 8 的
    不同 llama.cpp 版本，嚴格說不構成同基準比較）
 
-**GPU_PATH_DECISION: ~~NO-GO~~ → PENDING-REMEASURE（前次結論因 build 缺陷撤回）**
+### ✅ 重測完成（2026-07-28 稍晚，公平比較）
 
-> **預估（非實測，不得引用為結論）**：粗算 int8 吞吐量級，CPU 側
-> 2×A78 + 6×A55 帶 SDOT 約在數百 GOPS，Mali-G57 MC2 開啟整數點積後應在同一檔次。
-> 因此預期 prefill 會顯著改善，但**仍不預期超越 CPU**——缺矩陣單元、僅 2 核、
-> warp size 16 等限制依然存在。**但這是推估，必須以實測取代。**
+新 build 的能力字串確認快速路徑已啟用：**`int dot: 1`**（前次為 `0`）。
+
+四組數字，全部同一台裝置、同一顆模型、同一組參數（`-p 128 -n 32 -r 2`，6 執行緒）：
+
+| 建置／設定 | pp128（prefill） | tg32（decode） |
+|---|---|---|
+| **CPU-only build（現行 production，`edge/deploy/bin/`）** | **38.68 ± 0.01** | **13.02 ± 0.01** |
+| Vulkan build，全 offload `-ngl 99`（**有** int dot） | 5.93 ± 0.00 | 3.53 ± 0.00 |
+| Vulkan build，全 offload（**無** int dot，前次） | 1.35 ± 0.00 | 3.37 ± 0.01 |
+| Vulkan build，CPU 路徑 `-ngl 0` | 5.73 ± 0.00 | 10.16 ± 0.00 |
+
+補充：原 CPU-only build `-p 512` 為 37.11 tok/s，與 pp128 的 38.68 相近，
+且與 Phase 8 記錄的 39.06 吻合——**證明 Phase 8 那組基線數字無誤**，
+先前對「不同版本不可比」的疑慮可以排除。
+
+### 結論一：整數點積確實是主因，但不足以翻盤
+
+啟用 int dot 讓 GPU prefill 從 1.35 → **5.93，提升 4.4×**——證實了
+「瓶頸在反量化路徑」的診斷。但對照現行 CPU build：
+
+- **prefill：CPU 快 6.5×**（38.68 vs 5.93）
+- **decode：CPU 快 3.7×**（13.02 vs 3.53）
+
+**先前宣稱的 28.9× 差距是被我的 build 缺陷灌水的；真實差距是 6.5×。
+方向不變，但幅度必須更正。**
+
+剩餘差距的原因是無法補救的那些：`matrix cores: none`（裝置無
+`VK_KHR_cooperative_matrix`）、僅 2 個 shader core、`uma: 1` 無獨立記憶體頻寬、
+warp size 16（llama.cpp shader 多針對 32/64 調校）、shared memory 僅 32KB。
+
+### 結論二（意外發現，且有實務影響）：開啟 Vulkan 會拖垮 CPU 路徑
+
+Vulkan build 即使指定 `-ngl 0`，prefill 也只有 **5.73**，
+相對 CPU-only build 的 38.68 **慢 6.8×**。
+
+**這代表不能採用「編一個 Vulkan build、GPU 不划算時退回 CPU」的策略**——
+那會讓產品的 CPU 路徑直接慢 6.8 倍。若未來要用 GPU，必須是**兩個獨立 binary**，
+而非單一 build 切換。
+
+（未深究機制。可能是 `-ngl 0` 仍有部分張量落在 Vulkan 後端，或排程器切分不良。
+本輪不追此問題，因為結論一已使該路徑無實用價值。）
+
+**GPU_PATH_DECISION: NO-GO（公平比較後仍慢 6.5×／3.7×；且啟用 Vulkan 會使
+CPU 路徑慢 6.8×，無法作為可切換的加值選項）**
+
+原始能力字串佐證（新 build）：
+
+```
+ggml_vulkan: 0 = Mali-G57 (Mali-G57) | uma: 1 | fp16: 1 | bf16: 0 | fp4: 0
+             | warp size: 16 | shared memory: 32768 | int dot: 1 | matrix cores: none
+```
 
 ---
 
