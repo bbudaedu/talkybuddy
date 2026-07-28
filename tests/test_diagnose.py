@@ -89,17 +89,20 @@ def test_directive_article_flag_wins_over_chinese():
 # ---------------------------------------------------------------------------
 
 def test_directive_has_all_fields():
-    """directive 六欄齊備、型別正確、example_questions 為 1-3 句字串。"""
+    """directive 七欄齊備、型別正確、example_questions 為 1-3 句字串。"""
     cd = diagnose._build_companion_directive(_flags(short=True), _scores(55), None)
     assert set(cd.keys()) == {
         "level", "difficulty", "next_goal", "topic",
-        "example_questions", "fallback_hint",
+        "example_questions", "fallback_hint", "fallback_prompt",
     }
     assert cd["difficulty"] in ("up", "hold", "down")
     assert isinstance(cd["example_questions"], list)
     assert 1 <= len(cd["example_questions"]) <= 3
     assert all(isinstance(q, str) and q for q in cd["example_questions"])
     assert cd["next_goal"] and cd["topic"] and cd["fallback_hint"]
+    # fallback_prompt：scaffold.respond() 可直接使用的簡化英文提示句/單字，
+    # 給 pipeline 的 stuck_hint 消費，跟 fallback_hint（給 LLM 讀的完整中文句）分開。
+    assert isinstance(cd["fallback_prompt"], str) and cd["fallback_prompt"]
 
 
 # ---------------------------------------------------------------------------

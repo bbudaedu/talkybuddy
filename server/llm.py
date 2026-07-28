@@ -117,6 +117,12 @@ class EdgeLLM:
                 "請照規則回覆：先一句繁體中文稱讚鼓勵，"
                 "再用「跟我說一遍：<英文句>」帶讀目標英文句。"
             )
+            # PR #7 在這裡對 create_chat_completion 加了一把鎖，因為 llama.cpp 的
+            # 單一 context 被兩個執行緒同時呼叫會在 native 層 segfault。**這條路徑
+            # 已經不需要那把鎖**：Phase 8 之後 EdgeLLM 改走 HTTP 打獨立的
+            # llama-server 行程（見 _call_llama_server），本行程內沒有共用的
+            # native context 可以被併發踩到，序列化由 llama-server 自己負責。
+            # PR #7 對 ASR/TTS 單例的同類修復仍然適用，那幾個引擎確實是 in-process。
             messages = [
                 {"role": "system", "content": self._SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},

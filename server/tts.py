@@ -223,7 +223,9 @@ class TTSEngine:
         import numpy as np
 
         try:
-            audio = voice.generate(text)
+            # 併發呼叫同一個 voice 單例的 generate 用鎖序列化（見 server/llm.py 同款註解）。
+            with self._lock:
+                audio = voice.generate(text)
         except Exception:
             return None
         try:
