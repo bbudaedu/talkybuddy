@@ -1,12 +1,17 @@
 # 方案 1／2／3 實測結果（2026-07-28，裝置 `root@192.168.31.78`）
 
 > 承 `NPU-NEXT-TARGET-ASSESSMENT.md` §4 的四個方案。本檔記錄當日真機實測結果。
-> 一句話總結：**方案 1（GPU）已否證、方案 2（TTS vocoder 上 NPU）成功 8.0×、
-> 方案 3（KWS）發現架構前提有誤，需重新規劃。**
+> 一句話總結：**方案 1（GPU）結論已撤回、待重測；方案 2（TTS vocoder 上 NPU）
+> 成功 8.0×；方案 3（KWS）發現架構前提有誤，需重新規劃。**
 
 ---
 
-## 方案 1：GPU Vulkan 打 LLM —— ❌ 已否證
+## 方案 1：GPU Vulkan 打 LLM —— ⚠️ **結論已撤回，待重測**
+
+> **2026-07-28 稍晚更正：本節原本的 NO-GO 結論不成立，因為量測用的 build
+> 缺少整數點積 shader 路徑——是量測方法的瑕疵，不是硬體的結論。**
+> 詳見本節末的 §「更正」。以下 §建置／§實測 保留原始記錄以供對照，
+> **但不得據以宣稱 GPU 不可用**。
 
 ### 建置（開發機，全部可重現）
 
@@ -59,20 +64,72 @@ Available devices:
 | prompt | **1.35 ± 0.00 tok/s** | 39.06 tok/s | **慢 28.9×** |
 | generation | **3.37 ± 0.01 tok/s** | 12.35 tok/s | **慢 3.7×** |
 
-### 為什麼慢——原因寫在能力字串裡
+### 更正：`int dot: 0` 是**我的 build 造成的，不是硬體限制**
 
-- **`int dot: 0`** —— 無整數點積加速。q4_K_M 量化推論高度仰賴此項。
-- **`matrix cores: none`** —— 無矩陣運算單元。
-- **`uma: 1`** —— 與 CPU 共用系統記憶體，頻寬互搶。
-- Mali-G57 **僅 2 核**，warp size 16、shared memory 32KB。
+初次分析把慢速歸因於能力字串的 `int dot: 0` 與 `matrix cores: none`。
+**前者是錯的。** 向裝置查詢實際能力：
 
-> ⚠️ **誠實標示**：CPU 欄為 Phase 8 以**不同版本** llama.cpp 量得。
-> 未以本次同一顆 binary 補測 `-ngl 0` 的 CPU 對照。
-> 但差距達 28.9×／3.7×，遠超過版本差異可解釋的範圍，結論不受影響。
+```
+integerDotProduct8BitUnsignedAccelerated         = true
+integerDotProduct8BitSignedAccelerated           = true
+integerDotProduct4x8BitPackedUnsignedAccelerated = true
+integerDotProduct4x8BitPackedSignedAccelerated   = true
+shaderIntegerDotProduct                          = true
+VK_KHR_shader_integer_dot_product : extension revision 1
+```
 
-**GPU_PATH_DECISION: NO-GO（Mali-G57 缺 int dot 與 matrix cores，量化推論遠慢於 CPU）**
+**硬體完全支援，且為硬體加速。** ggml 印出 `int dot: 0` 是因為建置時的
+`glslc`（Ubuntu noble 的 shaderc 2023.8）編不出該 shader：
 
-投入成本約半天，與事前估計一致。這條「唯一未被否證、且不需 NDA」的路徑至此關閉。
+```
+integer_dot.comp:3: error: '#extension' : extension not supported: GL_EXT_integer_dot_product
+```
+
+configure 階段其實印過 `-- GL_EXT_integer_dot_product not supported by glslc`，
+但當時未意識到其嚴重性。
+
+**這使該次量測成為不公平比較**：CPU build 帶 `-march=armv8.2-a+dotprod`
+（正是為了拿 ARM SDOT 整數點積指令），GPU build 卻被迫走「逐一解包 4-bit 權重
+再轉浮點」的慢路徑。**等於讓一邊用專用指令、另一邊用通用 ALU，然後宣布後者不行。**
+
+### 佐證：prefill／decode 的不對稱本身就指向這個原因
+
+| | 倍率 | 性質 |
+|---|---|---|
+| prompt（prefill） | 慢 28.9× | **計算受限**——反量化 ALU 成本主導 |
+| generation（decode） | 慢 3.7× | **記憶體受限**——`uma: 1` 下兩者共用同一條 LPDDR，頻寬本就打平 |
+
+計算受限的那一項慘烈得多，正說明瓶頸在反量化路徑——**而整數點積要修的就是它**。
+
+### 仍然成立的部分
+
+- **`matrix cores: none` 是真的。** 已查證裝置**不存在** `VK_KHR_cooperative_matrix`
+  擴充，Mali-G57 確實沒有類 tensor-core 的矩陣單元，此項無法補救。
+- `uma: 1`（無獨立 VRAM）、僅 2 核、warp size 16、shared memory 32KB 皆為事實。
+  llama.cpp 的 Vulkan shader 多針對 warp 32/64 調校，16 會較不理想；
+  32KB shared memory 也限制 tiled matmul 的 tile 大小。
+
+### 重測狀態
+
+已自原始碼建置新 `glslc`（**shaderc v2026.4-dev**，對比原本的 2023.8），
+確認可編譯 `integer_dot.comp`，並以 `-DVulkan_GLSLC_EXECUTABLE` 指向它重建
+（configure 印出 `-- GL_EXT_integer_dot_product supported by glslc`）。
+產物位於 `third_party/llama.cpp/build-vk2-aarch64/`。
+
+**⛔ 尚未取得重測數字——裝置於 2026-07-28 稍晚再次失聯（ping 100% 掉包），
+rsync 推送失敗。** 待裝置恢復後應跑三組同基準對照：
+
+1. Vulkan **有** integer dot product（新 build）
+2. Vulkan 無 int dot（舊 build，已有：1.35／3.37）
+3. CPU `-ngl 0`（**同一顆 binary**——先前的 39.06／12.35 來自 Phase 8 的
+   不同 llama.cpp 版本，嚴格說不構成同基準比較）
+
+**GPU_PATH_DECISION: ~~NO-GO~~ → PENDING-REMEASURE（前次結論因 build 缺陷撤回）**
+
+> **預估（非實測，不得引用為結論）**：粗算 int8 吞吐量級，CPU 側
+> 2×A78 + 6×A55 帶 SDOT 約在數百 GOPS，Mali-G57 MC2 開啟整數點積後應在同一檔次。
+> 因此預期 prefill 會顯著改善，但**仍不預期超越 CPU**——缺矩陣單元、僅 2 核、
+> warp size 16 等限制依然存在。**但這是推估，必須以實測取代。**
 
 ---
 
