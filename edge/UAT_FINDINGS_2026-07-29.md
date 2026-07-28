@@ -18,8 +18,12 @@
 
 | 路徑 | 形態 | 現況 |
 |---|---|---|
-| **Path 1 自架串流**（`/ws/live`） | 全雙工、可 barge-in | 有實作，但見下方已知缺口 |
+| **Path 1 自架串流**（`server/streaming/run_realwire.py`，本機 pipecat CLI） | 全雙工、可 barge-in | 有實作，但見下方已知缺口 |
 | **Path 2 push-to-talk**（`/ws/talk`） | 按鈕觸發、逐回合 | **目前學生頁走這條**，Phase 8/9 全部驗證都在此 |
+
+> 更正（2026-07-29）：本表原先把 Path 1 寫成 `/ws/live`，那是錯的。`/ws/live`
+> （`server/app.py:659`）是 Nova Sonic S2S，屬 Path 2 家族；Path 1 是本機 pipecat
+> pipeline CLI（LocalAudioTransport 裸麥/喇叭），沒有 WebSocket 端點。
 
 Phase 8 的 2.96–2.99s 穩態、Phase 9 的斷網演練，量的都是 Path 2。
 
