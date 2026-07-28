@@ -1,6 +1,6 @@
 # 說說學伴 × Amazon Bedrock AgentCore — 架構重新設計
 
-**日期**：2026-07-26　**狀態**：設計，尚未實作　**決賽**：約 2026-07-30
+**日期**：2026-07-26（2026-07-29 更正 region／測試數／決賽日期）　**狀態**：設計，尚未實作　**決賽**：2026-08-01
 
 ---
 
@@ -60,7 +60,7 @@ flowchart TB
         DEID["去識別化<br/>deidentify"]
     end
 
-    subgraph CLOUD["☁️ AgentCore（ap-east-2 台北）"]
+    subgraph CLOUD["☁️ AgentCore（ap-southeast-1 新加坡）"]
         subgraph RT["AgentCore Runtime"]
             ORCH["編排 agent<br/>決策判斷"]
             TUTOR["導師 agent<br/>四維診斷"]
@@ -108,6 +108,11 @@ flowchart TB
 
 **唯讀一句話**：kill-switch 左邊全部在裝置上、斷網照跑；右邊全部是 AgentCore，
 斷網時整塊消失但不影響孩子繼續對話。
+
+> **region 註記（2026-07-29 更正）**：本圖原標「ap-east-2 台北」是錯的。
+> `ap-east-2` **沒有 AgentCore**，endpoint 不存在。同時具備 AgentCore 與滿額 Bedrock
+> 配額的 region 只有新加坡／雪梨／法蘭克福，已採用**新加坡 `ap-southeast-1`**（約 50ms）。
+> 實際 ARN 見 `deploy/aws/AGENTCORE_RESOURCES.md`。
 
 ---
 
@@ -193,7 +198,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    P0["現況<br/>全部自建<br/>528 tests ✅"] --> P1
+    P0["現況<br/>全部自建<br/>890 tests ✅"] --> P1
     P1["階段 1<br/>Observability<br/>OTEL 埋點"] --> P2
     P2["階段 2<br/>Gateway<br/>題庫 → MCP tool"] --> P3
     P3["階段 3<br/>Runtime<br/>三個 agent 上雲"] --> P4
@@ -233,7 +238,7 @@ flowchart LR
    本地 SQLite 與規則式 fallback 必須保留，這代表「兩套邏輯」的維護成本
    不會因為上了 AgentCore 而消失，反而增加。
 
-3. **4 天內做不完，也不該做完。** 528 個測試守著的自建版本現在是可用的、
+3. **4 天內做不完，也不該做完。** 890 個測試守著的自建版本現在是可用的、
    離線端到端跑通的。全面重寫會把已驗證的東西換成未驗證的。
    **建議只做階段 1–2 當作加分敘事，主線維持現狀。**
 

@@ -141,7 +141,11 @@ CLOUD_TTS_SPEED: float = float(os.environ.get("CLOUD_TTS_SPEED", "0.90"))
 PIPELINE_PROFILE: str = os.environ.get("TALKYBUDDY_PIPELINE_PROFILE", "edge")
 
 # LLM_N_CTX：llama.cpp context 視窗大小，依 PIPELINE_PROFILE 決定預設值。
-# edge=512 避免 CPU OOM（Genio 520 弱腦、無 GPU）、cloud/PC=1024 記憶體充足維持較大視窗；
+# edge=512 避免記憶體吃緊（Genio 520 僅 4GB，Phase 8 實測峰值 RSS 已達 2,723MB）、
+# cloud/PC=1024 記憶體充足維持較大視窗；
+# 註：本行原註記「無 GPU」是錯的——這顆 Genio 520 有 Mali-G57 2 cores
+#（/dev/mali0、vulkaninfo、clinfo 三方確認）。但板上 llama.cpp binary 未編進 GPU 後端，
+# 目前仍是純 CPU 推論，故 512 的選擇不變。
 # TALKYBUDDY_LLM_N_CTX 可強制覆寫，優先於 profile 預設。
 _LLM_N_CTX_DEFAULT = 512 if PIPELINE_PROFILE == "edge" else 1024
 LLM_N_CTX: int = int(os.environ.get("TALKYBUDDY_LLM_N_CTX", str(_LLM_N_CTX_DEFAULT)))
