@@ -80,24 +80,52 @@ mixer 設定已 `alsactl store` 持久化。完整組態與兩個坑見 §5。
 3. **模型冷載入成本顯著**（TTS 2.66→0.81s、ASR 2.30→0.31s）。
    **常駐喚醒服務必須讓引擎常駐、不可每次喚醒才載入。**
 
-### 階段 1：取得中文 KWS 模型並在裝置上跑通（半天）
+### ~~階段 1：取得中文 KWS 模型並在裝置上跑通~~ → ✅ **已完成（2026-07-28）**
 
-sherpa-onnx 提供預訓練中文 KWS 模型（wenetspeech 系）。喚醒詞「說說學伴」以
-Pinyin 標音指定，不需自行訓練——`config.py:68` 的註解顯示既有設計已走這條路。
+模型：`sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01`，
+自 k2-fsa GitHub releases 直接下載到裝置 `models/`（裝置有對外網路）。
+使用 int8 版三件套（encoder 4.8MB／decoder 181KB／joiner 65KB）。
 
-```bash
-# 裝置端
-cd /root/talkybuddy/models
-# 下載 sherpa-onnx 中文 KWS 模型（kws-zipformer wenetspeech）
-# 喚醒詞檔以 pinyin 指定：s h uo1 s h uo1 x ve2 b an4
+喚醒詞沿用 `server/config.py:71` 既有的 `WAKE_SHERPA_KEYWORDS`：
+
+```
+sh uō sh uō x ué b àn @說說學伴
 ```
 
-驗收：`sherpa-onnx` 的 KWS API 對著麥克風串流，喊「說說學伴」能觸發，
-靜置 60 秒不誤觸。
+已逐一驗證六個 token（`sh` `uō` `x` `ué` `b` `àn`）皆存在於該模型的 `tokens.txt`。
 
-### 階段 2：常駐喚醒服務（1 天）
+**閉環自檢結果**（自我合成 → 喇叭 → 空氣 → USB 麥克風 → 偵測，含負向對照）：
 
-新增 `edge/runtime/wake_listener.py`：
+```
+KeywordSpotter 就緒（1.34s）
+✓ 正向「說說學伴」peak=0.0923 → [('說說學伴', 2.2)]
+✓ 負向「今天天氣真好」peak=0.1154 → 無偵測
+```
+
+**⚠️ 尚未以真人聲音驗證。** 上述用的是自家 TTS 合成音，與真實兒童語音的
+聲學特性不同（尤其是音高與韻律）。**真人測試、以及靜置不誤觸的長時間測試，
+仍是階段 1 的未完成項。**
+
+### 階段 2：常駐喚醒服務（進行中）
+
+**已完成**：`edge/runtime/wake_listener.py` 已建立並在裝置上驗證。
+
+- `--selftest`：閉環自檢（見階段 1），**exit 0 通過**
+- 無參數：`arecord` raw 串流常駐監聽，命中即印出時間戳與關鍵詞
+- 以 `arecord` 子行程串流而非額外 Python 音訊套件，避免在 edge 端引入新相依
+- `num_threads=2`，**刻意不與 llama-server 的 6 執行緒相爭**
+- 錄音檔用後即刪（`finally` 區塊），比照 `server/pipeline.py:98,106,159` 既有紀律
+- 偵測到疑似靜音（peak < 0.001）時主動提示實體靜音鍵
+
+**尚未完成**（這些才是真正把它變成產品的部分）：
+
+- **未接上 pipeline** —— 目前命中只印訊息，沒有觸發錄音→ASR→LLM→TTS
+- 未接 VAD 判斷語句結束
+- 未掛進 `run_edge.sh` 啟動序列
+- 未量測常駐時的 CPU 佔用對 LLM 的影響
+- 未處理 PipeWire／`wireplumber` 與直接 ALSA 存取的競爭（見 §5）
+
+原始設計（保留供後續實作參考）：
 
 ```
 ALSA 串流擷取 (16k mono)
