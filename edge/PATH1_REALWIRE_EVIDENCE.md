@@ -125,11 +125,29 @@ cd /home/budaedu/talkybuddy-path1
 
 ---
 
-## 已知待辦（本次未做，僅記錄）
+## 為什麼 Genio 520 的麥克風不解這個卡點
 
-- `check_prerequisites()` 只檢查 `pyaudio` **能不能 import**，不檢查**有沒有裝置**。
-  所以在這台機器上它回報「全就緒」，卻在 pipeline 起來後才撞 `-9996` 並無聲掛住。
-  加一個「至少要有一個 input device」的檢查，可以把靜默 hang 換成一行清楚訊息。
-  未在本分支動手 —— 超出 G2 範圍，留給決策。
-- Genio 520 不在這條線上：刻意未裝 torch/pipecat（`edge/deploy/README.md:57`），
-  記憶體也塞不下。本檔案的驗收對象是開發機，不是裝置。
+裝置的 3.5mm 音訊確實驗過可用，但 Path 1 不上那台裝置：
+
+- `edge/deploy/README.md` 明寫「**刻意排除 Path 1 全雙工串流（torch/pipecat）**」——
+  裝置上沒有 `run_realwire` 需要的 pipecat / torch / SenseVoice。
+- 記憶體 2,038MB / 3,794MB，也塞不下這套。
+
+所以「裝置有麥克風」與「Path 1 能在真麥上驗收」是兩件事。本檔案的驗收對象是**開發機**。
+
+---
+
+## 已補：前置檢查現在會抓到「沒有錄音裝置」
+
+（2026-07-29 同分支修，commit `a2395f3`）
+
+`check_prerequisites()` 原本只 `try import pyaudio`。裝了 pyaudio 不等於有硬體 ——
+所以它在這台機器回報「全就緒」，卻要等 pipeline 起來才撞 `-9996` 並無聲掛住。現在：
+
+```
+_has_audio_input_device() = False
+ - 無可用的錄音裝置（PortAudio 找不到任何 maxInputChannels>0 的裝置）：
+   請接上麥克風/USB 耳麥後重試；用 `ls /dev/snd/` 應看到 pcmC*D*c 節點
+```
+
+接上 USB 麥克風後，這個探測應該翻成 `True` —— 可當作「裝置真的被系統看見了」的第一道確認。
