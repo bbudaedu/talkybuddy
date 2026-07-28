@@ -123,6 +123,62 @@ EOF
 
 ---
 
+## 🔴 演練前必查：裝置上的程式碼是否為最新版
+
+**2026-07-29 踩到**：準備演練時發現裝置上的 `server/` 是**部分過期**的——
+`server/app.py` 已含 Phase 9 的 NETCUT-01 與 JWT 閘門，但：
+
+| 檔案 | 裝置上（過期） | repo（正確） |
+|---|---|---|
+| `server/cloud_llm.py` | `_TIMEOUT_S = 8.0`（**寫死，不吃環境變數**） | `float(os.environ.get("CLOUD_LLM_TIMEOUT_S", "1.5"))` |
+| `server/diagnose.py` | 無 `allow_cloud` 閘門 | 有（Phase 9 NETCUT-02） |
+
+**若沒發現就直接演練，量到的會是舊版行為，整份結果無效**——`CLOUD_LLM_TIMEOUT_S`
+設什麼都沒用，實際跑的是寫死的 8.0s。
+
+### 每次演練前的版本確認
+
+```bash
+ssh root@192.168.31.78 'cd /root/talkybuddy && \
+  grep -n "_TIMEOUT_S" server/cloud_llm.py | head -2 && \
+  grep -c allow_cloud server/diagnose.py'
+```
+
+期望：`_TIMEOUT_S: float = float(os.environ.get(...))` 且 `allow_cloud` 計數 > 0。
+
+### 同步方式（不要用 push.sh）
+
+`edge/deploy/push.sh` 會連 1GB GGUF 與交叉編譯產物一起推，
+而大檔傳輸在這台裝置上經常斷線。只同步真正會變的三個目錄即可：
+
+```bash
+for d in server edge/runtime web; do
+  rsync -az --exclude='__pycache__' --exclude='*.pyc' \
+    -e "ssh -o ServerAliveInterval=15" "$d/" root@192.168.31.78:/root/talkybuddy/$d/
+done
+```
+
+無 `--delete`，不會刪掉裝置上的 `.env`。同步後**必須重啟 stack** 才會生效。
+
+---
+
+## 逾時值最終建議（2026-07-29 實測）
+
+同步程式碼後以 `CLOUD_LLM_TIMEOUT_S=4` 實測 `cloud_llm.generate()`：
+
+| # | 延遲 | 結果 |
+|---|---|---|
+| 1–3 | 2332 / 2252 / 2361 ms | ✓ 雲端 |
+| 4 | 4010 ms | ✗ 降級（撞到 4s 上限） |
+
+**成功 3/4。** 典型延遲 2.3s，但尾端偶爾超過 4s。
+
+- 若演示需要**更穩的雲端回覆**，可提高到 5–6s；型態 A 的 M1 不受影響（≈0），
+  但型態 B 的 M1 上界會同步升高，須在結果表註明。
+- 目前 `.env` 採用 **4**。
+
+---
+
 ## ✅ 已備妥的前置（2026-07-29 實測確認）
 
 | 項目 | 狀態 |
