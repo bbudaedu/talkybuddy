@@ -154,6 +154,21 @@ def _webm_to_wav(webm_bytes: bytes) -> str | None:
                 pass
 
 
+# 進行中的小遊戲（server/games.py）。None = 自由對話。
+#
+# **裝置級單例，不是每個 pipeline 實例一份。** `/api/game` 開的局掛在全域
+# pipeline 上，而 `/ws/talk` 每條連線新建自己的 VoicePipeline——狀態放在實例上
+# 時，老師開的局孩子那條連線根本看不到（2026-07-29 裝置實測：開了 i_spy，
+# 孩子講 "I see a dog."，回覆走自由對話、這局 turns 停在 0）。
+#
+# 這台裝置前面就坐著那一個孩子，一局遊戲的壽命就是一次對話——裝置級才是這個
+# 狀態真正的作用域。不進 DB 的理由不變：存了只多一份要清理的狀態。
+#
+# ⚠️ 代價：同一個行程的所有連線共用一局。單裝置（玩偶）正確；多個孩子連同一台
+# 伺服器時會互相干擾，與 ASR/TTS in-process 單例同級的既有限制。
+_active_game = None
+
+
 class VoicePipeline:
     """單一 session 的語音對話狀態機（半雙工）。"""
 
@@ -186,12 +201,20 @@ class VoicePipeline:
         self._directive_refreshing: bool = False
         # D-03(b) 背景機會式同步防重入旗標
         self._sync_pushing: bool = False
-        # 進行中的小遊戲（server/games.py）。None = 自由對話。
-        # 放在 pipeline 實例而不是 DB：一局遊戲的壽命就是一次對話，
-        # 存 DB 只會多一份要清理的狀態。
-        self.game = None
+        # 這裡**刻意不初始化 self.game**：它是模組級的 `_active_game`（見上方註解），
+        # 在此寫 None 會讓每條新連線都清掉老師剛開的那一局。
 
     # ---------- 小遊戲 ----------
+
+    @property
+    def game(self):
+        """進行中的那一局（裝置級單例，見模組頂端 ``_active_game``）。"""
+        return _active_game
+
+    @game.setter
+    def game(self, state) -> None:
+        global _active_game
+        _active_game = state
 
     def start_game(self, kind: str, **kwargs):
         """開一局遊戲，回傳開場白。未知種類拋 ValueError。

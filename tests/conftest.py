@@ -29,6 +29,21 @@ def tmp_db(tmp_path, monkeypatch):
     yield db_path
 
 
+@pytest.fixture(autouse=True)
+def clear_active_game():
+    """清掉裝置級的遊戲狀態（``server.pipeline._active_game``）。
+
+    遊戲狀態刻意掛在行程上而不是 pipeline 實例上（老師用 ``/api/game`` 開的局，
+    孩子那條 ``/ws/talk`` 連線要看得到）。代價就是它會跨測試殘留——一條測試開的
+    局漏給下一條，斷言「預設沒有遊戲」的測試會莫名其妙地紅。
+    """
+    from server import pipeline as pipeline_mod
+
+    pipeline_mod._active_game = None
+    yield
+    pipeline_mod._active_game = None
+
+
 @pytest.fixture
 def anyio_backend():
     """限定 anyio 測試只跑 asyncio backend（未安裝 trio）。"""
