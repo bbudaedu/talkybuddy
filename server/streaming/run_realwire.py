@@ -30,6 +30,35 @@ _TB_ROOT = Path(__file__).resolve().parents[2]
 _SENSEVOICE_CACHE = Path.home() / ".cache" / "modelscope" / "models" / "iic--SenseVoiceSmall"
 
 
+def _has_audio_input_device() -> bool | None:
+    """有沒有可錄音的裝置。True/False＝判定結果；None＝pyaudio 不在，無從判定。
+
+    只看 PortAudio 有沒有列出任何 maxInputChannels > 0 的裝置，不試開串流
+    （試開會動到硬體，前置檢查不該有副作用）。任何例外一律吞掉回 False：
+    這支函式的職責是回報缺項，不是炸掉。
+    """
+    try:
+        import pyaudio
+    except Exception:
+        return None
+    try:
+        pa = pyaudio.PyAudio()
+    except Exception:
+        return False
+    try:
+        return any(
+            (pa.get_device_info_by_index(i).get("maxInputChannels") or 0) > 0
+            for i in range(pa.get_device_count())
+        )
+    except Exception:
+        return False
+    finally:
+        try:
+            pa.terminate()
+        except Exception:
+            pass
+
+
 def check_prerequisites() -> list[str]:
     """回傳缺項的可讀訊息（空 list＝就緒）。不 raise。"""
     missing: list[str] = []
@@ -40,6 +69,15 @@ def check_prerequisites() -> list[str]:
             "缺 pyaudio（真麥/喇叭需要）：sudo apt install portaudio19-dev；"
             "再 .venv/bin/pip install pyaudio"
         )
+    else:
+        # pyaudio 裝了不等於有硬體。少了這一關，本函式會回報「全就緒」，卻要等
+        # pipeline 起來才撞 PortAudio [Errno -9996]——而那是 non-fatal ErrorFrame，
+        # 行程不退出、只是無聲掛住（2026-07-29 於無音效卡的開發機實測 200s 不退出）。
+        if _has_audio_input_device() is False:
+            missing.append(
+                "無可用的錄音裝置（PortAudio 找不到任何 maxInputChannels>0 的裝置）："
+                "請接上麥克風/USB 耳麥後重試；用 `ls /dev/snd/` 應看到 pcmC*D*c 節點"
+            )
     if not _SENSEVOICE_CACHE.is_dir():
         missing.append(f"缺 SenseVoiceSmall cache：{_SENSEVOICE_CACHE}（需先備妥）")
     if sherpa_voice._espeak_data_dir() is None:

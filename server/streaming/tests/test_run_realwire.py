@@ -33,6 +33,28 @@ def test_check_prerequisites_returns_list():
     assert all(isinstance(m, str) and m for m in missing)
 
 
+def test_check_prerequisites_flags_missing_audio_input_device(monkeypatch):
+    # 沒有錄音裝置時必須明講。否則 check_prerequisites 回報「全就緒」，要等 pipeline
+    # 起來才撞 PortAudio [Errno -9996]——而那是 non-fatal ErrorFrame，行程不會退出，
+    # 只會無聲掛住（2026-07-29 實測 200s 不退出）。靜默 hang 是最難查的失敗。
+    monkeypatch.setattr(run_realwire, "_has_audio_input_device", lambda: False)
+    missing = run_realwire.check_prerequisites()
+    assert any("錄音裝置" in m for m in missing), missing
+
+
+def test_check_prerequisites_quiet_when_audio_input_present(monkeypatch):
+    # 有錄音裝置就不該多嘴（否則這條檢查會變成所有人都要忽略的雜訊）
+    monkeypatch.setattr(run_realwire, "_has_audio_input_device", lambda: True)
+    missing = run_realwire.check_prerequisites()
+    assert not any("錄音裝置" in m for m in missing), missing
+
+
+def test_has_audio_input_device_probe_never_raises():
+    # 真探測本身不得 raise（前置檢查的職責是回報缺項，不是炸掉）。
+    # True/False＝判定結果；None＝pyaudio 不在，無從判定。
+    assert run_realwire._has_audio_input_device() in (True, False, None)
+
+
 def test_build_processors_shape():
     # 驗組裝不 crash、頭尾是 transport 的 input/output。
     # 刻意不斷言 len()——長度是脆弱斷言，鏈上多接一個處理器就假紅；改以型別/順序斷言。
