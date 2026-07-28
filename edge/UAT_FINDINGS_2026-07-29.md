@@ -150,6 +150,22 @@ PR #7 的修法：
 新增 `tests/test_games_ws_talk.py` 4 條測試守住這條路徑（先寫成紅燈、確認
 `turns` 0≠1 之後才修實作）。
 
+### 真機驗證（修復後，同一台裝置、同一支 probe 腳本）
+
+部署後重啟 stack（`network_mode` 回到預設 `edge`），三個遊戲全部觸發：
+
+| 遊戲 | 說的話 | 回覆 | 進度 |
+|---|---|---|---|
+| i_spy | "I see a dog." / "I see a cat." | 「對！找到「狗」了。還差 4 個」 | `turns=2` `found=['狗','貓']` |
+| guess_who | "Is it an animal?" / "Does it start with D?" / "Is it a dog?" | 「對！還可以問 7 次。Yes, it is.」→ 兩題正確答否 | `turns=3` |
+| restaurant | "I want an apple." / "I want some bread." | 「好的，一份「蘋果」！還要別的嗎？」 | `turns=2`（記在 `order`，不是 `found`） |
+
+**三個遊戲的每一輪 `latency_ms.llm` 都是 0**——「遊戲進行中一次都不碰雲端」
+這條設計在真機上得到可觀測的證實，不只是測試裡的 monkeypatch。
+
+修復前的同一支腳本測出的是：回覆「跟我說一遍：What animal do you like?」、
+`turns=0`、`found=[]`。
+
 ### 對發現 2 的影響：**假設被推翻，PR #7 的必要性維持原判**
 
 遊戲既然不觸發，就**沒有**改善固定目標句的問題——自由對話仍是原本的格式尾巴。
