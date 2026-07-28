@@ -1,0 +1,30 @@
+INFO: STARTING!
+INFO: Log parameter values verbosely: [0]
+INFO: Min runs duration (seconds): [5]
+INFO: Graph: [dec_T200.tflite]
+INFO: Signature to run: []
+INFO: Use gpu: [0]
+INFO: Use NNAPI: [0]
+INFO: Delegate settings file path: [/usr/share/label_image/stable_delegate_settings.json]
+INFO: Use xnnpack: [0]
+INFO: Loaded model dec_T200.tflite
+INFO: dlopen libneuronusdk_adapter.mtk.so
+INFO: Got device name: mtk-gpu
+INFO: Got device name: mtk-mdla
+INFO: NeuronApi version: 8.2.16
+INFO: STABLE_DELEGATE delegate created.
+INFO: Neuron stable delegate version: 1.4.3
+[apusys][info]apusysSession: Seesion(0xaaab0c1ea860): thd(benchmark_model) version(5) log(0)
+[apusys][info]construct: Cmd v5(0xaaab0d164990): total_vlm_size(516096) 
+INFO: Explicitly applied STABLE_DELEGATE delegate, and the model graph will be completely executed by the delegate.
+INFO: The input model file size (MB): 6.67388
+INFO: Initialized session in 1437.46ms.
+INFO: Running benchmark for at least 1 iterations and at least 0.5 seconds but terminate if exceeding 150 seconds.
+INFO: count=17 first=30446 curr=30374 min=30028 max=30500 avg=30326.8 std=140
+
+INFO: Running benchmark for at least 50 iterations and at least 5 seconds but terminate if exceeding 150 seconds.
+INFO: count=165 first=30304 curr=30395 min=30221 max=30509 avg=30386.6 std=46
+
+INFO: Inference timings in us: Init: 1437457, First inference: 30446, Warmup (avg): 30326.8, Inference (avg): 30386.6
+INFO: Note: as the benchmark tool itself affects memory footprint, the following is only APPROXIMATE to the actual memory footprint of the model at runtime. Take the information at your discretion.
+INFO: Memory footprint delta from the start of the tool (MB): init=51.2109 overall=51.2109
