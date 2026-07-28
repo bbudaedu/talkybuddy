@@ -206,6 +206,80 @@ async def api_curriculum():
     }
 
 
+class GameBody(BaseModel):
+    game: str
+    topic: str | None = None
+    student: str | None = None
+
+
+def _game_payload() -> dict:
+    """把目前這局的狀態攤成 JSON。沒有進行中的局時 game 為 None。"""
+    from server import games
+
+    st = pipeline.game
+    if st is None:
+        return {"game": None, "done": True, "hints": [], "prompt_zh": "", "prompt_en": ""}
+    line = games.prompt(st)
+    return {
+        "game": st.game,
+        "topic": st.topic,
+        "done": st.done,
+        "found": list(st.found),
+        "order": list(st.order),
+        "turns": st.turns,
+        "target_count": st.target_count,
+        # hints 是這孩子到期的複習詞——前端拿它畫提示，也是 SRS 唯一的可見出口
+        "hints": list(st.hints),
+        "prompt_zh": line.zh,
+        "prompt_en": line.en,
+    }
+
+
+@app.get("/api/games")
+async def api_games(authorization: str | None = Header(default=None)):
+    """可玩的遊戲清單。前端拿它畫按鈕，不要在前端硬編一份會漂掉的。"""
+    from server import games
+
+    identity_from_header(authorization)
+    return {"games": [dict(g) for g in games.GAMES]}
+
+
+@app.get("/api/game")
+async def api_game_state(authorization: str | None = Header(default=None)):
+    """目前這局的狀態。"""
+    identity_from_header(authorization)
+    return _game_payload()
+
+
+@app.post("/api/game")
+async def api_game_start(body: GameBody,
+                         authorization: str | None = Header(default=None)):
+    """開一局遊戲；``game="none"`` 結束目前這局。
+
+    需要 JWT：回傳內容含這孩子到期的複習詞，那是學習弱項，與診斷同級的個資。
+    """
+    from server import games
+
+    claims = identity_from_header(authorization)
+    if body.game in ("none", "", "stop"):
+        pipeline.end_game()
+        return _game_payload()
+    if body.game not in games.GAME_KINDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"未知的遊戲：{body.game!r}（可用：{list(games.GAME_KINDS)}）",
+        )
+    # 遊戲跑在這台裝置上，玩的人就是裝置綁定的那個孩子。tutor 沒指定 student
+    # 時退回裝置綁定的學生（而不是 400）——現場老師按下「開始遊戲」時，
+    # 要問他「哪個學生」是沒有意義的，裝置前面就坐著那一個。
+    default_student = pipeline.student_id or config.STUDENT_ID
+    kwargs = {"student_id": _resolve_student(claims, body.student or default_student)}
+    if body.topic:
+        kwargs["topic"] = body.topic
+    pipeline.start_game(body.game, **kwargs)
+    return _game_payload()
+
+
 @app.get("/api/wake-config")
 async def api_wake_config():
     """下發 Porcupine Web 喚醒設定給瀏覽器。

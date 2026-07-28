@@ -186,6 +186,43 @@ class VoicePipeline:
         self._directive_refreshing: bool = False
         # D-03(b) 背景機會式同步防重入旗標
         self._sync_pushing: bool = False
+        # 進行中的小遊戲（server/games.py）。None = 自由對話。
+        # 放在 pipeline 實例而不是 DB：一局遊戲的壽命就是一次對話，
+        # 存 DB 只會多一份要清理的狀態。
+        self.game = None
+
+    # ---------- 小遊戲 ----------
+
+    def start_game(self, kind: str, **kwargs):
+        """開一局遊戲，回傳開場白。未知種類拋 ValueError。
+
+        ``student_id`` 沒指定時用這條 pipeline 綁的學生——遊戲要拿它讀
+        間隔重複的到期詞，漏傳的話所有孩子會拿到同一批提示。
+        """
+        from server import games
+
+        kwargs.setdefault("student_id", self.student_id or config.STUDENT_ID)
+        self.game = games.start(kind, **kwargs)
+        return games.prompt(self.game)
+
+    def end_game(self) -> None:
+        self.game = None
+
+    def play_turn(self, student_text):
+        """把一句話交給進行中的遊戲判定；沒有進行中的遊戲回 None。
+
+        **刻意不碰雲端。** 判定必須是確定性的（同一句話同一個結果），而且
+        斷網橋段要跟連網時一模一樣——雲端 LLM 會讓兩者不同，那正是現場
+        最不能發生的事。雲端的價值放在遊戲之外的自由對話。
+        """
+        from server import games
+
+        if self.game is None:
+            return None
+        turn = games.judge(self.game, student_text)
+        # 一局結束就把狀態清掉，否則下一句話會撞到「這關已完成」
+        self.game = None if turn.state.done else turn.state
+        return turn
 
     # ---------- 對外入口 ----------
 
@@ -238,6 +275,31 @@ class VoicePipeline:
 
     # ---------- 內部流程 ----------
 
+    def _persist_turn(self, result: TurnResult) -> None:
+        """把一輪對話寫進 DB。遊戲回合與一般回合共用，欄位不會漂開。
+
+        寫入失敗不阻斷回覆（demo 韌性優先）——孩子已經聽到回應了，
+        因為 DB 壞掉就讓整輪失敗沒有意義。
+        """
+        try:
+            result.seq = store.add_interaction(
+                {
+                    "device_id": config.DEVICE_ID,
+                    "student_id": self.student_id or config.STUDENT_ID,
+                    "ts": _now_iso_taipei(),
+                    "network_mode": self.network_mode,
+                    "student_text": result.asr_text,
+                    "asr_confidence": round(result.asr_conf, 4),
+                    "ai_response_text": result.reply_text,
+                    "scores": result.scores,
+                    "latency_ms": dict(result.latency_ms),
+                    "synced": self.network_mode == "cloud",
+                }
+            )
+        except Exception:
+            _log.warning("互動寫入失敗，本輪不記錄", exc_info=True)
+            result.seq = 0
+
     async def _emit_state(self, emit, result: TurnResult, state: str) -> None:
         """emit 狀態事件並記錄到 state_events。"""
         result.state_events.append(state)
@@ -259,6 +321,28 @@ class VoicePipeline:
         # 階段：thinking（鷹架 + LLM）
         await self._emit_state(emit, result, "thinking")
         scaffold.safety_check(result.asr_text)  # 禁詞檢查（respond 內部亦會處理安撫話術）
+
+        # 遊戲進行中：判定由 games.py 接手，**完全不走雲端**。
+        # 這條路徑刻意短——判定是純函式，斷網與連網一模一樣，
+        # 而且不吃 1.5 秒的雲端預算。
+        if self.game is not None:
+            turn = self.play_turn(result.asr_text)
+            if turn is not None:
+                pieces = [turn.reply_zh]
+                if turn.target_en:
+                    pieces.append(f"跟我說一遍：{turn.target_en}")
+                elif turn.reply_en:
+                    pieces.append(turn.reply_en)
+                result.reply_text = " ".join(p for p in pieces if p)
+                result.scores = scaffold.compute_scores(result.asr_text)
+                result.latency_ms["llm"] = 0
+                segments = scaffold.split_tts_segments(result.reply_text)
+                await self._synth_tts(result, emit, segments)
+                result.latency_ms["round_total"] = int((time.monotonic() - t0) * 1000)
+                self._persist_turn(result)
+                await self._emit_state(emit, result, "idle")
+                return result
+
         sc = scaffold.respond(result.asr_text)
         result.reply_text = sc.reply_text
         result.scores = dict(sc.scores)
@@ -301,24 +385,7 @@ class VoicePipeline:
 
         # 寫 DB（低信心兜底已在前面 return，不會到這裡）
         result.latency_ms["round_total"] = int((time.monotonic() - t0) * 1000)
-        try:
-            result.seq = store.add_interaction(
-                {
-                    "device_id": config.DEVICE_ID,
-                    "student_id": self.student_id or config.STUDENT_ID,
-                    "ts": _now_iso_taipei(),
-                    "network_mode": self.network_mode,
-                    "student_text": result.asr_text,
-                    "asr_confidence": round(result.asr_conf, 4),
-                    "ai_response_text": result.reply_text,
-                    "scores": result.scores,
-                    "latency_ms": dict(result.latency_ms),
-                    "synced": self.network_mode == "cloud",
-                }
-            )
-        except Exception:
-            # DB 寫入失敗不阻斷回覆（demo 韌性優先）
-            result.seq = 0
+        self._persist_turn(result)
 
         # B1：每 N 個成功回合，背景（不 await）觸發導師更新 companion_directive
         self._turn_count += 1
