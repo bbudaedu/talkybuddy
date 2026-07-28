@@ -1,9 +1,15 @@
 """A2 real-wiring 真麥 entrypoint：把 StreamingTurnManager barge-in 迴路接上
 LocalAudioTransport（裸麥/喇叭）＋真 Silero VAD，端到端跑一次真的插話。
 
+鏈路：transport.input() → BargeInGate → STT → StreamingTurnManager → TTS → transport.output()
+BargeInGate 排在 STT **之前**：直接吃 transport 的原始麥克風音訊，不依賴 STT 是否
+轉發 InputAudioRawFrame（2026-07-29 實測 FunASR 目前原封轉發，但那是實作細節非契約）。
+
 手動驗收（spec 2026-07-10-a2-realwire）：
   1. 講一句 → 聽到回覆（二元：有/無）。
   2. 回覆播到一半插話 → 回覆在句界停下、系統轉去聽新輸入（二元：乾淨停/沒停）。
+     ← 2026-07-29 起真的成立：BargeInGate 已接上鏈（此前漏接，第 2 條必然失敗）。
+        自動化證據：tests/test_run_realwire.py::test_realwire_chain_bargein_end_to_end
 
 前置：pyaudio（`pipecat-ai[local]`，需系統 portaudio：sudo apt install portaudio19-dev；
       再 .venv/bin/pip install pyaudio）、SenseVoiceSmall cache、sherpa 資產。
@@ -14,6 +20,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from server.streaming.barge_in_gate import BargeInGate
 from server.streaming.turn_manager import StreamingTurnManager
 from server.streaming.batch_reply_source import BatchReplySource
 from server.streaming.interruptible_tts import SherpaInterruptibleTTSService
@@ -42,14 +49,20 @@ def check_prerequisites() -> list[str]:
     return missing
 
 
-def build_processors(transport) -> list:
-    """組裝 processor 列表（不啟動裝置）。transport 需提供 input()/output()。"""
+def build_processors(transport, reply_source=None) -> list:
+    """組裝 processor 列表（不啟動裝置）。transport 需提供 input()/output()。
+
+    reply_source：可注入的回覆句流（預設 BatchReplySource＝真大腦）。沿用
+    StreamingTurnManager / BatchReplySource 既有的 DI 風格，讓端到端測試能用
+    固定句數的 StubReplySource 做確定性的「句界乾淨停」判定。
+    """
     from pipecat.services.funasr.stt import FunASRSTTService
 
     stt = FunASRSTTService()
-    manager = StreamingTurnManager(BatchReplySource())
+    gate = BargeInGate()
+    manager = StreamingTurnManager(reply_source if reply_source is not None else BatchReplySource())
     tts = SherpaInterruptibleTTSService()
-    return [transport.input(), stt, manager, tts, transport.output()]
+    return [transport.input(), gate, stt, manager, tts, transport.output()]
 
 
 def _build_transport():
