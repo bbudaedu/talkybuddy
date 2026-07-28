@@ -16,13 +16,13 @@
 ## 現場怎麼開
 
 ```bash
-T=$(curl -s -X POST localhost:8000/api/login -H 'content-type: application/json' \
+T=$(curl -s -X POST localhost:8787/api/login -H 'content-type: application/json' \
       -d '{"email":"tutor@demo","password":"demo1234"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
 
-curl -s localhost:8000/api/games -H "Authorization: Bearer $T"          # 可玩清單
-curl -s -X POST localhost:8000/api/game -H "Authorization: Bearer $T" \
+curl -s localhost:8787/api/games -H "Authorization: Bearer $T"          # 可玩清單
+curl -s -X POST localhost:8787/api/game -H "Authorization: Bearer $T" \
      -H 'content-type: application/json' -d '{"game":"i_spy","topic":"animal"}'
-curl -s -X POST localhost:8000/api/game -H "Authorization: Bearer $T" \
+curl -s -X POST localhost:8787/api/game -H "Authorization: Bearer $T" \
      -H 'content-type: application/json' -d '{"game":"none"}'           # 結束
 ```
 

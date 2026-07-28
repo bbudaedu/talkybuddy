@@ -16,12 +16,19 @@
 
 專案有兩條並存路徑（`.planning/STATE.md` Decisions）：
 
-| 路徑 | 形態 | 現況 |
-|---|---|---|
-| **Path 1 自架串流**（`/ws/live`） | 全雙工、可 barge-in | 有實作，但見下方已知缺口 |
-| **Path 2 push-to-talk**（`/ws/talk`） | 按鈕觸發、逐回合 | **目前學生頁走這條**，Phase 8/9 全部驗證都在此 |
+| 路徑 | 入口 | 形態 | 現況 |
+|---|---|---|---|
+| **Path 1 自架串流（全雙工）** | `server/streaming/run_realwire.py`（本機 pipecat + 裸麥/喇叭） | 全雙工、可 barge-in | 有實作，但見下方已知缺口 |
+| **Path 1 回合式** | `/ws/talk` | 按鈕觸發、逐回合 | **目前學生頁走這條**，Phase 8/9 全部驗證都在此 |
+| **Path 2 Nova Sonic S2S** | `/ws/live` | 雲端語音進語音出 | `live_s2s: false`，本質上不可能離線 |
 
-Phase 8 的 2.96–2.99s 穩態、Phase 9 的斷網演練，量的都是 Path 2。
+> 📝 **2026-07-29 更正**：本表原本把 Path 1 標成 `/ws/live`、Path 2 標成 `/ws/talk`，
+> 兩者對調了。依 `.planning/PROJECT.md:72`，`/ws/talk` 是 Path 1 回合式、
+> `/ws/live` 是 Path 2（Nova Sonic）。**Path 1 的全雙工入口根本不是 WebSocket 端點**，
+> 而是 `run_realwire.py` 這支跑本機 pipecat pipeline 的 CLI（已於 `server/app.py:659`
+> 與 `server/streaming/run_realwire.py` 讀碼確認）。
+
+Phase 8 的 2.96–2.99s 穩態、Phase 9 的斷網演練，量的都是 Path 1 回合式。
 
 ### 已知缺口（Known-Gaps Backlog G2）
 
@@ -101,3 +108,50 @@ PR #7 的修法：
    那是 PR #7 才加的）。
 
 **這三項須實測確認後才能定案修法。**
+
+---
+
+## 發現 3：三個小遊戲**開得起來，但完全不會動**（已修）
+
+> 起因：使用者推測「今天剛部署的三個小遊戲可能已改善發現 2」，要求先測遊戲觸發。
+> **測出來的結論相反**——遊戲根本沒有接上對話迴圈。
+
+### 裝置實測（2026-07-29，`192.168.31.78:8787`）
+
+| 檢查點 | 結果 |
+|---|---|
+| `POST /api/game` 開 `i_spy`/animal | ✅ 正常，回開場白與提示詞 |
+| `GET /api/game` | ✅ `game=i_spy`，全域 pipeline 確實有這局 |
+| 在 `/ws/talk` 說 "I see a dog." | ❌ 回「很棒，你說出完整的句子了！**跟我說一遍：What animal do you like?**」——自由對話，不是遊戲判定 |
+| 再說 "I see a cat." | ❌ 同上 |
+| **這局的進度** | ❌ **`turns=0`、`found=[]`**——講了兩句，一步都沒前進 |
+
+### 根因：遊戲狀態掛在 pipeline 實例上，而每條連線都有自己的實例
+
+- `/api/game` 動的是**全域 `pipeline` 單例**（`server/app.py:277`）
+- `/ws/talk` **每條連線新建自己的 `VoicePipeline`**（`server/app.py:534`），
+  只承接 `network_mode`（`app.py:538`）、**沒有承接遊戲狀態**
+- 所以 `conn_pipe.game` 永遠是 `None` → `play_turn()` 直接回 `None` → 走自由對話
+
+### 為什麼 89 條遊戲測試沒抓到
+
+測試分別守住了 pipeline 層（`vp.play_turn`）與 HTTP 層（`/api/game`），
+**中間這一段——也就是現場唯一的真實路徑——沒有任何測試**。
+
+### 修法：遊戲狀態改為裝置級單例
+
+`server/pipeline.py` 的 `_active_game` 模組級變數 + `VoicePipeline.game` property。
+理由是這個狀態的作用域本來就是「這台裝置前面坐著的那一個孩子」，
+而不是「一條 WebSocket 連線」——`app.py:274` 的既有註解已經是這個設計意圖。
+
+⚠️ **代價（誠實記錄）**：同一行程的所有連線共用一局。單裝置（玩偶）正確；
+多個孩子連同一台伺服器時會互相干擾，與 ASR/TTS in-process 單例同級的既有限制。
+
+新增 `tests/test_games_ws_talk.py` 4 條測試守住這條路徑（先寫成紅燈、確認
+`turns` 0≠1 之後才修實作）。
+
+### 對發現 2 的影響：**假設被推翻，PR #7 的必要性維持原判**
+
+遊戲既然不觸發，就**沒有**改善固定目標句的問題——自由對話仍是原本的格式尾巴。
+本次實測順帶印證了發現 2 的根因分析正確：topic 命中詞庫時尾巴是
+「What animal do you like?」，沒命中才退回「How are you today?」。
