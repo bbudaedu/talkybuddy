@@ -213,8 +213,22 @@ TALKYBUDDY_PIPELINE_PROFILE=edge ./.venv/bin/python -m edge.runtime.dump_recent_
    確認 peak > 0.05 且**人聲頻段（0.5–3kHz）占比 > 25%**。
    > 只看音量會誤判：曾有一段 `peak=0.109` 但 98% 能量在 500Hz 以下，其實是噪音不是人聲。
 2. 確認 `/api/status` 的 `cloud_llm` / `cloud_tts` 為 `true`。
-3. 學生頁登入取得 JWT——**未登入點 `airplaneSwitch` 會收到 401**，演練無法進行。
-4. **把 `network_mode` 切到 `cloud` 當起點**（否則沒有東西可降級）。
+3. **瀏覽器必須以安全來源開啟學生頁，否則麥克風被封鎖。**
+   `getUserMedia` 在非 HTTPS 來源會被瀏覽器擋掉，只有 `localhost` 例外——
+   直接開 `http://192.168.31.78:8787/` 會顯示「麥克風不可用」，
+   **這不是裝置或權限問題**。**裝置無螢幕**，故不能在裝置本機開瀏覽器。兩個做法：
+
+   | 做法 | 適用 |
+   |---|---|
+   | SSH 本地埠轉發 `ssh -N -L 8787:127.0.0.1:8787 root@192.168.31.78`，瀏覽 `http://localhost:8787/` | 賽前演練（多一個會斷的環節） |
+   | **Chrome 旗標**：`chrome://flags/#unsafely-treat-insecure-origin-as-secure` → Enabled → 填 `http://<裝置IP>:8787` → Relaunch | **決賽當天建議**，不依賴 SSH |
+
+   > ⚠️ 裝置 IP 為 **DHCP 配發**（`DEPLOY_EDGE.md`：「無固定預設值」）。
+   > 現場換網路環境 IP 會變，旗標內的位址即失效。
+   > **當天流程：先確認 IP → 更新旗標 → 重開 Chrome → 才開始測試。**
+
+4. 學生頁登入取得 JWT——**未登入點 `airplaneSwitch` 會收到 401**，演練無法進行。
+5. **把 `network_mode` 切到 `cloud` 當起點**（否則沒有東西可降級）。
 
 ### 步驟 1：暖場（必做，不可略）
 
