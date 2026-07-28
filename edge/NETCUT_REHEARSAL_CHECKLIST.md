@@ -280,3 +280,51 @@ TALKYBUDDY_PIPELINE_PROFILE=edge ./.venv/bin/python -m edge.runtime.dump_recent_
 - 若型態 B 超過 3.0s → 依 §6 檢查是否誤用了較長的 `CLOUD_LLM_TIMEOUT_S`
 - 現場若想要雲端橋段品質較好，可設 `CLOUD_LLM_TIMEOUT_S=4`
   （`server/cloud_llm.py:28` 已預留），**但需重測 M1 並在結果表註明實際採用值**
+
+---
+
+## 附錄：PR #7 評估（2026-07-29 決定不合併）
+
+`origin/master` 有一個本分支未合併的 PR：`658383d 減少機械感 + 教學引導鷹架
++ 多人併發 segfault 修復 (#7)`。**決賽前決定不合併**，但結論須記錄以免重複評估。
+
+### 併發 segfault 修復——對 edge 不適用，對 cloud 是真風險
+
+| 部署 | LLM | ASR / TTS | segfault 風險 |
+|---|---|---|---|
+| **Edge**（玩偶） | `llama-server` **獨立行程**（HTTP） | in-process，但單一連線 | ❌ 不會發生 |
+| **Cloud**（伺服器） | 雲端 API | **in-process 單例，所有連線共用** | ✅ **真實** |
+
+PR 作者的重現條件是「3 個並發連線各講 4 輪話，容器直接被砍」——那是**雲端多學生**
+的情境。`server/asr_sensevoice.py` 與 `server/tts.py` 兩個 profile 共用，
+雲端模式下所有學生的 ASR/TTS 打同一個模型單例。
+
+> ⚠️ **論述漏洞**：`docs/NEEDS_EVIDENCE.md` 與 `docs/OPERATIONS_MODEL.md` 都講
+> 「一位老師照顧多個孩子」。若評審問「同時 30 個孩子用會怎樣」，
+> **現況的誠實答案是「會 segfault」**。這是 v2 必修項。
+
+### scaffold 改動——有價值但改變回覆行為
+
+- 鼓勵語原本用**輸入文字 hash** 挑，同一句話問幾次永遠拿到一模一樣的罐頭回覆
+  （舞台上很致命），PR 改為依 `turn_index` 輪替
+- `diagnose.companion_directive` 的 `fallback_hint` 措辭改動**會流進雲端腦的
+  system prompt**（`pipeline.py:285` → `cloud_llm.py:83-89`），
+  原因是「LLM 會照著『退回』這個框架生成語氣，講出讓學生覺得被貼標籤的話」
+
+### 不合併的理由
+
+1. 合併有衝突（`server/llm.py`、`server/pipeline.py`）
+2. 改雲端 LLM 的 system prompt **正是** `edge/PROMPT_ORDERING_FINDING.md` 記載
+   害中文稱讚合規率 5/5→0/5 的那類改動，決賽前 2 天引入未驗證行為變更風險過高
+3. 決賽演示為單一主持人 edge 情境，segfault 不會觸發
+
+### v2 backlog
+
+- **併發鎖應優先移植**：只動 4 個檔案的推論呼叫包裝
+  （`asr_sensevoice.py`+11／`asr_whisper.py`+13／`tts.py`+4／`llm.py`+20），
+  **不改變任何回覆內容**，不需重跑合規驗證，可與 scaffold 改動分開處理
+- scaffold 167 行改動需連同中文稱讚合規率重新驗證後再上
+
+### 決賽現場規避
+
+演示話術**刻意讓每輪講不同句型**，即可繞開 hash 相同回覆的問題（非程式改動）。

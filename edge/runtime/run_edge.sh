@@ -17,6 +17,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${TARGET_ROOT}"
 
+# 若 <TARGET_ROOT>/.env 存在則載入（雲端憑證 ANTHROPIC_API_KEY / ELEVENLABS_API_KEY
+# 等）。server/ 一律只讀 os.environ、不自行解析 .env，因此若不在此載入，即使檔案
+# 存在 `/api/status` 的 cloud_llm / cloud_tts 仍會是 false——這在斷網彩排前置檢查
+# 時踩過一次，見 edge/NETCUT_REHEARSAL_CHECKLIST.md。
+# `.env` 已於 .gitignore:4 排除，金鑰不會進版控。
+if [ -f "${TARGET_ROOT}/.env" ]; then
+  echo "[run_edge] 載入 .env"
+  set -a
+  # shellcheck disable=SC1091
+  . "${TARGET_ROOT}/.env"
+  set +a
+fi
+
 export TALKYBUDDY_PIPELINE_PROFILE=edge
 
 # 優先使用裝置上已建置的 venv（沿用 scripts/setup_env.sh 的 .venv 慣例）；
