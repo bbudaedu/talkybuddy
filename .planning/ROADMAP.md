@@ -22,7 +22,7 @@ Milestone 2（Genio 520 決賽 Edge MVP）在既有雲端/PC 原型上新增一�
 ### Milestone 1 — Delivered Baseline (verified 2026-07-18)
 
 - [x] **Phase 1: Perception & Wake Foundation** - 繁中 ASR（SenseVoice + OpenCC + whisper fallback）與喚醒層基礎 — 🟢 DELIVERED（🟡 gap: SenseVoice→whisper 為手動 flag，非自動 fallback；by-design）
-- [x] **Phase 2: Self-Hosted Streaming Conversation (Path 1)** - 自架全雙工串流回合式對話與 barge-in（真實麥克風 / 喇叭）— 🟡 DELIVERED w/ gap: `run_realwire.py` 漏接 `BargeInGate`，真機 barge-in 不觸發；無實機執行證據
+- [x] **Phase 2: Self-Hosted Streaming Conversation (Path 1)** - 自架全雙工串流回合式對話與 barge-in（真實麥克風 / 喇叭）— 🟡 DELIVERED w/ gap: `BargeInGate` 漏接已修復（2026-07-29，`gsd/path1-realwire`），真實鏈上的 barge-in 有端到端自動化證明；**剩餘缺口：仍無真麥克風執行證據** — 開發機無任何錄音裝置（`/dev/snd` 無 capture 節點），二元驗收 ①講一句聽到回覆 ②插話句界乾淨停 皆 BLOCKED，見 `edge/PATH1_REALWIRE_EVIDENCE.md`
 - [x] **Phase 3: Cloud Brain, Emotional Voice & Privacy Guardrails** - 雲端 LLM / relay + ElevenLabs 情感語音，含家長同意與去識別化護欄 — 🟡 DELIVERED w/ gap: cloud-TTS 合成點缺 consent 檢查（cloud-profile 開機可繞過家長同意）；無原生 Bedrock Converse 後端，僅 relay
 - [x] **Phase 4: Live Nova Sonic S2S Conversation (Path 2)** - 「說說學伴」喚醒進入 Nova Sonic hands-free 全雙工即時對話 — 🟢 DELIVERED（caveat: AEC 僅瀏覽器原生）
 - [x] **Phase 5: Adaptive Teaching Loop & Pronunciation Assessment** - B1/B3 教學串接與本地聲學發音評估（route A 閉環）— 🟢 DELIVERED

@@ -103,7 +103,7 @@ Recent decisions affecting current work:
 | # | Phase | 缺口 | 嚴重度 | 證據 |
 |---|-------|------|--------|------|
 | ~~G1~~ | 3 | ~~cloud-TTS 合成點缺 `consent_granted()` 檢查~~ — **已修復（2026-07-20，out-of-band）**：`_synth_tts` 雲端分支補上 `guardrails.consent_granted()` 守門，比照既有 LLM 分支 pattern；新增回歸測試 `test_cloud_mode_without_consent_never_calls_cloud_tts` | ✅ 已解 | server/pipeline.py:357-363（修復點）；tests/test_pipeline_cloud_tts.py（回歸測試） |
-| G2 | 2 | `run_realwire.py` build_processors 漏接 `BargeInGate` → 真實麥克風/喇叭上 barge-in 不觸發；無實機執行證據 | 🟠 中 | server/streaming/run_realwire.py:45-52 |
+| G2 | 2 | ~~`run_realwire.py` build_processors 漏接 `BargeInGate`~~ — **接線已修復（2026-07-29，`gsd/path1-realwire`）**：鏈改為 `input → BargeInGate → STT → manager → TTS → output`；gate 刻意排在 STT 之前（實測 FunASR 目前原封轉發音訊，但那是實作細節非契約）。端到端證明：真實 `build_processors` 鏈上灌人聲 → `state_events` 含 `barge_in`、合成句數少於完整回覆；移除 gate 後該測試確實轉紅。**剩餘缺口：無真麥克風執行證據** —— 開發機 `/dev/snd` 無任何 capture 節點（root 列舉 4 個裝置全部 `in=0`），二元驗收無法產生，記 BLOCKED 而非猜測 | 🟡 低（接線已解，剩硬體驗收） | edge/PATH1_REALWIRE_EVIDENCE.md；server/streaming/tests/test_run_realwire.py |
 | G3 | 6 | TLS/WSS reverse proxy 僅 DEPLOY_CLOUD.md 文件化，無提交的 Caddyfile/nginx 設定或 VM 實跑驗證 | 🟠 中（部署時處理） | docs/DEPLOY_CLOUD.md:35-50 |
 | G4 | 3 | 無原生 Bedrock Converse 回覆後端，只有 config 切換的 Anthropic-Messages relay（LLM-02「Bedrock/relay 切換」為 config-fronting） | 🟡 低（by-design 可接受） | server/config.py:70-71；server/anthropic_relay.py:32-55 |
 | G5 | 1 | SenseVoice→whisper 為手動 `ASR_BACKEND` flag，非自動 fallback | 🟡 低（符合 ASR-02 原文） | server/asr.py:12；asr_base.py:17 |
