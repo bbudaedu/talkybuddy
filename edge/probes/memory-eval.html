@@ -1,0 +1,419 @@
+<title>記憶架構評估 — 讓 AI 記得每個孩子</title>
+
+<style>
+  :root {
+    --ink:        #0F1B2A;
+    --paper:      #F7F9FC;
+    --surface:    #FFFFFF;
+    --rule:       #DCE3EC;
+    --muted:      #5A6B7F;
+    --accent:     #B5761E;
+    --accent-dim: #F0E4CE;
+    --good:       #2E6F52;
+    --gap:        #A83D26;
+    --code-bg:    #EEF2F7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink:        #E4EAF2;
+      --paper:      #0C1420;
+      --surface:    #16202E;
+      --rule:       #27364A;
+      --muted:      #93A3B8;
+      --accent:     #E0A94A;
+      --accent-dim: #2A2417;
+      --good:       #63B98C;
+      --gap:        #E0785C;
+      --code-bg:    #101A27;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink:#E4EAF2; --paper:#0C1420; --surface:#16202E; --rule:#27364A;
+    --muted:#93A3B8; --accent:#E0A94A; --accent-dim:#2A2417;
+    --good:#63B98C; --gap:#E0785C; --code-bg:#101A27;
+  }
+  :root[data-theme="light"] {
+    --ink:#0F1B2A; --paper:#F7F9FC; --surface:#FFFFFF; --rule:#DCE3EC;
+    --muted:#5A6B7F; --accent:#B5761E; --accent-dim:#F0E4CE;
+    --good:#2E6F52; --gap:#A83D26; --code-bg:#EEF2F7;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "PingFang TC", "Noto Sans TC",
+                 "Microsoft JhengHei", sans-serif;
+    line-height: 1.75;
+    font-size: 16.5px;
+  }
+  .wrap {
+    max-width: 50rem;
+    margin: 0 auto;
+    padding: 3.5rem 1.25rem 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2.75rem;
+  }
+
+  .eyebrow {
+    font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+  }
+  h1 {
+    font-size: clamp(1.7rem, 4.5vw, 2.4rem); line-height: 1.2;
+    text-wrap: balance; letter-spacing: -.02em; margin: .3rem 0 0; font-weight: 700;
+  }
+  h2 {
+    font-size: 1.28rem; letter-spacing: -.01em; text-wrap: balance;
+    margin: 0 0 .2rem; padding-bottom: .5rem; border-bottom: 2px solid var(--rule);
+    font-weight: 700;
+  }
+  h3 { font-size: 1.02rem; margin: 0 0 .35rem; font-weight: 700; }
+  p  { margin: 0 0 .85rem; }
+  section { display: flex; flex-direction: column; gap: .9rem; }
+  ul { margin: 0; padding-left: 1.15rem; display:flex; flex-direction:column; gap:.35rem; }
+
+  .lede {
+    font-size: 1.08rem; color: var(--ink);
+    border-left: 3px solid var(--accent);
+    padding: .1rem 0 .1rem 1rem; margin: 0;
+  }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 6px; padding: 1.1rem 1.25rem;
+    display: flex; flex-direction: column; gap: .5rem;
+  }
+
+  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table {
+    border-collapse: collapse; width: 100%; font-size: .92rem;
+    font-variant-numeric: tabular-nums; min-width: 34rem;
+  }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: .74rem; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .87em; background: var(--code-bg);
+    padding: .1em .35em; border-radius: 3px;
+  }
+  pre.mermaid {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 6px; padding: 1.1rem; overflow-x: auto; margin: 0;
+    text-align: center;
+  }
+
+  .pill {
+    display: inline-block; font-size: .7rem; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+    padding: .16em .5em; border-radius: 3px; white-space: nowrap;
+  }
+  .have { background: var(--accent-dim); color: var(--good); border: 1px solid var(--good); }
+  .miss { background: transparent; color: var(--gap); border: 1px solid var(--gap); }
+
+  .verdict {
+    border-left: 3px solid var(--gap); padding-left: 1rem;
+    background: transparent;
+  }
+  .verdict.ok { border-left-color: var(--good); }
+
+  figcaption {
+    font-size: .82rem; color: var(--muted); margin-top: .5rem; text-align: center;
+  }
+  .foot { font-size: .85rem; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 1rem; }
+  strong { font-weight: 700; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">TalkyBuddy · 2026-07-29 · 決賽前評估</div>
+    <h1>讓 AI 記得每個孩子</h1>
+    <p class="lede">
+      結論先講：<strong>你要的基礎設施已經開好並且是 ACTIVE 的</strong>，缺的是兩個
+      內建策略與一條接線。openwiki 不適合這個用途——但它適合另一件事。
+    </p>
+  </header>
+
+  <section>
+    <h2>一、三個查證結果</h2>
+
+    <div class="card">
+      <h3>AgentCore Memory 已經存在，而且正在跑</h3>
+      <p>
+        <code>arn:aws:bedrock-agentcore:ap-southeast-1:641079926753:memory/TalkyBuddyStudentMemory-sO0KeDB7kP</code>
+        — 狀態 <strong>ACTIVE</strong>，事件保留 90 天，2026-07-26 建立。
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>AWS 帳號已通過驗證</h3>
+      <p>
+        <code>docs/AGENTCORE_ARCHITECTURE.md</code> 記載「截至 2026-07-26 仍在驗證中，
+        <strong>目前一階段都動不了</strong>」——這條已經過期。<code>sts get-caller-identity</code>
+        正常回應，ap-southeast-1 有 25 個 Bedrock 模型可用。
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>openwiki 存在，但不是這個用途的工具</h3>
+      <p>
+        langchain-ai/openwiki，13.5k stars，MIT。它是「<strong>為 codebase 寫 agent 文件</strong>」的
+        CLI，產出 OKF 格式的 markdown wiki 並自動嵌 Mermaid 圖。它的記憶單位是<strong>文件</strong>，
+        不是<strong>每輪對話</strong>；它沒有 per-turn 的萃取與注入迴圈。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>二、你已經有的（先別重造）</h2>
+    <p>
+      「完整記錄對話 + LLM 萃取 metadata」這個模型，你的專案已經做了一半——而且是規則式的那一半。
+    </p>
+
+    <pre class="mermaid">
+flowchart LR
+  K["孩子說話"] --> ASR["ASR<br/>本地"]
+  ASR --> P["VoicePipeline"]
+  P --> DB[("SQLite<br/>interactions<br/>每輪完整記錄")]
+  DB --> RULE["profile.py<br/>規則式萃取"]
+  RULE --> PROF[("student_profile<br/>interests / vocab<br/>error_patterns")]
+  DB --> DIAG["diagnose.py<br/>LLM 診斷"]
+  DIAG --> CD[("companion_directive<br/>本輪教學策略")]
+  PROF --> INJ["format_directive_for_prompt"]
+  CD --> INJ
+  INJ --> UP["user_prompt<br/>directive_block"]
+  UP --> LLM["LLM 生成回覆"]
+
+  style DB fill:#B5761E,color:#fff,stroke:none
+  style PROF fill:#B5761E,color:#fff,stroke:none
+  style CD fill:#B5761E,color:#fff,stroke:none
+  style INJ fill:#2E6F52,color:#fff,stroke:none
+    </pre>
+    <figcaption>現況：raw 對話已全存，注入管道已打通（綠色那格）</figcaption>
+
+    <p>
+      <strong>關鍵：把記憶餵給 LLM 的管道已經完全打通了</strong>
+      （<code>diagnose.py:460</code> → <code>llm.py:110</code>，每 5 輪背景刷新）。
+      你缺的不是管道，是「記什麼」。
+    </p>
+  </section>
+
+  <section>
+    <h2>三、缺口在哪</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>你想要的</th><th>現況</th><th>為什麼不夠</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>記得<strong>喜好</strong></td>
+            <td><span class="pill have">部分</span> <code>interests</code></td>
+            <td>靠 <code>scaffold.VOCAB</code> 類別命中統計，只能得到 animal / food / school。孩子說「我喜歡恐龍」而詞庫沒有 dinosaur → <strong>完全記不住</strong></td>
+          </tr>
+          <tr>
+            <td>記得<strong>個性</strong></td>
+            <td><span class="pill miss">無</span></td>
+            <td><code>emotional_recent</code> 只是最近一次診斷的情緒欄位，不是跨場累積的性格側寫</td>
+          </tr>
+          <tr>
+            <td><strong>主動</strong>吸引興趣</td>
+            <td><span class="pill miss">無</span></td>
+            <td>系統只被動回應。不會開口說「上次你說喜歡恐龍，今天我們學 dinosaur」</td>
+          </tr>
+          <tr>
+            <td>LLM 萃取 metadata</td>
+            <td><span class="pill have">部分</span> <code>companion_directive</code></td>
+            <td>是「本輪策略」不是「長期記憶」，只看最近一次診斷，沒有跨週累積</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>四、Memory 的四種內建策略 — 你只配了兩個</h2>
+    <p>
+      AgentCore Memory 的模型正是你描述的：<strong>events 存完整對話，strategies 用 LLM 萃取
+      metadata</strong>（extraction → consolidation）。四種內建策略中，你缺的兩個正好對應你要的兩件事。
+    </p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>策略</th><th>萃取什麼</th><th>你的狀態</th><th>對應你的需求</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>SUMMARIZATION</code></td>
+            <td>每場練了什麼、表現如何</td>
+            <td><span class="pill have">已配</span></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>SEMANTIC</code></td>
+            <td>關於學生的事實：興趣、已掌握詞彙、常犯錯誤</td>
+            <td><span class="pill have">已配</span></td>
+            <td>「喜好」的事實層</td>
+          </tr>
+          <tr>
+            <td><code>USER_PREFERENCE</code></td>
+            <td>偏好、選擇、<strong>風格</strong>，建立持久使用者檔案</td>
+            <td><span class="pill miss">缺</span></td>
+            <td><strong>「喜好、個性」</strong></td>
+          </tr>
+          <tr>
+            <td><code>EPISODIC</code></td>
+            <td>結構化情節（情境／意圖／行動／結果），並<strong>跨情節反思</strong>，讓 agent 把過去成功的模式用到新互動</td>
+            <td><span class="pill miss">缺</span></td>
+            <td><strong>「主動吸引興趣」</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <p style="margin:0">
+        <code>EPISODIC</code> 值得特別看：它學的不是「孩子喜歡什麼」，而是
+        <strong>「什麼方式對這個孩子有效」</strong>——用遊戲切入有反應、直接糾錯會沉默。
+        那正是「主動吸引學習興趣」在系統層面的意思。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>五、目標架構：雙寫，不是取代</h2>
+    <p>
+      這是整份評估最重要的一句話：<strong>Memory 再好，斷網時就是零</strong>——
+      你自己的 <code>AGENTCORE_ARCHITECTURE.md</code> §7 已經寫過。斷網是決賽主軸，
+      所以本地那條路徑必須保留，兩者並存。
+    </p>
+
+    <pre class="mermaid">
+flowchart TB
+  subgraph EDGE["Genio 520（離線也要能動）"]
+    K["孩子說話"] --> P["VoicePipeline"]
+    P --> DB[("SQLite<br/>完整對話")]
+    DB --> RULE["規則式萃取<br/>確定性、零網路"]
+    RULE --> LOCAL[("本地 profile<br/>+ 上次同步的側寫")]
+    LOCAL --> INJ["directive_block"]
+    INJ --> REPLY["回覆"]
+  end
+
+  subgraph CLOUD["AWS ap-southeast-1（連線時加值）"]
+    MEM[("AgentCore Memory<br/>events 90 天")]
+    S1["SUMMARIZATION"]
+    S2["SEMANTIC"]
+    S3["USER_PREFERENCE"]
+    S4["EPISODIC"]
+    MEM --> S1 & S2 & S3 & S4
+    S1 & S2 & S3 & S4 --> RETR["retrieve<br/>/student/{actorId}/..."]
+  end
+
+  DB -. "背景非同步<br/>不擋對話" .-> MEM
+  RETR -. "回寫側寫快取<br/>斷網後仍可讀" .-> LOCAL
+
+  style LOCAL fill:#B5761E,color:#fff,stroke:none
+  style S3 fill:#A83D26,color:#fff,stroke:none
+  style S4 fill:#A83D26,color:#fff,stroke:none
+  style MEM fill:#2E6F52,color:#fff,stroke:none
+    </pre>
+    <figcaption>紅色 = 要新增的兩個策略；橘色 = 讓斷網仍記得孩子的關鍵一格</figcaption>
+
+    <div class="card">
+      <h3>為什麼這個設計對你的決賽敘事特別有利</h3>
+      <p style="margin:0">
+        離線時讀的是<strong>上次同步下來的側寫快取</strong>，所以
+        <strong>斷網後 AI 仍然記得這個孩子</strong>，只是不再更新。
+        這正好是你的核心敘事——「斷網仍可用，接上雲端更聰明」——
+        而「記得孩子」會是那個敘事最有說服力的例子。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>六、三個方案的取捨</h2>
+
+    <div class="card verdict ok">
+      <h3>AgentCore Memory ＋ 兩個新策略 <span class="pill have">建議</span></h3>
+      <ul>
+        <li>資源已 ACTIVE，帳號已驗證，<code>agentcore.py</code> 已處理 <code>actor_id</code> 隔離（<code>:219</code> 明寫「Memory 會跨學生混用」）</li>
+        <li>新增策略是 <strong>control plane 的設定</strong>，不改對話路徑程式碼</li>
+        <li>符合「整套代理都用 AWS」——三個 Harness 已經在跑</li>
+        <li>代價：斷網歸零，本地那套邏輯得留著，<strong>兩套邏輯的維護成本不會消失</strong></li>
+      </ul>
+    </div>
+
+    <div class="card verdict">
+      <h3>openwiki <span class="pill miss">用途錯配</span></h3>
+      <ul>
+        <li>它的記憶單位是<strong>文件</strong>，不是每輪對話；沒有 per-turn 萃取與注入迴圈</li>
+        <li>是 CLI 批次工具，跑不進 1.5 秒的即時路徑，也跑不上 Genio 520</li>
+        <li><strong>但它有另一個真實用途</strong>：替這個 repo 自動生成技術文件（含 Mermaid 圖），支援 AWS Bedrock 當 provider。決賽評審要看架構時，這比人工維護的文件新</li>
+      </ul>
+    </div>
+
+    <div class="card verdict">
+      <h3>自建 LLM wiki（存 SQLite） <span class="pill miss">次選</span></h3>
+      <ul>
+        <li>完全離線可控、零新依賴，複用現有 <code>agent_outputs</code> 表（<code>store.py:171</code> 註解明說就是為此設計）</li>
+        <li>但你已經付錢開了 Memory，自建等於重造 AWS 已經做好的萃取與整併</li>
+        <li>只在「決定不上 AWS」時才是首選</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>七、時程建議</h2>
+    <div class="card verdict">
+      <h3>決賽前（剩 2 天）：不要接進對話路徑</h3>
+      <p style="margin:0">
+        理由是具體的：注入點是 <code>user_prompt</code>，而
+        <code>edge/PROMPT_ORDERING_FINDING.md</code> 已用實測證明<strong>動這個位置會破壞核心產品行為</strong>——
+        那次中文稱讚合規率從 5/5 掉到 0/5，還是在快取面「改善了」的情況下發生的。
+        今天合併 PR #7 時跑了 5 組 × 2 輪合規率驗收才敢放行；再動一次等於把已驗證的東西重新推翻。
+      </p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>時機</th><th>做什麼</th><th>風險</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>決賽前<br/>（可選）</td>
+            <td>加上 <code>USER_PREFERENCE</code> 與 <code>EPISODIC</code> 兩個策略，並開始<strong>非同步寫入 events</strong>——只寫不讀，對話路徑一行不改</td>
+            <td><strong>零</strong>。不讀就不影響回覆</td>
+          </tr>
+          <tr>
+            <td>決賽現場</td>
+            <td>用<strong>現有</strong>的 <code>interests</code> ＋ SRS 到期詞講故事。「這孩子上禮拜 banana 沒說對，今天菜單第一個就是 banana」<strong>現在就成立</strong>（<code>docs/GAMES.md:50</code>）</td>
+            <td>零，已驗證</td>
+          </tr>
+          <tr>
+            <td>決賽後</td>
+            <td>接上 retrieve → 側寫快取 → <code>directive_block</code>，並跑合規率驗收</td>
+            <td>中，需重跑驗收</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <p style="margin:0">
+        <strong>那個「可選」值得做。</strong>到決賽當天你就有真實累積的 events，
+        評審問「這套怎麼長期記住孩子」時，你能打開 AWS console 給他看真的資料，
+        而不是講一個計畫。而且因為只寫不讀，<strong>它不可能弄壞任何已驗證的東西</strong>。
+      </p>
+    </div>
+  </section>
+
+  <p class="foot">
+    查證來源：<code>aws bedrock-agentcore-control get-memory</code>（ap-southeast-1，實際回應）、
+    AWS AgentCore 內建策略官方文件、<code>github.com/langchain-ai/openwiki</code>、
+    專案內 <code>server/agentcore.py</code>、<code>server/profile.py</code>、
+    <code>docs/AGENTCORE_ARCHITECTURE.md</code>。
+  </p>
+
+</div>
