@@ -143,6 +143,13 @@ _LEADIN = (
 )
 
 
+# 帶讀標記後面不含任何英文字母 → 那句一定不是帶讀（帶讀對象必須是英文句）。
+# 非貪婪吃到句末標點或字串結尾，所以不會把後面正確的那句一起吃掉。
+_CHINESE_READALONG_RE = re.compile(
+    rf"{READALONG_MARKER}[^a-zA-Z\n]*?(?:[。！？!?]|$)"
+)
+
+
 def _normalise_readalong(s: str) -> str:
     """比對用正規化：去 `<>` 包裹、中文句號視同英文句點、大小寫與空白統一。"""
     s = s.replace("<", " ").replace(">", " ").replace("。", ".")
@@ -165,6 +172,11 @@ def ensure_readalong(text, target) -> str:
     tgt = str(target or "").strip()
     if not tgt:
         return s
+
+    # 先清掉「要孩子跟讀中文」的帶讀句。帶讀對象必須是英文，所以標記後面不含任何
+    # 英文字母的那一句一定是錯的（2026-07-29 真機：「跟我說一遍：我看到一隻兔子。」）。
+    # 放在合規判定之前，這樣「中文帶讀 + 正確英文帶讀」並存時也清得掉。
+    s = _CHINESE_READALONG_RE.sub("", s).strip()
 
     # 已是合規格式 → 一字不動
     norm_target = _normalise_readalong(tgt)

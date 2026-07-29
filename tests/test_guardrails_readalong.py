@@ -83,3 +83,36 @@ def test_result_always_contains_exactly_one_readalong_marker():
     ):
         out = guardrails.ensure_readalong(text, TARGET)
         assert out.count("跟我說一遍：") == 1, text
+
+
+def test_chinese_only_readalong_clause_is_removed():
+    """真機實測：LLM 回「跟我說一遍：我看到一隻兔子。」——要孩子跟讀中文。
+
+    2026-07-29 裝置上的實際輸出：
+        太棒了！我聽見了！跟我說一遍：我看到一隻兔子。 跟我說一遍：I see a rabbit.
+
+    帶讀的對象**必須是英文句**，所以帶讀標記後面不含任何英文字母時，那一句一定
+    是錯的，可以安全刪掉。這條規則很窄，不會誤刪正常內容。
+    """
+    text = "太棒了！我聽見了！跟我說一遍：我看到一隻兔子。"
+    out = guardrails.ensure_readalong(text, "I see a rabbit.")
+
+    assert out.count("跟我說一遍：") == 1
+    assert "我看到一隻兔子" not in out
+    assert "跟我說一遍：I see a rabbit." in out
+    assert "太棒了！我聽見了！" in out, "稱讚語不得被一起刪掉"
+
+
+def test_chinese_clause_removed_even_when_a_correct_one_exists():
+    """LLM 同時吐出中文帶讀與正確英文帶讀 → 只留英文那句。"""
+    text = "跟我說一遍：我看到一隻兔子。跟我說一遍：I see a rabbit."
+    out = guardrails.ensure_readalong(text, "I see a rabbit.")
+
+    assert out.count("跟我說一遍：") == 1
+    assert "我看到一隻兔子" not in out
+
+
+def test_a_normal_compliant_reply_is_still_untouched():
+    """加了新規則之後，正常回覆仍必須一字不動（回歸保護）。"""
+    text = "很棒！跟我說一遍：I like apples."
+    assert guardrails.ensure_readalong(text, "I like apples.") == text
