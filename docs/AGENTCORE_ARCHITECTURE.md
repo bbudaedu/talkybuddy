@@ -221,8 +221,15 @@ flowchart LR
 4. Memory / Identity / Policy / Evaluations 屬於加值，時間不夠可全部不做。
 
 **現實提醒**：階段 1 之後的每一步都需要 AWS 帳號驗證通過。
-截至 2026-07-26 仍是 `Your account is currently being verified`，因此
-**目前一階段都動不了**。
+~~截至 2026-07-26 仍是 `Your account is currently being verified`，因此
+**目前一階段都動不了**。~~
+
+> **2026-07-29 更新：帳號已通過驗證，這個阻擋解除了。**
+> `aws sts get-caller-identity` 正常回應（帳號 `641079926753`），
+> `ap-southeast-1` 有 25 個 Bedrock 模型可用，
+> AgentCore Memory 資源 `TalkyBuddyStudentMemory-sO0KeDB7kP` 狀態為 **ACTIVE**
+> （已配 `SUMMARIZATION` + `SEMANTIC` 兩個策略）。
+> 上面那句「一階段都動不了」若不劃掉，會讓人以為整條 AgentCore 路徑是封死的。
 
 ---
 
