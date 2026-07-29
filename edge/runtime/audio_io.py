@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+import struct
 import subprocess
 import tempfile
 import time
@@ -151,11 +152,77 @@ def play_wav_bytes(wav: bytes) -> None:
         _log.exception("aplay 播放失敗")
 
 
-def wait_for_trigger() -> None:
-    """觸發等待點佔位（本 phase 為 Enter 鍵；VAD 觸發非驗收必要，見 D-04）。
+# ---------------------------------------------------------------------------
+# 實體按鍵觸發（按一下玩偶就開始講話）
+#
+# 裝置沒有螢幕也沒有鍵盤，原本的 `input("按 Enter…")` 需要有人 SSH 進去按，
+# 不是能上台的觸發方式；原生喚醒詞真人辨識率已判 NO-GO。
+#
+# 2026-07-29 真機探測（edge/runtime/key_probe.py）：板上 `mtk-pmic-keys` 註冊為
+# /dev/input/event1，按「自訂鍵」三次都收到 **KEY_HOME(102)**。音量鍵無事件。
+# 電源鍵(116)刻意不用——可能觸發關機。
+# ---------------------------------------------------------------------------
 
-    非互動環境（無 stdin，如背景行程）以短暫 sleep 代替，避免掛死。
+_KEY_DEVICE: str = os.environ.get("TALKYBUDDY_EDGE_KEY_DEVICE", "/dev/input/event1")
+_KEY_CODE: int = int(os.environ.get("TALKYBUDDY_EDGE_KEY_CODE", "102"))  # KEY_HOME
+
+# struct input_event（64-bit）：sec, usec, type, code, value
+_EV_FMT = "llHHi"
+_EV_SIZE = struct.calcsize(_EV_FMT)
+_EV_KEY = 0x01
+
+
+def _decode_key_press(data, code: int) -> bool:
+    """這批 evdev bytes 裡有沒有 `code` 的「按下」事件（value==1）。
+
+    純函式，因為真機的阻塞式讀取沒辦法在 CI 測，但**解析錯了一樣會讓按鍵失效**。
+    只認 value==1：放開(0)會讓一次按鍵觸發兩次，長按重複(2)會連續開錄音。
+    半筆資料回 False 不拋——炸了整條對話迴圈就停了。
     """
+    if not data:
+        return False
+    for off in range(0, len(data) - _EV_SIZE + 1, _EV_SIZE):
+        try:
+            _s, _us, etype, ecode, value = struct.unpack(
+                _EV_FMT, data[off:off + _EV_SIZE]
+            )
+        except struct.error:
+            return False
+        if etype == _EV_KEY and ecode == code and value == 1:
+            return True
+    return False
+
+
+def _key_device_usable() -> bool:
+    """實體按鍵讀得到嗎（開發機沒有，要能安全退回）。"""
+    return os.path.exists(_KEY_DEVICE) and os.access(_KEY_DEVICE, os.R_OK)
+
+
+def _block_until_key_press() -> bool:
+    """擋住直到按下觸發鍵；讀取失敗回 False 讓呼叫端退回其他觸發方式。"""
+    try:
+        with open(_KEY_DEVICE, "rb", buffering=0) as f:
+            while True:
+                data = f.read(_EV_SIZE)
+                if not data:
+                    return False
+                if _decode_key_press(data, _KEY_CODE):
+                    return True
+    except Exception:
+        _log.warning("讀實體按鍵失敗，退回 Enter 觸發", exc_info=True)
+        return False
+
+
+def wait_for_trigger() -> None:
+    """擋住直到使用者要求開始錄音。
+
+    優先用**實體按鍵**（裝置上唯一可行的方式）；讀不到時退回 Enter
+    （開發機互動測試用）；連 stdin 都沒有就短暫 sleep，避免背景行程掛死。
+    """
+    if _key_device_usable():
+        print("按一下按鍵開始錄音...", flush=True)
+        if _block_until_key_press():
+            return
     try:
         input("按 Enter 開始錄音...")
     except EOFError:
