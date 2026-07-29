@@ -227,6 +227,14 @@ class VoicePipeline:
         # 讓學生連續卡關時自動降階成簡化提示，而不是一直重複同一句完整目標句。
         # 命中一次就歸零；見 _process_text 尾端的更新邏輯。
         self._stuck_streak: int = 0
+        # 已經開口邀請、還在等孩子回答的那個遊戲（None = 沒有待回覆的邀請）。
+        # 刻意是**實例層**而非 `_active_game` 那樣的裝置級單例：邀請與回答一定
+        # 發生在同一條連線的相鄰兩輪（裝置端 local_client 整場只開一條 ws，
+        # 瀏覽器重整則等於換一場對話，邀請跟著失效才是對的）。
+        self._pending_invite: str | None = None
+        # 這一段卡關期間是否已經邀請過（命中一次詞庫就歸零，見 _process_text）。
+        # 用它擋重複邀請，而不是把 _stuck_streak 歸零——後者是降階提示的依據。
+        self._invite_offered: bool = False
         # 今日 companion_directive 的簡化提示（見 diagnose.py 的 fallback_prompt），
         # 跟 _directive 同一批背景刷新；None 表示還沒有可用的診斷資料。
         self._fallback_prompt: str | None = None
@@ -279,6 +287,88 @@ class VoicePipeline:
         # 一局結束就把狀態清掉，否則下一句話會撞到「這關已完成」
         self.game = None if turn.state.done else turn.state
         return turn
+
+    async def _speak_rule_reply(self, result: TurnResult, emit, t0: float,
+                                text: str) -> TurnResult:
+        """把一句**純規則**的回覆講出去並收掉這一輪。
+
+        ``llm`` 記 0：這條路徑沒有推論，斷網與連網一模一樣。刻意不寫 DB——
+        「我要玩火眼金睛」是指令不是學習內容，混進互動紀錄會稀釋老師看到的
+        發音分數與診斷樣本。
+        """
+        result.reply_text = text
+        result.latency_ms["llm"] = 0
+        await self._synth_tts(result, emit, scaffold.split_tts_segments(text))
+        result.latency_ms["round_total"] = int((time.monotonic() - t0) * 1000)
+        await self._emit_state(emit, result, "idle")
+        return result
+
+    async def _handle_game_intent(self, result: TurnResult, emit,
+                                  t0: float) -> TurnResult | None:
+        """這句話是不是在開局／結束／回答邀請；不是的話回 None 讓流程繼續。"""
+        from server import game_intent
+
+        text = result.asr_text
+
+        # 遊戲進行中只認「結束」——其餘交給 games.judge，否則遊戲裡講到
+        # 「我要玩」會把同一局重開。
+        if self.game is not None:
+            if game_intent.detect_stop(text):
+                self.end_game()
+                self._pending_invite = None
+                return await self._speak_rule_reply(
+                    result, emit, t0, "好呀，我們不玩了。你想聊什麼都可以喔！"
+                )
+            return None
+
+        # 對主動邀請的回應（B）：答應就開局；拒絕或聽不出來都清掉，不糾纏。
+        if self._pending_invite is not None:
+            kind, self._pending_invite = self._pending_invite, None
+            answer = game_intent.detect_yes_no(text)
+            if answer is True:
+                return await self._speak_rule_reply(
+                    result, emit, t0, self._start_game_line(kind, "太好了！")
+                )
+            if answer is False:
+                return await self._speak_rule_reply(
+                    result, emit, t0, "好，那我們繼續聊天！"
+                )
+            # 聽不出來 → 當作沒回應，這句話照常走一般流程
+
+        kind = game_intent.detect_start(text)
+        if kind is None:
+            return None
+        return await self._speak_rule_reply(
+            result, emit, t0, self._start_game_line(kind, "好呀！")
+        )
+
+    def _maybe_invite_game(self) -> str | None:
+        """連續卡關時開口邀請玩遊戲；不該邀請就回 None。
+
+        固定推**火眼金睛**：它門檻最低（看到什麼就說什麼），是卡關情境下唯一
+        合理的選擇——另外兩個遊戲要問句或要照流程點餐，對正在挫折的孩子更難。
+        想玩那兩個可以直接用講的叫出來（見 `game_intent.detect_start`）。
+
+        擋重複用獨立的 `_invite_offered`，**刻意不動 `_stuck_streak`**：那個計數
+        器是既有降階提示（`stuck_hint`）的依據，把它歸零會讓孩子拿不到簡化提示
+        ——用邀請功能吃掉既有的教學行為，代價遠大於收益。
+        """
+        from server import games
+
+        if self.game is not None or self._pending_invite is not None:
+            return None
+        if self._stuck_streak < STUCK_STREAK_THRESHOLD:
+            return None
+        if self._invite_offered:
+            return None
+        self._pending_invite = games.GAMES[0]["kind"]
+        self._invite_offered = True
+        return f"要不要玩{games.GAMES[0]['zh']}？"
+
+    def _start_game_line(self, kind: str, prefix: str) -> str:
+        """開一局並組出開場白。孩子看不到螢幕，規則說明只能用聽的。"""
+        line = self.start_game(kind)
+        return " ".join(p for p in (prefix, line.zh, line.en) if p)
 
     # ---------- 對外入口 ----------
 
@@ -378,6 +468,13 @@ class VoicePipeline:
         await self._emit_state(emit, result, "thinking")
         scaffold.safety_check(result.asr_text)  # 禁詞檢查（respond 內部亦會處理安撫話術）
 
+        # 用講的開局／結束。**裝置沒有螢幕**，這是現場唯一叫得出遊戲的方式
+        # （`edge/runtime/local_client.py` 走的就是這條 /ws/talk）。
+        # 放在遊戲判定之前：遊戲進行中喊「不玩了」也要出得來。
+        handled = await self._handle_game_intent(result, emit, t0)
+        if handled is not None:
+            return handled
+
         # 遊戲進行中：判定由 games.py 接手，**完全不走雲端**。
         # 這條路徑刻意短——判定是純函式，斷網與連網一模一樣，
         # 而且不吃 1.5 秒的雲端預算。
@@ -417,6 +514,9 @@ class VoicePipeline:
         # 所以就算換成 LLM 生成的文字，簡化後的目標句一樣會被帶到（見 llm.py
         # generate() 的「目標英文句一定出現在回覆中」護欄）。
         self._stuck_streak = 0 if sc.matched else self._stuck_streak + 1
+        if sc.matched:
+            # 孩子重新跟上了 → 下一次卡關可以再邀請一次
+            self._invite_offered = False
         result.reply_text = sc.reply_text
         result.scores = dict(sc.scores)
         segments = list(sc.tts_segments)
@@ -451,6 +551,14 @@ class VoicePipeline:
         result.latency_ms["llm"] = int((time.monotonic() - t_llm) * 1000)
         if llm_text:
             result.reply_text = llm_text.strip()
+            segments = scaffold.split_tts_segments(result.reply_text)
+
+        # 連續卡關 → 主動邀請玩遊戲（接在回覆後面，不取代它）。
+        # 必須在 _synth_tts 之前併進 reply_text：孩子只聽得到聲音，
+        # 沒進 TTS 的邀請等於沒發生。
+        invite = self._maybe_invite_game()
+        if invite:
+            result.reply_text = f"{result.reply_text} {invite}".strip()
             segments = scaffold.split_tts_segments(result.reply_text)
 
         # 階段：TTS
