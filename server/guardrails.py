@@ -99,6 +99,40 @@ def _safe_en_words() -> frozenset:
     return frozenset(words)
 
 
+@lru_cache(maxsize=1)
+def _converter():
+    """OpenCC s2twp 轉換器（懶載入、單例）；不可用回 None，不 throw。"""
+    try:
+        import opencc
+        from server.config import OPENCC_CONFIG
+        return opencc.OpenCC(OPENCC_CONFIG)
+    except Exception:
+        return None
+
+
+def to_traditional(text) -> str:
+    """把 LLM 輸出轉成台灣繁體（OpenCC s2twp）；失敗回原文。
+
+    2026-07-29 真機實測，edge LLM 回過「看到一只兔子」——簡體用字直接進字幕。
+    繁化原本**只套在 ASR 路徑**（`asr_sensevoice.py`），LLM 輸出沒有經過。
+    發音沒差（同音），但字幕會露簡體字。
+
+    降級比照 `asr_sensevoice.py`：opencc 缺失或轉換失敗 → 回原文。
+    這條路徑在回覆送出前，**繁化失敗只是字醜，讓對話中斷才是真的壞掉**。
+    英文不受影響（OpenCC 只動漢字），所以帶讀的目標句安全。
+    """
+    s = str(text or "")
+    if not s.strip():
+        return s
+    cc = _converter()
+    if cc is None:
+        return s
+    try:
+        return cc.convert(s)
+    except Exception:
+        return s
+
+
 READALONG_MARKER = "跟我說一遍："
 
 # 帶讀引導語的其他說法（LLM 不照格式時常見）。限長 12 字且不跨句，

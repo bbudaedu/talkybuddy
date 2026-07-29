@@ -157,3 +157,19 @@ def test_generate_does_not_duplicate_readalong_on_chinese_full_stop(
     out = CloudLLM().generate("hi", _Sc())
 
     assert out.count("I like apples") == 1
+
+
+def test_generate_converts_simplified_output_to_traditional(_clean_env, monkeypatch):
+    """雲端路徑同 edge：簡體字不得進字幕。"""
+    _clean_env.setenv("ANTHROPIC_API_KEY", "sk-x")
+
+    def _fake_urlopen(req, timeout=None):
+        return _fake_resp("很好！看到一只兔子。跟我說一遍：I like apples.")
+
+    monkeypatch.setattr(cloud_llm_mod.urllib.request, "urlopen", _fake_urlopen)
+
+    out = CloudLLM().generate("hi", _Sc())
+
+    assert "一隻兔子" in out
+    assert "一只" not in out
+    assert "I like apples." in out

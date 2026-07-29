@@ -139,6 +139,9 @@ class EdgeLLM:
             if not guardrails.passes_guardrail(text):
                 return None
 
+            # 先繁化再跑帶讀護欄：這樣護欄補上的目標英文句是逐字的，
+            # 不會被繁化流程碰到（OpenCC 只動漢字，但順序寫死比較不會被改壞）。
+            text = guardrails.to_traditional(text)
             # 確保回覆恰好含一句合規帶讀（漏句要補、格式跑掉要修、不得重複）
             return guardrails.ensure_readalong(text, target)
         except Exception:

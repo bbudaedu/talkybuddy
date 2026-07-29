@@ -143,3 +143,17 @@ def test_generate_does_not_duplicate_readalong_on_chinese_full_stop(monkeypatch)
     out = edge.generate("我喜歡蘋果", _sc())
 
     assert out.count("I like apples") == 1
+
+
+def test_generate_converts_simplified_output_to_traditional(monkeypatch):
+    """edge LLM 偶爾吐簡體字（真機實測「看到一只兔子」）→ 送出前要繁化。"""
+    fake_call = _fake_call_factory("很好！看到一只兔子。跟我說一遍：I like apples.")
+    edge = EdgeLLM()
+    monkeypatch.setattr(edge, "_call_llama_server", fake_call)
+    monkeypatch.setattr(scaffold_mod, "safety_check", lambda _t: False)
+
+    out = edge.generate("我看到兔子", _sc())
+
+    assert "一隻兔子" in out
+    assert "一只" not in out
+    assert "I like apples." in out, "英文目標句不得被動到"

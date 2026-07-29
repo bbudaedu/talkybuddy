@@ -123,6 +123,8 @@ class CloudLLM:
             # 輸出後置護欄（不安全→降級回 edge/scaffold）
             if not guardrails.passes_guardrail(text):
                 return None
+            # 先繁化（與 edge 同序）再跑帶讀護欄
+            text = guardrails.to_traditional(text)
             # 帶讀恰好一句：漏句要補、格式跑掉要修、不得重複（與 edge 共用）
             return guardrails.ensure_readalong(text, target)
         except Exception:
