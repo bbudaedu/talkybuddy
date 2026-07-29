@@ -21,6 +21,12 @@
 | `probe_latency.py` | 同一條連線連續 4 輪的延遲，判斷是否為冷啟動成本 | 否 |
 | `probe_netcut.py` | 斷網彩排 API 版：型態 A × 2 + 型態 B × 1 | **是** |
 | `probe_netcut_b.py` | 型態 B 真實版（回合中切斷隧道製造雲端無回應）—— **尚未成功執行過** | **是** |
+| `probe_voice_game.py` | 語音開局（A）＋卡關主動邀請（B）的 7 項驗收 —— **尚未執行過** | 否 |
+
+> ⚠️ `probe_voice_game.py` 送的是 `text_input`，**繞過 ASR**。全 PASS 只代表邏輯層
+> 就緒，不代表對著玩偶講得動——「火眼金睛」是成語，SenseVoice 很可能出同音誤差。
+> 真機還要真的開口講一次，再用 `dump_recent_turns` 讀逐字稿確認。
+> 詳見該檔 docstring；這與「用 TTS 合成音驗 KWS 通過、真人失敗」是同一類陷阱。
 
 ## 反向隧道（雲端路徑的前置）
 
