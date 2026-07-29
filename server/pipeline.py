@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass, field
 
 from server import config, guardrails, lesson, scaffold, store
@@ -62,6 +63,13 @@ class TurnResult:
     latency_ms: dict = field(default_factory=dict)
     fallback: bool = False
     seq: int = 0
+    # 以下供互動紀錄的 metadata 用（長期記憶的原料，見 _persist_turn）。
+    # 不進 CONTRACTS.md 的 interaction dict 必要欄位，也不上雲
+    # （sync_client.project_for_upload 是白名單）。
+    reply_source: str = ""          # cloud / edge / scaffold / game / fallback
+    matched: bool | None = None     # 這輪孩子有沒有命中詞庫
+    game_kind: str | None = None
+    game_turns: int | None = None
 
 
 def _now_iso_taipei() -> str:
@@ -231,6 +239,9 @@ class VoicePipeline:
         # 刻意是**實例層**而非 `_active_game` 那樣的裝置級單例：邀請與回答一定
         # 發生在同一條連線的相鄰兩輪（裝置端 local_client 整場只開一條 ws，
         # 瀏覽器重整則等於換一場對話，邀請跟著失效才是對的）。
+        # 一場對話的識別碼（EPISODIC 記憶的「情節」邊界）。一條連線 = 一場對話：
+        # 裝置端 local_client 整場只開一條 ws，瀏覽器重整就是換一場。
+        self._session_id: str = uuid.uuid4().hex[:16]
         self._pending_invite: str | None = None
         # 這一段卡關期間是否已經邀請過（命中一次詞庫就歸零，見 _process_text）。
         # 用它擋重複邀請，而不是把 _stuck_streak 歸零——後者是降階提示的依據。
@@ -440,6 +451,25 @@ class VoicePipeline:
                     "scores": result.scores,
                     "latency_ms": dict(result.latency_ms),
                     "synced": self.network_mode == "cloud",
+                    # --- 長期記憶的原料（本地限定，白名單投影不會上雲）---
+                    # network_mode 說的是「這輪打算試雲端嗎」，reply_source 說的是
+                    # 「誰真的生出這句話」。雲端逾時降級 edge 時兩者不一致，
+                    # 而那正是最該記下來的一輪。
+                    "reply_source": result.reply_source,
+                    "matched": result.matched,
+                    "stuck_streak": self._stuck_streak,
+                    "session_id": self._session_id,
+                    "game": (
+                        {"kind": result.game_kind, "turns": result.game_turns}
+                        if result.game_kind
+                        else None
+                    ),
+                    "lesson": (
+                        {"topic": self._lesson_topic,
+                         "target_sentence": self._lesson_target}
+                        if self._lesson_topic or self._lesson_target
+                        else None
+                    ),
                 }
             )
         except Exception:
@@ -489,6 +519,9 @@ class VoicePipeline:
                 result.reply_text = " ".join(p for p in pieces if p)
                 result.scores = scaffold.compute_scores(result.asr_text)
                 result.latency_ms["llm"] = 0
+                result.reply_source = "game"
+                result.game_kind = turn.state.game
+                result.game_turns = turn.state.turns
                 segments = scaffold.split_tts_segments(result.reply_text)
                 await self._synth_tts(result, emit, segments)
                 result.latency_ms["round_total"] = int((time.monotonic() - t0) * 1000)
@@ -519,6 +552,8 @@ class VoicePipeline:
             self._invite_offered = False
         result.reply_text = sc.reply_text
         result.scores = dict(sc.scores)
+        result.matched = bool(sc.matched)
+        result.reply_source = "scaffold"  # LLM 接手成功時於下方覆寫
         segments = list(sc.tts_segments)
 
         # LLM 加值：cloud → edge → scaffold 降級鏈；任一層逾時/例外/None 續試下一層。
@@ -547,6 +582,10 @@ class VoicePipeline:
                 candidate = None
             if candidate and isinstance(candidate, str) and candidate.strip():
                 llm_text = candidate
+                # 記下真正生出這句話的引擎（不是「打算用哪個」）
+                result.reply_source = (
+                    "cloud" if engine is self.cloud_llm else "edge"
+                )
                 break
         result.latency_ms["llm"] = int((time.monotonic() - t_llm) * 1000)
         if llm_text:

@@ -116,8 +116,26 @@ interaction dict（API/DB 一致）：
  "student_text":"...","asr_confidence":0.92,"ai_response_text":"...",
  "scores":{"fluency":55,"vocabulary":60,"grammar":50},
  "latency_ms":{"asr":320,"llm":900,"tts_first":280,"round_total":1450},
- "synced":false}
+ "synced":false,
+ "reply_source":"edge","matched":true,"stuck_streak":0,
+ "session_id":"a1b2c3d4e5f6a7b8",
+ "game":{"kind":"i_spy","turns":2},
+ "lesson":{"topic":"animal","target_sentence":"I see a dog."}}
 ```
+後六個欄位是**長期記憶的原料**（2026-07-29 新增），本地限定：
+
+| 欄位 | 意義 | 為什麼需要 |
+|---|---|---|
+| `reply_source` | `cloud`／`edge`／`scaffold`／`game` | **誰真的生出這句話**。`network_mode` 只說「這輪打算試雲端嗎」，雲端逾時降級 edge 時兩者不一致，而那正是最該記下來的一輪 |
+| `matched` | 這輪孩子有沒有命中詞庫 | 「什麼方式對這孩子有效」的核心訊號 |
+| `stuck_streak` | 連續卡關輪數 | 偶爾答不出來 vs 已經卡很久，兩者意義完全不同 |
+| `session_id` | 一條連線＝一場對話 | EPISODIC 記憶的「情節」邊界 |
+| `game` | 哪個遊戲、第幾輪（自由對話為 `null`） | 事後分得出這句是在玩還是在聊 |
+| `lesson` | 當日課程主題與目標句 | 同一句回覆在不同課程脈絡下意義不同 |
+
+> **不上雲。** `sync_client.project_for_upload()` 是白名單投影
+> （「任何未來新增的欄位預設就不會出現在輸出裡」），
+> `tests/test_interaction_metadata.py` 最後一條把這個性質釘住。
 diagnosis dict：
 ```json
 {"date":"2026-07-03",
