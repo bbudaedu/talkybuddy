@@ -96,3 +96,29 @@ def test_mentioning_a_game_name_without_intent_does_not_start_it(client):
         _say(ws, "點餐時間到了")
 
     assert _state(client)["game"] is None
+
+
+def test_asking_for_a_game_without_naming_one_starts_one(client):
+    """「我要玩小遊戲」→ 直接開一局，不要反問。
+
+    真機實測「火眼金睛」會被 ASR 聽錯（→「佛火眼鏡」），但「我要玩」完全正確。
+    所以主要觸發語是「小遊戲」。**刻意不反問「你想玩哪一個」**——反問等於再賭
+    一次 ASR，而孩子看不到螢幕、只能用聽的記選項。直接開最低門檻的那個最穩。
+    """
+    with _ws(client) as ws:
+        msg = _say(ws, "我要玩小遊戲")
+
+    assert _state(client)["game"] == "i_spy", "沒開起來"
+    assert msg["latency_ms"]["llm"] == 0
+
+
+def test_the_opening_line_names_the_other_games(client):
+    """開場白要報出另外兩個遊戲的名字——這是孩子唯一能發現它們的管道。
+
+    沒有螢幕、沒有選單，不講出來就等於不存在。
+    """
+    with _ws(client) as ws:
+        msg = _say(ws, "我要玩小遊戲")
+
+    for other in ("猜猜我是誰", "點餐時間"):
+        assert other in msg["text"], f"開場白沒提到「{other}」：{msg['text']!r}"

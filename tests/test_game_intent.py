@@ -105,3 +105,36 @@ def test_detect_yes_no_ignores_sentences_that_merely_contain_a_yes_word(text):
 def test_no_beats_yes_when_both_appear():
     """「不要」含「要」——否定必須優先，否則孩子說不要卻被開局。"""
     assert game_intent.detect_yes_no("不要") is False
+
+
+# ---------------------------------------------------------------------------
+# 沒指定玩哪一個：「我要玩小遊戲」
+#
+# 2026-07-29 真機實測：「我要玩火眼金睛」被 SenseVoice 聽成「我要玩佛火眼鏡」
+# ——**意圖詞「我要玩」完全正確，壞的是四字成語遊戲名**。
+# 成語用字冷僻，對 ASR 難、對國小孩子講也難，所以主要觸發語改成「小遊戲」。
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    "我要玩小遊戲",
+    "我想玩小遊戲",
+    "我要玩遊戲",
+    "來玩小遊戲",
+    "我們來玩遊戲好不好",
+])
+def test_asking_for_a_game_without_naming_one(text):
+    assert game_intent.detect_start(text) == game_intent.ANY_GAME
+
+
+def test_naming_a_game_still_wins_over_the_generic_phrase():
+    """講得出名字就照名字開，不要被「遊戲」兩個字蓋過去。"""
+    assert game_intent.detect_start("我要玩點餐時間這個遊戲") == "restaurant"
+
+
+@pytest.mark.parametrize("text", [
+    "遊戲時間到了",      # 沒有意圖詞
+    "我不想玩遊戲",      # 否定
+    "我要玩",            # 沒說玩什麼
+])
+def test_generic_phrase_still_needs_a_real_intent(text):
+    assert game_intent.detect_start(text) is None

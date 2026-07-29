@@ -5,21 +5,30 @@
 
 判讀：每一項自己印 PASS/FAIL，最後一行印總結。全 PASS 才算邏輯就緒。
 
-⚠️ **這支探針驗不到 ASR，而 ASR 是這個功能的第一風險。**
-它送的是 `text_input`（文字直接進 pipeline），**完全繞過語音辨識**。
-真正的問題是裝置的 SenseVoice 聽不聽得出「火眼金睛」這個成語——同音誤差很可能。
+⚠️ **這支探針送的是 `text_input`，繞過 ASR。** 全 PASS 只代表邏輯層就緒。
 
-這正是 `NATIVE_KWS_PLAN.md` 那個教訓的形狀：用自家 TTS 合成音驗 KWS 通過了、
-真人卻失敗，因為量測條件比真實情境仁慈。**text_input 全 PASS 不等於對著玩偶講得動。**
+### ASR 那一段（2026-07-29 已用真人聲音驗過，結論很重要）
 
-所以真機驗收要做兩段：
+| 講的 | SenseVoice 聽成 | |
+|---|---|---|
+| 我要玩**火眼金睛** | 「我要玩**佛火眼鏡**」 | ✗ |
+| 我要玩**小遊戲** | 「我要玩小遊戲。」 | ✓ |
 
-  1. 本探針（邏輯層）—— 確認開局／判定／邀請／誤觸防護都對
-  2. **對著裝置真的講一次**，然後讀逐字稿確認 ASR 聽到什麼：
-         ssh root@192.168.31.78 'cd /root/talkybuddy && \
-           ./.venv/bin/python -m edge.runtime.dump_recent_turns'
-     若 ASR 把「火眼金睛」聽成別的字，修法是在 `server/game_intent.py` 加別名，
-     **但要照逐字稿實際聽到的字加，不要憑想像加。**
+**意圖詞「我要玩」兩次都完全正確，壞的只有四字成語遊戲名。** 成語用字冷僻，
+對 ASR 難、對國小孩子講也難——所以主要觸發語改成「小遊戲」（`A0`），
+遊戲名降為進階用法（`A1`）。**現場請講「我要玩小遊戲」。**
+
+另一個實測數字：兩次的 `rms` 分別是 744 與 325，**差一倍多**。325 已經接近
+`mic_check.py` 的 300 門檻——**收音距離與音量會決定成敗**，現場要靠近講。
+
+重驗 ASR：
+
+    ssh -t root@192.168.31.78 'cd /root/talkybuddy && \
+      ./.venv/bin/python edge/runtime/mic_check.py 6 "我要玩小遊戲"'
+
+若哪天又聽錯，修法是照**逐字稿實際聽到的字**加別名到 `server/game_intent.py`，
+**不要憑想像加**——這是 `NATIVE_KWS_PLAN.md` 那個教訓的形狀：合成音自檢通過、
+真人卻失敗，因為量測條件比真實情境仁慈。
 """
 import asyncio, json, sys, urllib.request
 
@@ -68,7 +77,16 @@ async def main():
     tok = http("/api/login", {"email": "tutor@demo", "password": "demo1234"})["token"]
     http("/api/game", {"game": "none"}, tok)  # 乾淨起點
 
-    print("=== A1. 用講的開局 ===")
+    print("=== A0. 主要觸發語：「我要玩小遊戲」 ===")
+    async with connect(tok) as ws:
+        msg = await say(ws, "我要玩小遊戲")
+        print(f"    回: {msg.get('text')}")
+        check("「我要玩小遊戲」有開起來", http("/api/game", token=tok).get("game") == "i_spy")
+        check("開場白報出其他遊戲名", all(
+            n in (msg.get("text") or "") for n in ("猜猜我是誰", "點餐時間")))
+    http("/api/game", {"game": "none"}, tok)
+
+    print("=== A1. 進階：直接講遊戲名 ===")
     async with connect(tok) as ws:
         msg = await say(ws, "我要玩火眼金睛")
         print(f"    回: {msg.get('text')}")
@@ -120,8 +138,9 @@ async def main():
     if failed:
         print("FAIL：" + "、".join(failed))
     print()
-    print("⚠️ 全 PASS 只代表邏輯層就緒。ASR 沒被驗到——還要對著裝置真的講一次，")
-    print("   再用 dump_recent_turns 讀逐字稿確認「火眼金睛」有被聽對。")
+    print("註：本探針走 text_input、繞過 ASR。ASR 那段已於 2026-07-29 用真人聲音驗過")
+    print("   （「我要玩小遊戲」✓ 逐字正確；「我要玩火眼金睛」✗ 聽成「佛火眼鏡」）。")
+    print("   換過麥克風或環境後請重跑：edge/runtime/mic_check.py")
     sys.exit(1 if failed else 0)
 
 

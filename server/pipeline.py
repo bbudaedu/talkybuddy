@@ -377,9 +377,24 @@ class VoicePipeline:
         return f"要不要玩{games.GAMES[0]['zh']}？"
 
     def _start_game_line(self, kind: str, prefix: str) -> str:
-        """開一局並組出開場白。孩子看不到螢幕，規則說明只能用聽的。"""
+        """開一局並組出開場白。孩子看不到螢幕，規則說明只能用聽的。
+
+        `ANY_GAME`（孩子說「我要玩小遊戲」但沒指定）→ 開清單第一個，並在開場白
+        **報出另外兩個的名字**。刻意不反問「你想玩哪一個」：反問等於再賭一次
+        ASR，而真機實測遊戲名正是最容易聽錯的部分（「火眼金睛」→「佛火眼鏡」）。
+        直接開最低門檻的那個，把選項用講的告訴他——沒有螢幕就沒有選單，
+        不講出來等於不存在。
+        """
+        from server import game_intent, games
+
+        suffix = ""
+        if kind == game_intent.ANY_GAME:
+            kind = games.GAMES[0]["kind"]
+            others = "、".join(g["zh"] for g in games.GAMES[1:])
+            if others:
+                suffix = f"想玩別的就跟我說「{others}」喔！"
         line = self.start_game(kind)
-        return " ".join(p for p in (prefix, line.zh, line.en) if p)
+        return " ".join(p for p in (prefix, line.zh, line.en, suffix) if p)
 
     # ---------- 對外入口 ----------
 

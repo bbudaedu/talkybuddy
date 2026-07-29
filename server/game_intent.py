@@ -45,8 +45,22 @@ def _norm(text) -> str:
     return re.sub(r"\s+", "", str(text or "")).lower()
 
 
+# 「我要玩小遊戲」——沒指定玩哪一個。
+#
+# 2026-07-29 真機實測：「我要玩火眼金睛」被 SenseVoice 聽成「我要玩佛火眼鏡」。
+# **意圖詞「我要玩」完全正確，壞的只有四字成語遊戲名**——成語用字冷僻，
+# 對 ASR 難，對國小孩子講也難。所以主要觸發語是「小遊戲」，遊戲名變成進階用法。
+ANY_GAME = "__any__"
+
+_GENERIC_GAME_WORDS = ("小遊戲", "遊戲", "game")
+
+
 def detect_start(text) -> str | None:
-    """要開哪一局？意圖詞與遊戲名同時命中才回 kind，否則 None。"""
+    """要開哪一局？
+
+    回傳 game kind；講不出名字但明確想玩 → `ANY_GAME`（由呼叫端挑一個開）；
+    都不是 → None。意圖詞是必要條件，光講名字或光講「遊戲」都不算。
+    """
     from server import games
 
     s = _norm(text)
@@ -54,10 +68,16 @@ def detect_start(text) -> str | None:
         return None
     if not any(w in s for w in _START_INTENT):
         return None
+    # 「我不想玩遊戲」意圖詞也會命中，先讓否定把它擋掉
+    if detect_stop(text):
+        return None
+    # 講得出名字就照名字開，不被「遊戲」兩個字蓋過去
     for g in games.GAMES:
         for name in (g.get("zh"), g.get("en"), g.get("kind")):
             if name and _norm(name) in s:
                 return g["kind"]
+    if any(w in s for w in _GENERIC_GAME_WORDS):
+        return ANY_GAME
     return None
 
 
