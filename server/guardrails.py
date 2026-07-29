@@ -99,6 +99,61 @@ def _safe_en_words() -> frozenset:
     return frozenset(words)
 
 
+READALONG_MARKER = "跟我說一遍："
+
+# 帶讀引導語的其他說法（LLM 不照格式時常見）。限長 12 字且不跨句，
+# 避免把前面的稱讚語一起吃掉。
+_LEADIN = (
+    r"(?:[^。！？!?\n]{0,12}?"
+    r"(?:說一遍|唸一遍|跟我唸|說說看|說看看|repeat after me)\s*[：:]?\s*)?"
+)
+
+
+def _normalise_readalong(s: str) -> str:
+    """比對用正規化：去 `<>` 包裹、中文句號視同英文句點、大小寫與空白統一。"""
+    s = s.replace("<", " ").replace(">", " ").replace("。", ".")
+    return re.sub(r"\s+", " ", s.lower()).strip()
+
+
+def ensure_readalong(text, target) -> str:
+    """確保回覆恰好含一句合規的「跟我說一遍：<目標英文句>」帶讀。
+
+    取代原本 edge/雲端各寫一份的 ``if target not in text`` 子字串比對，該寫法
+    實測漏掉兩種情況（`edge/PR7_MERGE_VALIDATION_2026-07-29.md` §三）：
+    ``<>`` 包裹時比對為真而不補正（格式跑掉沒人管），中文句號時比對為假而
+    重複補一次（同一句被唸兩遍）。改為**正規化後檢查帶讀格式**。
+
+    誠實限制：若 LLM 帶讀了「別的句子」（非本輪 target），這裡只保證正確的
+    target 一定被帶讀，不會去刪那句——刪掉看不懂的內容比多一句更危險。
+    那屬於教學內容選取問題（PR #7 的 lesson_target_sentence）。
+    """
+    s = str(text or "")
+    tgt = str(target or "").strip()
+    if not tgt:
+        return s
+
+    # 已是合規格式 → 一字不動
+    norm_target = _normalise_readalong(tgt)
+    for seg in _normalise_readalong(s).split(READALONG_MARKER)[1:]:
+        if seg.strip().startswith(norm_target):
+            return s
+
+    # 否則：清掉格式跑掉的那句（連同它的引導語），再補一句合規的
+    core = tgt.rstrip(".!?。！？").strip()
+    tokens = [re.escape(t) for t in core.split() if t]
+    if tokens:
+        pat = re.compile(
+            _LEADIN
+            + r"[<\[（(]?\s*"
+            + r"\s+".join(tokens)
+            + r"\s*[.!?。！？]*\s*[>\]）)]?",
+            re.IGNORECASE,
+        )
+        s = pat.sub("", s)
+    s = s.strip()
+    return f"{s} {READALONG_MARKER}{tgt}".strip()
+
+
 def deidentify(text) -> str:
     """遮罩明顯個資（人名/電話/住址），保留詞庫學習詞。純字串處理、不炸。
 

@@ -125,3 +125,35 @@ def test_generate_urlopen_raises_returns_none(_clean_env, monkeypatch):
 
     monkeypatch.setattr(cloud_llm_mod.urllib.request, "urlopen", _boom)
     assert CloudLLM().generate("hi", _Sc()) is None
+
+
+def test_generate_normalises_angle_bracket_readalong(_clean_env, monkeypatch):
+    """帶讀護欄漏洞一（雲端路徑同 edge）：`<>` 包裹要被修成合規格式。"""
+    _clean_env.setenv("ANTHROPIC_API_KEY", "sk-x")
+
+    def _fake_urlopen(req, timeout=None):
+        return _fake_resp("很好！我們來嘗試說一遍：<I like apples.>")
+
+    monkeypatch.setattr(cloud_llm_mod.urllib.request, "urlopen", _fake_urlopen)
+
+    out = CloudLLM().generate("hi", _Sc())
+
+    assert "跟我說一遍：I like apples." in out
+    assert out.count("I like apples") == 1
+    assert "<" not in out
+
+
+def test_generate_does_not_duplicate_readalong_on_chinese_full_stop(
+    _clean_env, monkeypatch
+):
+    """帶讀護欄漏洞二（雲端路徑同 edge）：中文句號不得造成重複帶讀。"""
+    _clean_env.setenv("ANTHROPIC_API_KEY", "sk-x")
+
+    def _fake_urlopen(req, timeout=None):
+        return _fake_resp("很棒！跟我說一遍：I like apples。")
+
+    monkeypatch.setattr(cloud_llm_mod.urllib.request, "urlopen", _fake_urlopen)
+
+    out = CloudLLM().generate("hi", _Sc())
+
+    assert out.count("I like apples") == 1

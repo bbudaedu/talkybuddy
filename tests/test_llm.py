@@ -117,3 +117,29 @@ def test_generate_returns_none_when_call_llama_server_raises(monkeypatch):
     out = edge.generate("我喜歡蘋果", _sc())
 
     assert out is None
+
+
+def test_generate_normalises_angle_bracket_readalong(monkeypatch):
+    """帶讀護欄漏洞一：`<>` 包裹的目標句要被修成合規格式，且不重複。"""
+    fake_call = _fake_call_factory("很好！我們來嘗試說一遍：<I like apples.>")
+    edge = EdgeLLM()
+    monkeypatch.setattr(edge, "_call_llama_server", fake_call)
+    monkeypatch.setattr(scaffold_mod, "safety_check", lambda _t: False)
+
+    out = edge.generate("我喜歡蘋果", _sc())
+
+    assert "跟我說一遍：I like apples." in out
+    assert out.count("I like apples") == 1
+    assert "<" not in out
+
+
+def test_generate_does_not_duplicate_readalong_on_chinese_full_stop(monkeypatch):
+    """帶讀護欄漏洞二：中文句號不得害同一句被帶讀兩次。"""
+    fake_call = _fake_call_factory("很棒！跟我說一遍：I like apples。")
+    edge = EdgeLLM()
+    monkeypatch.setattr(edge, "_call_llama_server", fake_call)
+    monkeypatch.setattr(scaffold_mod, "safety_check", lambda _t: False)
+
+    out = edge.generate("我喜歡蘋果", _sc())
+
+    assert out.count("I like apples") == 1

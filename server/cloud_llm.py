@@ -123,10 +123,8 @@ class CloudLLM:
             # 輸出後置護欄（不安全→降級回 edge/scaffold）
             if not guardrails.passes_guardrail(text):
                 return None
-            # 帶讀不可漏句：目標英文句一定要在回覆中
-            if target and target not in text:
-                text = f"{text} 跟我說一遍：{target}"
-            return text
+            # 帶讀恰好一句：漏句要補、格式跑掉要修、不得重複（與 edge 共用）
+            return guardrails.ensure_readalong(text, target)
         except Exception:
             _log.exception("CloudLLM generate 失敗，降級回 edge/scaffold")
             return None

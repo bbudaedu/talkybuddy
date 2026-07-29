@@ -139,10 +139,8 @@ class EdgeLLM:
             if not guardrails.passes_guardrail(text):
                 return None
 
-            # 確保目標英文句一定出現在回覆中（帶讀不可漏句）
-            if target and target not in text:
-                text = f"{text} 跟我說一遍：{target}"
-            return text
+            # 確保回覆恰好含一句合規帶讀（漏句要補、格式跑掉要修、不得重複）
+            return guardrails.ensure_readalong(text, target)
         except Exception:
             _log.exception("EdgeLLM generate 失敗，降級回 scaffold 回覆")
             return None
