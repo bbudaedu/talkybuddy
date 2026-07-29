@@ -73,6 +73,38 @@ ROADMAP「恢復 <1–2 秒」而選的偏緊值，「代價是真正連線良�
 ```
 
 `cloud_llm` **已為 true**（使用者於 2026-07-29 提供自建中轉憑證）。
+
+> ### 🔴 但 `cloud_llm: true` 不代表雲端真的能用（2026-07-29 稍晚實測）
+>
+> `available()` 只檢查**有沒有設定**，不檢查**連不連得上**。實測：
+>
+> ```
+> available(): True
+> generate() → 26ms → None      ← Connection refused，26 毫秒就失敗
+> ```
+>
+> 因為 `.env` 的 `ANTHROPIC_BASE_URL=http://127.0.0.1:8317` 指向**反向隧道**，
+> 而隧道沒建時裝置本地 8317 根本沒人在聽。pipeline 於是在 26ms 內降級到 edge。
+>
+> **後果**：`network_mode` 切到 `cloud` 也只是跑 edge。實測 DB 證據——
+> cloud 回合 `llm_ms` 4382/4885，edge 回合 4083/4125，**兩者一樣**。
+> 演練會量到「M1 ≈ 0」，但那個 0 沒有意義：不是降級很快，是**從頭到尾都沒上過雲**。
+>
+> **每次演練前必查**（比查程式碼版本更早一步）：
+>
+> ```bash
+> # 開發機先建反向隧道（裝置與中轉跨網段，裝置無 tailscale）
+> ssh -N -o ServerAliveInterval=15 -o ExitOnForwardFailure=yes \
+>     -R 127.0.0.1:8317:192.168.100.200:8317 root@192.168.31.78 &
+>
+> # 再從裝置確認真的通了（200 才算數，000 = 沒人在聽）
+> ssh root@192.168.31.78 'curl -s -m 3 -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8317/'
+> ```
+>
+> 隧道建立後於裝置實測 `CloudLLM.generate()`：**2367 / 2901 / 2961 ms**，
+> 皆在 `CLOUD_LLM_TIMEOUT_S=4` 內，雲端確實可用。
+> （比本文件上方記載的中位 1883ms 慢約 1 秒——**這個數字是路徑相依的，
+> 決賽當天若改用不同雲端路徑必須重新量**。）
 `cloud_tts` 仍為 false（無 `ELEVENLABS_API_KEY`）——可演練，但 M1 理論上界少掉 TTS 那 1.5s。
 
 **兩項本次為此打通的設定**（決賽當天須重新確認）：
