@@ -153,10 +153,17 @@ LLM_N_CTX: int = int(os.environ.get("TALKYBUDDY_LLM_N_CTX", str(_LLM_N_CTX_DEFAU
 # llama-server 連線設定：llama-server 為獨立 OS 行程（非 in-process Llama 物件），
 # 這些值供 edge/runtime/run_llama_server.py 組出啟動 argv（--host/--port/--threads）。
 # host 預設 loopback 127.0.0.1（不可對外可路由，見 threat_model T-08-01）。
-# LLM_THREADS 預設 4 僅為佔位，最佳值待 ELOOP-03 以 llama-bench 實測後覆寫。
+# LLM_THREADS = 6：ELOOP-03 真機 llama-bench 掃描的最佳值（`-t 1,2,4,6,8 -r 3`，
+# 見 edge/EDGE_TURN_LOOP_VALIDATION.md §A）——4 → pp 26.49／tg 10.50，
+# 6 → pp 39.06／tg 12.35，8 反而略降（超過大核心配置）。
+#
+# **這裡曾經是佔位的 4。** 量測早就做完並選定 6，但只用 `TALKYBUDDY_LLM_THREADS=6`
+# env override 套在裝置上，預設值沒改回來；env override 活在環境裡，重開機或啟動
+# 腳本沒帶就悄悄退回 4（run_edge.sh 確實沒設定它）。2026-07-29 實測裝置正是跑
+# --threads 4，prefill 因此慢 1.47×。已量過的結論要釘在程式碼裡，別只寫在文件。
 LLM_SERVER_HOST: str = os.environ.get("TALKYBUDDY_LLM_SERVER_HOST", "127.0.0.1")
 LLM_SERVER_PORT: int = int(os.environ.get("TALKYBUDDY_LLM_SERVER_PORT", "8080"))
-LLM_THREADS: int = int(os.environ.get("TALKYBUDDY_LLM_THREADS", "4"))
+LLM_THREADS: int = int(os.environ.get("TALKYBUDDY_LLM_THREADS", "6"))
 
 
 def default_network_mode() -> str:
