@@ -265,10 +265,27 @@ def _voice_band_ratio(samples: list[int], rate: int) -> tuple[float, float]:
     return peak, band / total
 
 
-def _check_mic() -> tuple[str, str]:
+def _check_mic(device: str = "") -> tuple[str, str]:
+    """實際錄一段來判讀訊號。
+
+    `device` 必須是 **service 實際會用的**錄音裝置。preflight 通常是手動跑的、
+    不會帶 TALKYBUDDY_EDGE_ALSA_DEVICE，若用模組預設的 `default` 就會錄到別張
+    音效卡，得到假的 FAIL——2026-07-30 第一版就這樣誤報「靜音鍵沒按」。
+    假警告比沒有檢查更糟，因為它會讓人開始不信任這張表。
+    """
     from edge.runtime import audio_io
-    device = audio_io._ARECORD_DEVICE
-    print(f"    錄音 3 秒（裝置 {device}）——請現在說話...", flush=True)
+
+    original = audio_io._ARECORD_DEVICE
+    if device:
+        audio_io._ARECORD_DEVICE = device
+    try:
+        return _capture_and_judge(audio_io)
+    finally:
+        audio_io._ARECORD_DEVICE = original
+
+
+def _capture_and_judge(audio_io) -> tuple[str, str]:
+    print(f"    錄音 3 秒（裝置 {audio_io._ARECORD_DEVICE}）——請現在說話...", flush=True)
     try:
         wav = audio_io.capture_16k_mono_wav(3.0)
     except Exception as exc:
@@ -287,7 +304,8 @@ def _check_mic() -> tuple[str, str]:
     if ratio < 0:
         return (OK if peak >= MIC_PEAK_MIN else FAIL,
                 f"peak={peak:.3f}（無 numpy，未判頻段）")
-    return evaluate_mic(peak, ratio)
+    state, detail = evaluate_mic(peak, ratio)
+    return state, f"{detail}（裝置 {audio_io._ARECORD_DEVICE}）"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -314,13 +332,15 @@ def main(argv: list[str] | None = None) -> int:
         else f"{key_dev} 讀不到——會退回等 Enter，無螢幕裝置上等於沒有觸發方式",
     ))
 
-    rows.append(("ALSA 裝置",) + evaluate_alsa_devices(
-        _service_environment("talkybuddy-local-client")))
+    svc_env = _service_environment("talkybuddy-local-client")
+    rows.append(("ALSA 裝置",) + evaluate_alsa_devices(svc_env))
 
     rows.append(("記憶體",) + _check_memory())
 
     if do_mic:
-        rows.append(("麥克風收音",) + _check_mic())
+        # 用 service 設定的錄音裝置，不是本行程的環境變數（見 _check_mic）
+        rows.append(("麥克風收音",) + _check_mic(
+            svc_env.get("TALKYBUDDY_EDGE_ALSA_DEVICE", "")))
     else:
         rows.append((
             "麥克風收音", WARN,

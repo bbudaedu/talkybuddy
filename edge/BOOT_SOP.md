@@ -23,20 +23,26 @@ cd /root/talkybuddy
 ./.venv/bin/python -m edge.runtime.preflight --mic
 ```
 
-看到 `--mic` 的提示後**對麥克風說話 3 秒**。全綠就能直接 demo：
+看到 `--mic` 的提示後**對麥克風說話 3 秒**。2026-07-30 真機實測輸出：
 
 ```
 ✅ talkybuddy-server        active + 開機自啟
 ✅ talkybuddy-local-client  active + 開機自啟
-✅ /api/status              asr/llm/tts 就緒
+⚠️  /api/status              asr/llm/tts 就緒；cloud_tts=false（缺 ELEVENLABS_API_KEY）；network_mode='edge'
 ✅ 觸發鍵                    KEY_POWER(116) 短按，logind 已放手
 ✅ 按鍵節點                   /dev/input/event1
 ✅ ALSA 裝置                 錄音 plughw:1,0／播放 plughw:0,0
 ✅ 記憶體                    可用 1781MB
-✅ 麥克風收音                 peak=0.31，人聲頻段 62%
+✅ 麥克風收音                 peak=0.135，人聲頻段 45%（裝置 plughw:1,0）
+
+⚠️  可以 demo，但注意：/api/status
 ```
 
-**任何 ❌ 的那一行都會直接寫出要執行的指令**，不必翻文件。
+**`⚠️` 不擋 demo，`❌` 才擋，而且每個 ❌ 都會直接寫出要執行的指令**，不必翻文件。
+上面那個 `/api/status` 警告對純離線 demo 無妨（見下方「不會自動處理的」第 2、3 點）。
+
+> 收音那行會標出**實際使用的錄音裝置**。如果它顯示 `default` 而不是 `plughw:1,0`，
+> 那是在錄錯音效卡、結果不可信（07-30 的第一版就這樣誤報過「靜音鍵沒按」）。
 
 ### 3. 暖場一輪（不可略）
 

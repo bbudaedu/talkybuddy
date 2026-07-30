@@ -76,6 +76,59 @@ def test_empty_service_environment_fails_with_the_fix_command():
     assert "install_services.sh" in detail
 
 
+def test_mic_check_records_from_the_service_device_not_the_process_env(monkeypatch):
+    """收音測試必須用 **service 設定的**錄音裝置，不是本行程的環境變數。
+
+    2026-07-30 真機誤報：preflight 手動執行時不會帶 TALKYBUDDY_EDGE_ALSA_DEVICE，
+    於是用模組預設的 `default` 錄音，錄到別張音效卡、得到 peak=0.012，
+    回報「靜音鍵沒按」——但靜音鍵其實是按了的。假警告比沒有檢查更糟，
+    因為它會讓人開始不信任整張表。
+    """
+    from edge.runtime import audio_io
+
+    seen = {}
+
+    def _fake_capture(_seconds):
+        seen["device"] = audio_io._ARECORD_DEVICE
+        raise RuntimeError("停在這裡就夠了，只驗裝置")
+
+    monkeypatch.setattr(audio_io, "_ARECORD_DEVICE", "default")
+    monkeypatch.setattr(audio_io, "capture_16k_mono_wav", _fake_capture)
+
+    preflight._check_mic("plughw:1,0")
+
+    assert seen["device"] == "plughw:1,0", (
+        f"錄音用了 {seen['device']!r} 而不是 service 設定的 plughw:1,0"
+    )
+
+
+def test_mic_check_restores_the_original_device_afterwards(monkeypatch):
+    """覆寫是暫時的——不能污染同一行程後續的其他檢查。"""
+    from edge.runtime import audio_io
+
+    def _boom(_seconds):
+        raise RuntimeError("錄音失敗")
+
+    monkeypatch.setattr(audio_io, "_ARECORD_DEVICE", "default")
+    monkeypatch.setattr(audio_io, "capture_16k_mono_wav", _boom)
+
+    preflight._check_mic("plughw:1,0")
+
+    assert audio_io._ARECORD_DEVICE == "default", "錄音裝置沒有還原"
+
+
+def test_mic_capture_failure_is_reported_as_fail(monkeypatch):
+    from edge.runtime import audio_io
+
+    def _boom(_seconds):
+        raise OSError("device busy")
+
+    monkeypatch.setattr(audio_io, "capture_16k_mono_wav", _boom)
+    state, detail = preflight._check_mic("plughw:1,0")
+    assert state == FAIL
+    assert "錄音失敗" in detail
+
+
 # ---------------------------------------------------------------------------
 # 麥克風
 # ---------------------------------------------------------------------------
