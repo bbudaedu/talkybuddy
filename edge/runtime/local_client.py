@@ -40,6 +40,9 @@ _DEVICE_PASSWORD: str = os.environ.get("TALKYBUDDY_EDGE_DEVICE_PASSWORD", "demo1
 _HEALTH_TIMEOUT_S = 2.0
 _HEALTH_RETRIES = 30
 _LOGIN_TIMEOUT_S = 5.0
+# 斷線重連的退避。取小值：玩偶待機時斷線要盡快接回來，否則使用者按下去
+# 那一刻若還沒重連，那一輪就白按了。
+_RECONNECT_DELAY_S = 2.0
 
 
 def _http_base_url() -> str:
@@ -111,19 +114,48 @@ async def _handle_turn(ws) -> None:
 
 
 async def run_loop() -> None:
-    """裝置端離線對話主迴圈：等觸發 → 錄音 → 送 /ws/talk → 播放回覆。"""
+    """裝置端離線對話主迴圈：等觸發 → 錄音 → 送 /ws/talk → 播放回覆。
+
+    **玩偶必須能長時間待機**：放在桌上等人來按，閒置多久都不能死。
+    2026-07-30 真機上它會在閒置後以 `BrokenPipeError` →
+    `ConnectionClosedError: no close frame received or sent` 崩潰退出，
+    使用者回來按鍵完全沒反應——從外面看跟按鍵故障一模一樣。兩層根因：
+
+    1. `wait_for_trigger()` 是同步阻塞（等人按實體鍵，可能好幾分鐘），
+       直接在 async 函式裡呼叫會**凍結整個 event loop**；`websockets` 的
+       keepalive ping 因此送不出去，連線被判定死亡而關閉。閒置越久越必死。
+       → 丟到執行緒（`asyncio.to_thread`），讓 event loop 繼續轉。
+    2. 斷線後直接 `raise`，行程就結束了。→ 外層重連，不退出。
+
+    單輪對話失敗（聽不清楚、TTS 出錯等）只記 log 就繼續等下一次觸發——
+    一輪講壞了不該讓玩偶罷工。
+    """
     wait_for_server_ready()
     token = fetch_token()
 
-    async with websockets.connect(_ws_url(token)) as ws:
-        while True:
-            audio_io.wait_for_trigger()
+    while True:
+        try:
+            async with websockets.connect(_ws_url(token)) as ws:
+                while True:
+                    # 見上方 docstring 第 1 點：絕不可改回直接呼叫。
+                    await asyncio.to_thread(audio_io.wait_for_trigger)
+                    try:
+                        await _handle_turn(ws)
+                    except websockets.ConnectionClosed:
+                        raise  # 交給外層重連
+                    except Exception:
+                        _log.exception("local_client 本輪對話失敗，繼續等待下一次觸發")
+        except (websockets.ConnectionClosed, OSError) as exc:
+            # OSError 涵蓋 server 還沒起來／重啟中的 ConnectionRefusedError。
+            _log.warning(
+                "連線中斷（%s），%.1f 秒後重連", type(exc).__name__, _RECONNECT_DELAY_S
+            )
+            await asyncio.sleep(_RECONNECT_DELAY_S)
             try:
-                await _handle_turn(ws)
-            except websockets.ConnectionClosed:
-                raise
+                # token 可能已過期；取不到就沿用舊的再試，不讓行程死掉。
+                token = await asyncio.to_thread(fetch_token)
             except Exception:
-                _log.exception("local_client 本輪對話失敗，繼續等待下一次觸發")
+                _log.exception("重新取得 token 失敗，沿用舊 token 重試")
 
 
 if __name__ == "__main__":

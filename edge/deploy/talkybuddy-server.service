@@ -1,0 +1,22 @@
+[Unit]
+# 模板：@TARGET_ROOT@ 由 edge/deploy/install_services.sh 在安裝時替換為實際
+# 部署路徑（不硬編個人路徑，比照 run_edge.sh 的相對定位原則）。
+Description=TalkyBuddy edge server (uvicorn + llama-server)
+Documentation=file://@TARGET_ROOT@/edge/runtime/README.md
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@TARGET_ROOT@
+ExecStart=@TARGET_ROOT@/edge/runtime/run_edge.sh
+Restart=always
+RestartSec=5
+# run_edge.sh 會先在背景起 llama-server 再 exec uvicorn。預設 KillMode=
+# control-group 會在停止時清掉整個 cgroup，llama-server 不會變孤兒行程。
+# llama-server 載入 1.5B GGUF 約需 7 秒，停止時給它足夠時間收尾。
+TimeoutStartSec=180
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,30 @@
+[Unit]
+# 模板：@TARGET_ROOT@ 由 edge/deploy/install_services.sh 在安裝時替換。
+Description=TalkyBuddy edge local_client (press-to-talk dialogue loop)
+Documentation=file://@TARGET_ROOT@/edge/runtime/README.md
+After=talkybuddy-server.service sound.target
+# 用 Wants 而非 Requires：server 暫時掛掉時 local_client 不必被一起拖下線，
+# 它自己會等 /api/status 就緒並在斷線後重連（見 local_client.run_loop）。
+Wants=talkybuddy-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=@TARGET_ROOT@
+# `-` 前綴：.env 不存在也不讓 service 啟動失敗（雲端憑證是選配，
+# 純離線 demo 不需要）。
+EnvironmentFile=-@TARGET_ROOT@/.env
+
+# ALSA 裝置必須明示，不能靠 `default`——它由 /etc/asound.conf 決定，不保證是
+# 已驗證可用的那兩顆。錄音＝USB 麥克風（card 1，只支援 48kHz，故用 plughw
+# 讓 ALSA 重採樣到 16k）；播放＝3.5mm Lineout（card 0，USB 麥克風無播放能力）。
+# 不設播放裝置的話玩偶會「回答了但聽不到」，而且 aplay 還回 0、不報錯。
+Environment=TALKYBUDDY_EDGE_ALSA_DEVICE=plughw:1,0
+Environment=TALKYBUDDY_EDGE_ALSA_PLAYBACK=plughw:0,0
+
+# -u：不緩衝，讓 journalctl 能即時看到「按一下按鍵開始錄音...」等提示。
+ExecStart=@TARGET_ROOT@/.venv/bin/python -u -m edge.runtime.local_client
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
