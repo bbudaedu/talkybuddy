@@ -33,15 +33,50 @@ platform tag 訂得太舊，onnxruntime 的 aarch64 wheel 用的是更新的 man
 - 端到端 `analyze_audio()` **1.90ms/窗**（每窗 512 samples = 32ms 音訊）→ 即時率約 6%
 - 靜音 confidence 0.024、類語音 0.61，`VADState.QUIET` 判斷正確
 
-**一個會咬人的行為**：`SileroVADAnalyzer()` 建構後 `sample_rate` 是 0，
-`num_frames_required()` 回 256（8kHz 的窗）；要等 pipeline 送 `StartFrame`
-觸發 `set_sample_rate(16000)` 之後才會變成正確的 512。任何在 `__init__`
-裡就依賴 `self.sample_rate` 的子類別都會拿到 0。
+## 全域陷阱：`sample_rate` 建構後一律是 0
+
+**pipecat 每一種元件都是這個形狀**，已經咬過兩次：
+
+| 元件 | 建構後 `sample_rate` | 何時才生效 |
+|---|---|---|
+| `VADAnalyzer` | 0（`num_frames_required()` 回 256＝8kHz 的窗） | `set_sample_rate()` |
+| `STTService` | 0 | `StartFrame` → `stt_service.py:315` |
+| `TTSService` | 0 | `StartFrame` → `tts_service.py:549` |
+
+傳進建構子的值只存到 `_init_sample_rate`，真正的 `_sample_rate` 要等 pipeline
+啟動才被設成 `self._init_sample_rate or frame.audio_in_sample_rate`。
+
+含意有兩個：
+
+1. **任何在 `__init__` 裡就依賴 `self.sample_rate` 的子類別都會拿到 0。**
+   本套件早期自寫的 sherpa VAD 版本就是這樣壞的（在建構時拿 0 去建 sherpa config）。
+2. **單元測試繞過 pipeline 時要自己補這一步**，見
+   `tests/test_pipecat_stt_tts.py::_with_rate`。那裡另有一個測試
+   （`test_sample_rate_is_zero_until_pipeline_starts`）釘住這個行為，
+   pipecat 哪天改掉的話會紅。
 
 另外 `voice_confidence()` 型別註記寫 `-> float`，實際回傳的是 shape `(1,)`
 的 `ndarray`（官方 `return new_confidence` 直接回 model 輸出）。pipecat 內部
 拿它跟門檻比較沒問題，但外部程式碼對它呼叫 `float()` 在 numpy 2.x 會拋
 `TypeError`——要先 `np.asarray(...).ravel()[0]`。
+
+## 與 sherpa-onnx 共存：實測沒有 numpy 衝突
+
+專案先前的決策記錄（`docs/DEPLOY_EDGE.md:136` 排除 `pipecat-ai`）有一條理由是
+「pipecat 會升級 numpy，而 sherpa-onnx ASR/TTS 依賴現版」。**2026-07-31 實測
+不成立**，方向甚至相反：
+
+| venv | numpy | sherpa-onnx |
+|---|---|---|
+| `/root/talkybuddy/.venv`（決賽路徑） | 2.5.1 | ✅ |
+| `/root/pipecat-lab/.venv`（pipecat） | 2.4.6 | ✅ 事後裝入無衝突無降級 |
+
+同一個 process 內 `import pipecat` + `import sherpa_onnx` 共存正常（0.16s），
+VAD 仍可用，SenseVoice 載入 1.93s、2 秒音訊辨識 147ms。
+
+**但那條記錄的其他理由仍然成立**：行程 RSS 量到 **664MB**（板子可用僅 1.7G，
+llama-server 還要吃），`pyaudio` 確實要編譯，而且最關鍵的——
+接通後 round_total 仍由 LLM 的 3.9s 主宰，pipecat 換的是編排不是推論速度。
 
 ## 不重新發明 ALSA 參數
 

@@ -80,14 +80,71 @@ arecord——板子上 live-client 正持有麥克風，測試若真的開會變
 
 ---
 
+---
+
+# 第二輪（02:50–03:10）
+
+## 查證了一條專案既有決策，一半推翻一半成立
+
+記憶／`docs/DEPLOY_EDGE.md:136` 記載「Pipecat 串流管線：刻意不裝」，理由之一是
+**「pipecat 會升級 numpy，而 sherpa-onnx ASR/TTS 依賴現版」**。這條直接決定我的
+STT adapter 能不能成立（它要讓 pipecat 與 sherpa 跑在同一個 process），所以先驗證：
+
+| venv | numpy | sherpa-onnx |
+|---|---|---|
+| `/root/talkybuddy/.venv`（決賽路徑，只讀） | 2.5.1 | ✅ |
+| `/root/pipecat-lab/.venv` | 2.4.6 | ✅ 事後裝入無衝突無降級 |
+
+**numpy 衝突不成立**（方向甚至相反，決賽 venv 的 numpy 還比較新）。同 process
+共存實測：`import pipecat`+`import sherpa_onnx` 0.16s、VAD 仍可用、
+SenseVoice 載入 1.93s、**2 秒音訊辨識 147ms**。
+
+**但那條記錄的其他理由仍然成立，而且多了一個新數字**：
+
+- 行程 **RSS 664MB**（板子可用僅 1.7G，llama-server 還要吃）← 這是新的風險
+- `pyaudio` 確實要編譯（已於第一輪確認）
+- **最關鍵的沒變**：接通後 round_total 仍由 LLM 的 3.9s 主宰
+
+順帶一提，餵雜訊給 SenseVoice 得到的辨識結果是 `'그.'`——**正好複現了
+`live_client` docstring 記的「把噪音判成韓文字符」**。決賽會場很吵，
+「空結果即雜音」那條兜底不能拿掉。
+
+## 兩個 adapter 完成，27 測試全綠
+
+- `sensevoice_stt.py`：重用 `SenseVoiceASREngine._ensure_model()`（`CONTRACTS.md`
+  明列的公開契約）共用模型單例，不重複載入吃掉板子 RAM。
+  **sherpa 的 decode 是阻塞 native 呼叫，一律 `asyncio.to_thread`**——
+  在 pipecat 的單一 event loop 上阻塞會同時凍住 VAD、麥克風讀取與播放。
+- `edge_tts.py`：`synth()` 回完整 WAV，這裡用 `wave` 模組解析剝掉 header
+  （硬切 44 bytes 不安全，WAV 允許 `data` 前插別的 chunk）。
+  **誠實記錄：這條路徑不是串流的**，first-audio 延遲 = 整句合成時間，切 chunk
+  不會讓第一個 byte 早一點出來。
+
+## 又踩到同一個坑，這次釘住了
+
+第一輪在 VAD 上踩過的「`sample_rate` 建構後是 0」，**STT 與 TTS 完全一樣**：
+
+| 元件 | 何時才生效 |
+|---|---|
+| `VADAnalyzer` | `set_sample_rate()` |
+| `STTService` | `StartFrame` → `stt_service.py:315` |
+| `TTSService` | `StartFrame` → `tts_service.py:549` |
+
+生產路徑是對的（pipeline 啟動時會設），是單元測試繞過 pipeline 才拿到 0。
+已加 `_with_rate()` 補這一步，並用
+`test_sample_rate_is_zero_until_pipeline_starts` 釘住行為——pipecat 哪天改掉會紅。
+
+---
+
 ## 下一輪要做的
 
-1. **STT adapter**：包 sense-voice（板子已有模型）成 `STTService.run_stt()`
-2. **TTS adapter**：包 piper `zh_CN-huayan-medium.onnx` 成 `TTSService.run_tts()`
-3. **降級狀態機**：雲端不可達時切本地 service，**麥克風所有權不轉移**
-   （這是整個設計相對「換掉整個 client」的最大優勢）
-4. **端到端 pipeline 組裝**，在板子上用檔案餵音訊（不搶麥克風）量 round_total
-5. 寫 spec 到 `docs/`
+1. **降級狀態機**：雲端不可達時切本地，**麥克風所有權不轉移**
+   （這是整個設計相對「換掉整個 client」的最大優勢，也直接對應
+   `project-edge-deploy` 記的「`Conflicts=` 只停不啟 → 兩個 client 都死 → 玩偶變啞」）
+2. **端到端 pipeline 組裝**，在板子上用檔案餵音訊（不搶麥克風）量 round_total
+3. 寫 spec 到 `docs/`
+4. 量 **完整 pipeline 的 RSS**——單是 pipecat+sherpa 就 664MB，加上 TTS voice
+   與 llama-server 是否還塞得進 1.7G，這是目前最大的未知數
 
 ## 還沒有答案的問題
 
