@@ -75,6 +75,16 @@ def test_start_with_a_topic_stays_inside_that_category():
     assert all(scaffold.VOCAB[w]["cat"] == "animal" for w in st.hints)
 
 
+def test_phrases_are_never_picked_for_a_spelling_drill():
+    """片語不能拿來拼——字母序列會把詞界弄丟（ice cream → I,C,E,C,R,E,A,M,），
+    而且比對是逐 token 的，完全正確的回答只拿 0.625 擦邊過關。"""
+    assert not games._is_spellable("冰淇淋")
+    assert games._is_spellable("蘋果")
+    st = games.start_spell_along(target_count=len(scaffold.VOCAB))
+    assert all(" " not in scaffold.VOCAB[w]["en"] for w in st.hints)
+    assert "冰淇淋" not in st.hints
+
+
 def test_start_remembers_the_student_so_judging_can_record():
     st = games.start_spell_along(student_id="STU-9")
     assert st.student_id == "STU-9"

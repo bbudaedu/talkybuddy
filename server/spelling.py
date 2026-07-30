@@ -38,6 +38,13 @@ _log = logging.getLogger(__name__)
 # 命中率門檻。寬鬆鼓勵制：唸出大部分就算過。
 # 嚴格比對等於讓孩子替 ASR 的誤判受罰（apple → "Bbble."），而卡在同一個
 # 詞出不去是現場最糟的失敗模式，比答錯還糟。
+#
+# 0.6 是量出來的，不是猜的。2026-07-31 真迴路（TTS 念字母 → SenseVoice
+# 聽回 → 判定）8 個詞各跑 5 輪共 40 個樣本，平均命中率 0.83：
+#     門檻 0.5 → 40/40 過（等於沒有判定）
+#     門檻 0.6 → 38/40 過   ← 選這個
+#     門檻 0.7 → 27/40 過（拼對了也常被判沒過）
+# 真機上童聲的分布會不一樣，用 edge/probes/probe_spell_recognition.py 重量一次再調。
 PASS_THRESHOLD = 0.6
 
 # 同一步最多重試幾次；第 MAX_RETRIES+1 次一律往下走。
@@ -74,11 +81,54 @@ def heard_letters(asr_text) -> list[str]:
     一模一樣。分不出來就不要假裝分得出來，一律當作拼對了。這是已知邊界，
     寫在 docs/GAMES.md，不要試圖在這裡「修好」它。
     """
-    tokens = re.findall(r"[A-Za-z]+", str(asr_text or "")[:_MAX_TEXT])
+    tokens = _tokens(asr_text)
     singles = [t.upper() for t in tokens if len(t) == 1]
     if len(singles) >= 2:
         return singles
     return list("".join(tokens).upper())
+
+
+def _tokens(asr_text) -> list[str]:
+    return re.findall(r"[A-Za-z]+", str(asr_text or "")[:_MAX_TEXT])
+
+
+def all_letters(asr_text) -> list[str]:
+    """ASR 文字裡的每一個字母，照順序。``"B, O, Ok."`` → ``["B","O","O","K"]``。"""
+    return list("".join(_tokens(asr_text)).upper())
+
+
+def heard_letter_readings(asr_text) -> list[list[str]]:
+    """同一段 ASR 文字的兩種讀法：只取單字母 token，或把每個 token 拆成字母。
+
+    **為什麼要兩種而不是挑一種。** 2026-07-31 真迴路實測（TTS 念字母 →
+    SenseVoice 聽回 → 判定）攤開了兩種讀法各自失敗的情況：
+
+        book   → "B, O, Ok."          只取單字母 → [B,O]     漏掉 Ok 的兩個字母
+        water  → "W ATE R."           只取單字母 → [W,R]     漏掉 ATE 的三個字母
+        banana → "The A N A N the."   全部拆字母 → 混進 The/the 的六個字母
+
+    ASR 對同一串字母有時完整分開、有時只黏一半，**沒有哪一種讀法永遠對**。
+    所以兩種都算，由 ``spell_hit_rate`` 取較好的那個——與寬鬆鼓勵制一致：
+    不讓孩子替 ASR 的不穩定受罰。
+
+    **注意 TTS 本身是隨機的**（VITS 的 duration predictor 帶噪聲），同一個詞
+    每次合成的音都不同，ASR 也就每次聽成不一樣的東西。所以跑一次的結果沒有
+    意義，要看分布——見 ``edge/probes/probe_spell_recognition.py``。
+    """
+    return [heard_letters(asr_text), all_letters(asr_text)]
+
+
+def spell_hit_rate(ref_word: str, asr_text) -> float:
+    """孩子把某個單字拼出來的命中率 0–1，取兩種 ASR 讀法中較好的那個。
+
+    判定端一律用這個，不要自己組 ``heard_letters`` + ``letter_hit_rate``——
+    那樣就只吃到一種讀法，會重現上面 book／water 的誤判。
+    """
+    ref = ref_letters(ref_word)
+    if not ref:
+        return 0.0
+    return max((letter_hit_rate(ref, r) for r in heard_letter_readings(asr_text)),
+               default=0.0)
 
 
 def _edit_distance(a: list, b: list) -> int:

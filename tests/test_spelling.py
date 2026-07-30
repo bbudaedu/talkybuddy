@@ -92,6 +92,61 @@ def test_letter_hit_rate_handles_empty_input():
 
 
 # ---------------------------------------------------------------------------
+# 拼字命中率：真迴路實測字串
+#
+# 下面每一個 ASR 字串都是 2026-07-31 真的跑出來的：本地 TTS 念字母 →
+# SenseVoice 聽回。不是手編的——手編的字串永遠想不到 "W ATE R." 這種形狀，
+# 而正是那種形狀讓單一讀法的判定誤判。
+# ---------------------------------------------------------------------------
+
+_REAL_ASR = [
+    ("apple", "AP,, P, L E."),          # 前兩個字母黏住
+    ("dog", "D, O G."),                 # 後兩個字母黏住
+    ("book", "B, O, Ok."),              # 只黏最後兩個 → 單字母讀法會整段丟掉
+    ("banana", "The A N A N the."),     # 混進 The/the → 全拆字母讀法會被汙染
+    ("cat", "C, A."),                   # 尾字母漏聽
+    ("pencil", "D, E, N, C, I, L."),    # 首字母聽錯
+    ("water", "W ATE R."),              # 中間三個字母黏成一團
+    ("mom", "M Om."),
+]
+
+
+def test_every_real_asr_reading_passes_the_threshold():
+    """八個詞的真迴路輸出全部要過。
+
+    只取單字母的讀法在 book／water 上是 0.5 / 0.4（拼對了卻判沒過），
+    全拆字母的讀法在 banana 上會被 The/the 汙染。兩種都算取較好的，
+    八個才全過。
+    """
+    for en, heard in _REAL_ASR:
+        rate = spelling.spell_hit_rate(en, heard)
+        assert rate >= spelling.PASS_THRESHOLD, f"{en}: {heard!r} 只拿到 {rate}"
+
+
+def test_single_reading_alone_would_misjudge_book_and_water():
+    """釘住「為什麼需要兩種讀法」——這條紅了代表有人把它改回單一讀法。"""
+    for en, heard in (("book", "B, O, Ok."), ("water", "W ATE R.")):
+        naive = spelling.letter_hit_rate(spelling.ref_letters(en),
+                                         spelling.heard_letters(heard))
+        assert naive < spelling.PASS_THRESHOLD, f"{en} 的單一讀法不再誤判了？"
+        assert spelling.spell_hit_rate(en, heard) >= spelling.PASS_THRESHOLD
+
+
+def test_all_letters_reading_keeps_glued_tokens():
+    assert spelling.all_letters("B, O, Ok.") == ["B", "O", "O", "K"]
+    assert spelling.all_letters("W ATE R.") == ["W", "A", "T", "E", "R"]
+    assert spelling.all_letters("") == []
+
+
+def test_spell_hit_rate_still_rejects_a_child_who_said_nothing_useful():
+    """寬鬆不等於沒有判定——兩種讀法都算，該不過的還是不過。"""
+    assert spelling.spell_hit_rate("apple", "我不會") == 0.0
+    assert spelling.spell_hit_rate("apple", "") == 0.0
+    assert spelling.spell_hit_rate("", "A, P, P, L, E.") == 0.0
+    assert spelling.spell_hit_rate("banana", "A, B.") < spelling.PASS_THRESHOLD
+
+
+# ---------------------------------------------------------------------------
 # 整字／例句命中
 # ---------------------------------------------------------------------------
 

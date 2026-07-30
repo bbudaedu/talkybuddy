@@ -644,6 +644,24 @@ def _zh_count(n: int) -> str:
     return _ZH_COUNT[n] if 0 <= n < len(_ZH_COUNT) else str(n)
 
 
+def _is_spellable(word_zh: str) -> bool:
+    """這個詞適不適合拿來拼。片語一律排除（VOCAB 目前只有 ice cream 一個）。
+
+    兩個理由，都是實跑看出來的：
+
+    1. ``letters_for_tts("ice cream")`` → ``"I, C, E, C, R, E, A, M,"``——
+       **詞界不見了**。孩子聽到八個字母，不知道中間要分成兩個字。
+       拼字訓練把片語念成一串字母是教錯，比不教還糟。
+    2. ``word_hit_rate("ice cream", "I want to eat some ice cream.")`` 只有
+       0.625：比對是逐 token 的，片語永遠對不齊，完全正確的回答卻擦邊過關。
+       擦邊過關的分數比不過還危險——它會假裝判定有效。
+
+    要支援片語得同時改字母格式與比對邏輯，為了 136 個詞裡的 1 個不值得。
+    """
+    en = str((scaffold.VOCAB.get(word_zh) or {}).get("en", ""))
+    return bool(en) and " " not in en.strip()
+
+
 def start_spell_along(topic: str = "", *, target_count: int = SPELL_TARGET_COUNT,
                       student_id: str | None = None) -> GameState:
     """開一局背單字。
@@ -652,7 +670,8 @@ def start_spell_along(topic: str = "", *, target_count: int = SPELL_TARGET_COUNT
     到期詞排前面：上禮拜拼錯的詞，今天第一個練。
     """
     valid_topic = topic if topic in _CAT_ZH else ""
-    pool = _words_in_cat(valid_topic) if valid_topic else list(scaffold.VOCAB.keys())
+    raw = _words_in_cat(valid_topic) if valid_topic else list(scaffold.VOCAB.keys())
+    pool = [w for w in raw if _is_spellable(w)]
     try:
         count = max(1, min(int(target_count), len(pool)))
     except (TypeError, ValueError):
@@ -721,9 +740,7 @@ def _judge_spell_along(state: GameState, student_text) -> GameTurn:
     # 拼音那一步比字母序列，其餘兩步比目標單字。這個分工是實測結論：
     # ASR 對字母序列比對整個單字準得多。
     if state.step == "spell":
-        rate = spelling.letter_hit_rate(
-            spelling.ref_letters(en), spelling.heard_letters(student_text)
-        )
+        rate = spelling.spell_hit_rate(en, student_text)
     else:
         rate = spelling.word_hit_rate(en, student_text)
     passed = rate >= spelling.PASS_THRESHOLD
