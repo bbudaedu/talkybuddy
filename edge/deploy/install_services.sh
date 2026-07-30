@@ -51,12 +51,27 @@ systemctl enable "${ENABLE_UNITS[@]}"
 echo "=== 已 enable（開機自動啟動）：${ENABLE_UNITS[*]} ==="
 echo "    talkybuddy-live-client 已安裝但不 enable——要用 S2S 時手動 start"
 
-# 手動起的行程會與 service 搶 8787 埠或麥克風，先警告再說
-stale=$(pgrep -af 'uvicorn|llama-server|local_client|live_client' 2>/dev/null | grep -v systemd || true)
+# 手動起的行程會與 service 搶 8787 埠或麥克風，先警告再說。
+#
+# 用 cgroup 而非 `grep -v systemd` 來排除 service 自己的行程：後者只濾掉 cmdline
+# 含 "systemd" 字樣的行，濾不掉 systemd 的**子**行程，於是每次重跑本腳本都會把
+# 正在正常運作的三個 service 行程列成「手動啟動」。2026-07-30 實測，一個
+# 已 enable 且運作正常的裝置上，這段照樣噴警告——自檢產生假警告會訓練人忽略
+# 警告，比不警告更糟。
+# systemd 管理的行程 cgroup 形如 /system.slice/talkybuddy-server.service。
+stale=""
+for pid in $(pgrep -f 'uvicorn|llama-server|local_client|live_client' 2>/dev/null || true); do
+  if grep -q 'talkybuddy-.*\.service' "/proc/${pid}/cgroup" 2>/dev/null; then
+    continue   # 由 systemd 管理，不是手動起的
+  fi
+  cmd=$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)
+  [ -n "$cmd" ] && stale="${stale}${pid} ${cmd}"$'\n'
+done
 if [ -n "$stale" ]; then
   echo
-  echo "⚠️ 偵測到手動啟動的行程，會與 service 搶埠或搶麥克風："
-  echo "$stale" | sed 's/^/    /'
+  echo "⚠️ 偵測到手動啟動的行程（不在任何 talkybuddy service 的 cgroup 裡），"
+  echo "   會與 service 搶埠或搶麥克風："
+  printf '%s' "$stale" | sed 's/^/    /'
   # 注意：pkill -f 會殺掉 cmdline 含該字串的 shell（包括你正在打字的這個），
   # 所以這裡不給 -f 一次殺全部的寫法。
   echo "    停掉：systemctl stop ${UNITS[*]}"

@@ -2,8 +2,9 @@
 """EdgeLLM：邊緣 LLM 加值層（llama-server 獨立行程 + Qwen2.5-1.5B GGUF Q4，經 HTTP client 呼叫）。
 
 契約（CONTRACTS.md）：
-- ``available() -> bool``：llama-server /health 短逾時 GET 回 200 才回 True；
-  連線被拒/逾時/任何例外一律回 False，絕不拋出。
+- ``available() -> bool``：llama-server /health 短逾時 GET 回 200 **且** body 是
+  帶 ``status`` 鍵的 JSON 物件才回 True（光看 200 會把佔用同一埠的其他服務
+  誤判成 llama-server）；連線被拒/逾時/任何例外一律回 False，絕不拋出。
 - ``generate(student_text, scaffold) -> str | None``：
   逾時（>8 秒）、例外、未載入、或輸出命中 ``scaffold.safety_check`` 一律回 None；
   pipeline 以 scaffold.reply_text 為準，LLM 只是加值。
@@ -58,12 +59,28 @@ class EdgeLLM:
     ) + guardrails.CHILD_SAFETY_CLAUSE
 
     def available(self) -> bool:
-        """對 llama-server /health 發短逾時 GET，200 才回 True；任何失敗回 False。"""
+        """對 llama-server /health 發短逾時 GET；**回應必須長得像 llama-server** 才回 True。
+
+        只看 HTTP 200 會產生假綠燈：LLM_SERVER_PORT 預設 8080 是最常被別的
+        服務佔走的埠，而任何 SPA / 反向代理對未知路徑都回 200 + HTML。
+        2026-07-30 開發機上實際發生過——`/api/status` 的 `llm` 是綠的，但每一輪
+        都在 `_call_llama_server` 的 `json.loads` 炸掉、靜默降級成 scaffold 罐頭
+        回覆，畫面上完全看不出來。這是與 `cloud_tts.verified()` 同一類的問題：
+        **接得上 ≠ 跑得動**。
+
+        判準：200 + body 可解析成 JSON 物件 + 帶 ``status`` 鍵（llama.cpp 的
+        /health 契約）。故意不比對 status 的值，因為 llama.cpp 在載入模型期間
+        會回 ``"loading model"``，那仍是「真的是 llama-server」——只是還沒好，
+        由 generate() 那條路降級即可，不該讓 available() 在這裡誤判成別的服務。
+        """
         try:
             base = _llama_server_base_url()
             req = urllib.request.Request(f"{base}/health", method="GET")
             with urllib.request.urlopen(req, timeout=_HEALTH_TIMEOUT_S) as resp:
-                return resp.status == 200
+                if resp.status != 200:
+                    return False
+                payload = json.loads(resp.read().decode("utf-8"))
+            return isinstance(payload, dict) and "status" in payload
         except Exception:
             return False
 

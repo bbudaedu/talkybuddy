@@ -104,6 +104,78 @@ def test_available_false_on_connection_error(monkeypatch):
     assert edge.available() is False
 
 
+class _FakeResp:
+    """最小 urlopen 回應替身（支援 with 語法 + .status + .read()）。"""
+
+    def __init__(self, status: int, body: bytes):
+        self.status = status
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+
+def _patch_urlopen(monkeypatch, resp):
+    """把 server.llm 用到的 urlopen 換掉；resp 為 _FakeResp 或會拋的 callable。"""
+    from server import llm as llm_mod
+
+    def _fake_urlopen(_req, timeout=None):
+        if callable(resp):
+            return resp()
+        return resp
+
+    monkeypatch.setattr(llm_mod.urllib.request, "urlopen", _fake_urlopen)
+
+
+def test_available_true_on_llama_server_health(monkeypatch):
+    """真的 llama-server：200 + {"status": "ok"} → True。"""
+    _patch_urlopen(monkeypatch, _FakeResp(200, b'{"status":"ok"}'))
+
+    assert EdgeLLM().available() is True
+
+
+def test_available_true_while_model_loading(monkeypatch):
+    """llama.cpp 載入模型期間回 "loading model" 仍是 llama-server → True。
+
+    available() 不比對 status 的值：那條路由 generate() 失敗時降級處理，
+    不該在這裡被誤判成「埠被別人佔走」。
+    """
+    _patch_urlopen(monkeypatch, _FakeResp(200, b'{"status":"loading model"}'))
+
+    assert EdgeLLM().available() is True
+
+
+def test_available_false_when_port_taken_by_html_app(monkeypatch):
+    """假綠燈防線：別的服務佔走 8080、對任何路徑回 200 + HTML → False。
+
+    2026-07-30 開發機實況。只看 status==200 會讓 /api/status 的 llm 亮綠燈，
+    但每一輪 _call_llama_server 都會在 json.loads 炸掉並靜默降級成 scaffold。
+    """
+    _patch_urlopen(monkeypatch, _FakeResp(200, b"<!doctype html><html><body>App</body></html>"))
+
+    assert EdgeLLM().available() is False
+
+
+def test_available_false_on_json_without_status_key(monkeypatch):
+    """回的是 JSON 但不是 llama.cpp /health 契約（無 status 鍵）→ False。"""
+    _patch_urlopen(monkeypatch, _FakeResp(200, b'{"ok":true}'))
+
+    assert EdgeLLM().available() is False
+
+
+def test_available_false_on_non_200(monkeypatch):
+    """非 200（例如 503）→ False，且不讀 body。"""
+    _patch_urlopen(monkeypatch, _FakeResp(503, b'{"status":"loading model"}'))
+
+    assert EdgeLLM().available() is False
+
+
 def test_generate_returns_none_when_call_llama_server_raises(monkeypatch):
     """_call_llama_server 拋例外 → generate() 回 None，例外不逸出（降級鏈不斷）。"""
 

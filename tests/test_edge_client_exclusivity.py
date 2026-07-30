@@ -75,6 +75,30 @@ def test_live_client_does_not_start_at_boot():
     assert "talkybuddy-live-client" not in enable_line
 
 
+def test_the_installer_does_not_flag_its_own_services_as_manually_started():
+    """「有沒有殘留的手動行程」這個檢查不能把 service 自己算進去。
+
+    原本用 `pgrep -af ... | grep -v systemd` 排除：那只濾掉 cmdline 含
+    "systemd" 字樣的行，濾不掉 systemd 的**子**行程。結果是在一台 enable
+    且運作正常的裝置上重跑安裝腳本，照樣把三個正常運作的 service 行程列成
+    「手動啟動、會搶埠」。
+
+    自檢產生假警告比不警告更糟——它訓練人忽略警告。2026-07-30 的交接文件
+    才剛記過一次同類事故（收音自檢錄錯音效卡而產生假警告）。
+
+    改判依據是 cgroup：systemd 管理的行程在 /system.slice/talkybuddy-*.service。
+    （這裡只能做文字層的防退化檢查；真正的行為驗證是在裝置上重跑安裝腳本、
+    確認同樣的三個 service 不再被列出。）
+    """
+    body = _INSTALL_SH.read_text()
+    assert "/proc/${pid}/cgroup" in body, "要用 cgroup 判斷是不是 systemd 管的"
+    # 只看實際程式碼：說明「為什麼不用 grep -v systemd」的註解要留著，
+    # 否則下一個人很可能覺得那樣寫比較簡潔而改回去。
+    code = [ln for ln in body.splitlines() if not ln.lstrip().startswith("#")]
+    assert not any("grep -v systemd" in ln for ln in code), \
+        "這個濾法濾不掉 systemd 的子行程，會把正常的 service 誤報成手動行程"
+
+
 # ---------------------------------------------------------------------------
 # 防線 2：啟動守衛（手動 python -m 時 Conflicts= 幫不上忙）
 # ---------------------------------------------------------------------------

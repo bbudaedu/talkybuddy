@@ -144,7 +144,17 @@ def main() -> int:
     out = "/tmp/talkybuddy_cloud_tts_sample.wav"
     with open(out, "wb") as f:
         f.write(wav)
-    print(f"✓ synth() 回 {len(wav)} bytes WAV（含 WSOLA 放慢）· {dt:.2f}s")
+    # 放慢是誰做的要講清楚：說錯的話，下一個人查「語速不對」會找錯地方
+    from server.cloud_tts import _model_honours_speed
+
+    if config.CLOUD_TTS_SPEED == 1.0:
+        how = "未放慢，CLOUD_TTS_SPEED=1.0"
+    elif _model_honours_speed(config.ELEVENLABS_MODEL):
+        how = f"放慢交給 API：voice_settings.speed={config.CLOUD_TTS_SPEED}"
+    else:
+        how = f"放慢用合成後 WSOLA：{config.ELEVENLABS_MODEL} 會忽略 API 的 speed"
+    print(f"✓ synth() 回 {len(wav)} bytes WAV · {dt:.2f}s")
+    print(f"  {how}")
     print(f"  已寫到 {out} — 聽聽看：  aplay {out}")
 
     print()
