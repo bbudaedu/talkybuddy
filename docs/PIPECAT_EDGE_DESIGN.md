@@ -98,6 +98,25 @@ Genio 520（單一行程，麥克風所有權不轉移）
 `FailoverPolicy` 只決定「用哪個 service」，**永遠不碰 transport**。這不是實作細節，
 是這個設計存在的理由（見上面的問題 2）。
 
+### 與 pipecat 內建 `ServiceSwitcher` 的分工
+
+pipecat 有 `pipeline/service_switcher.py`，提供 `ServiceSwitcher`
+（用 `ParallelPipeline` + filters 做 frame 路由）與 `ServiceSwitcherStrategyFailover`。
+**兩者互補，不重複**：
+
+| | 提供什麼 |
+|---|---|
+| 官方 `ServiceSwitcher` | **機制**——frame 怎麼路由到當下作用中的 service |
+| 官方 `StrategyFailover` | 收到 `ErrorFrame` **就立刻切**，無遲滯 |
+| 自寫 `FailoverPolicy` | **策略**——連續失敗計數、遲滯、冷卻、防抖動 |
+
+官方文件自己寫明「Recovery and fallback policies are **left to application code**
+via the `on_service_switched` event」。而「一錯就切」正是本設計論證過會在
+116ms／會整條斷的鏈路上抖動的做法。
+
+**接線方式**：用官方 `ServiceSwitcher` 做路由，把 `FailoverPolicy` 掛在
+`on_service_switched` 與錯誤處理上決定何時切、何時切回。**不要自己另做 frame 路由。**
+
 | 參數 | 預設 | 為什麼 |
 |---|---|---|
 | `failure_threshold` | 2 | 單次逾時不算數；鏈路 RTT 116ms 本來就會抖 |
@@ -169,16 +188,19 @@ sherpa-onnx 依賴現版」。**實測不成立**：
 - ~~**完整 pipeline RSS**~~ — **已量測：747MB，可用 1759MB，通過**（2026-07-31）
 - ~~**TTS 慢到無法接受**~~ — 暖機後即時率 0.25x，first-audio 150–750ms，
   不是瓶頸。（冷啟動 2068ms 只發生一次，可用預熱一句消化掉。）
+- ~~**TTS 在真實 pipeline 中不出聲**~~ — **已在板子上用真實 sherpa VITS 引擎
+  跑通**：23 個 `TTSAudioRawFrame`、99328 bytes（2.25s @22050Hz），
+  與單獨量測 `synth()` 的結果一致。
+
+  **根因不是 adapter，是驅動方式**：TTS 音訊先進 audio context，由背景 task
+  在 context **關閉後**才 drain；而關閉 context 的 `on_turn_context_completed()`
+  要等 **turn 邊界**（`LLMFullResponseEndFrame`）。只送 `TextFrame` 時，
+  `synth()` 會被呼叫但音訊卡在 context 裡出不來——症狀跟「TTS 壞掉」一模一樣。
+  已用 `tests/test_pipecat_tts_in_pipeline.py` 把兩個方向都釘住。
 
 ## 未驗證的風險（按嚴重度排序）
 
-1. **TTS adapter 在真實 pipeline 中輸出 0 個 frame**——用 pipecat 官方
-   `run_test` 驅動時，`synth()` 確實被呼叫，但下游收到 0 個 frame。
-   已排除 settings 未初始化、`push_start_frame`／`push_stop_frames` 未開、
-   非同步未完成三種可能。傾向是 `run_test` 對 `TTSService` 的支援限制
-   （同 harness 下 STT 完全正常、遍尋原始碼找不到官方用它測 TTSService 的範例），
-   **但未證實**。必須在板子上組真實 pipeline 確認。
-2. **端到端 round_total**——未跑過。依元件數字推算應為 LLM 3.9s + 其餘 <1s，
+1. **端到端 round_total**——未跑過。依元件數字推算應為 LLM 3.9s + 其餘 <1s，
    若量出來明顯更差，代表 pipecat 的編排開銷不可忽略。
 3. **CPU 爭用**——各元件單獨量測都很快，但 VAD+STT+TTS 同時跑、
    且與 llama-server 搶 8 核，未量測。

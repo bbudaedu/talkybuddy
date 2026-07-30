@@ -326,11 +326,67 @@ LLM 一個人 3.9 秒。
 **刻意沒有 `[Install]` 段、開機不會自動起來**，所以板子很可能重開過。
 要 demo S2S 需 `switch_mode.sh live`（別用 `systemctl stop`，那會兩個 client 都死）。
 
+---
+
+# 第六輪 — TTS 真實 pipeline 驗證通過，最高風險項解除
+
+## ✅ 根因不是 adapter，是我的驅動方式漏了 turn 邊界
+
+先在主機用**真實 `PipelineWorker`**（非 `run_test` 簡化 harness）重現：仍是 0 個
+音訊 frame。**這推翻了前一輪「傾向是 run_test 限制」的判斷**——真實 pipeline
+也一樣，所以問題不在 harness。
+
+繼續追進 pipecat 原始碼才找到真正的機制：
+
+```
+run_tts yield 的 frame → audio context（不是直接 push 下游）
+                       → 背景 _audio_context_task 在 context 關閉後才 drain
+                       → 關閉 context 的是 on_turn_context_completed()
+                       → 它要等 turn 邊界：LLMFullResponseEndFrame
+```
+
+只送 `TextFrame` 而不送 turn 邊界 → `synth()` 確實被呼叫，但音訊永遠卡在
+context queue 裡，下游連 TextFrame 都收不到。**症狀跟「TTS 壞掉」一模一樣。**
+
+補上 `LLMFullResponseStartFrame` / `LLMFullResponseEndFrame` 後，主機立刻正常：
+
+```
+StartFrame → LLMFullResponseStartFrame → AggregatedTextFrame → TTSStartedFrame
+→ TTSAudioRawFrame ×5 → TTSTextFrame → TTSStoppedFrame → LLMFullResponseEndFrame
+```
+
+## ✅ 板子上真實 sherpa VITS 引擎跑通
+
+```
+TTSAudioRawFrame 數量: 23
+音訊總 bytes: 99328  (= 2.25s @22050Hz)
+```
+
+與單獨量測 `synth()`（「你好，我們來練習說蘋果」→ 2.11–2.37s）完全吻合。
+
+已補 `tests/test_pipecat_tts_in_pipeline.py`，**兩個方向都釘住**：有 turn 邊界
+要出聲、沒有 turn 邊界要卡住（後者是為了讓下一個人三秒認出這個症狀，
+而不是再查一次）。
+
+## 📌 順帶發現：pipecat 內建 ServiceSwitcher，與自寫 failover 互補
+
+`pipeline/service_switcher.py` 有 `ServiceSwitcher`（`ParallelPipeline` + filters
+做 frame 路由）與 `ServiceSwitcherStrategyFailover`。查證後**不重複**：
+
+- 官方 strategy 是「收到 `ErrorFrame` **就立刻切**」，無遲滯
+- 官方文件自己寫「Recovery and fallback policies are **left to application code**」
+- 自寫 `FailoverPolicy` 提供的正是那塊：連續失敗計數、遲滯、冷卻、防抖動
+
+**接線方式已寫進 spec**：用官方 `ServiceSwitcher` 做路由，`FailoverPolicy` 掛在
+`on_service_switched` 決定何時切／何時切回。不要自己另做 frame 路由。
+
+累計 **46 測試全綠**。
+
 ## 仍未驗證
 
-1. **TTS adapter 在真實 pipeline 中輸出 0 frame** ← 現在是最高風險項
-2. 端到端 round_total
-3. CPU 爭用（各元件單獨都快，同時跑未測）
+1. **端到端 round_total**（需要接上 LLM 與 transport 跑完整一輪）
+2. **CPU 爭用**（各元件單獨都快，同時跑未測）
+3. **真麥克風** — 需要停 live-client 才能測，決賽前不做
 
 ## 還沒有答案的問題
 
