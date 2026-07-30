@@ -178,3 +178,37 @@ async def test_playable_games_are_discoverable(tmp_db):
     assert kinds == {"i_spy", "guess_who", "restaurant", "spell_along"}
     for g in body["games"]:
         assert g["zh"] and g["en_pattern"] and g["function"]
+
+
+@pytest.mark.parametrize("mode", ["edge", "cloud"])
+async def test_spell_along_judgement_is_identical_online_and_offline(mode, tmp_db):
+    """**背單字在斷網與連網下的判定必須一模一樣。**
+
+    這是整個功能的主張：背單字訓練在斷網的裝置上完整可用。
+    判定若走雲端，斷網那一刻行為就會變——現場最不能發生的事。
+    """
+    vp = _pipeline(mode)
+    vp.start_game("spell_along", target_count=1)
+    vp.game = games.replace(vp.game, hints=("蘋果",), secret="蘋果")
+
+    a = vp.play_turn("apple")
+    assert (a.correct, a.state.step) == (True, "spell")
+    assert a.target_en == "A, P, P, L, E,"
+
+    b = vp.play_turn("A, P, P, L, E.")
+    assert (b.correct, b.state.step) == (True, "sentence")
+    assert b.target_en == "I want to eat an apple."
+
+
+async def test_spell_along_never_calls_the_cloud(tmp_db, monkeypatch):
+    """上一條的機制保證：判定路徑一次都不准碰雲端。"""
+    from server import cloud_llm
+
+    def _boom(*a, **kw):
+        raise AssertionError("背單字判定不該呼叫雲端 LLM")
+
+    monkeypatch.setattr(cloud_llm.CloudLLM, "generate", _boom)
+    vp = _pipeline("cloud")
+    vp.start_game("spell_along", target_count=1)
+    for text in ("apple", "A, P, P, L, E.", "I want to eat an apple."):
+        vp.play_turn(text)

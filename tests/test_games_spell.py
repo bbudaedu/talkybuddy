@@ -257,3 +257,61 @@ def test_a_round_without_a_student_still_plays(tmp_db):
     """沒有 student_id 就不寫紀錄，但遊戲照樣玩得完。"""
     st = games.replace(_game_on(), step="spell")
     assert games.judge_spell_along(st, "A, P, P, L, E.").state.step == "sentence"
+
+
+# ---------------------------------------------------------------------------
+# 整合驗收
+# ---------------------------------------------------------------------------
+
+def test_a_child_can_start_it_by_voice():
+    """裝置沒有螢幕，用講的開局是唯一的入口。
+
+    game_intent 自動從 games.GAMES 讀名字，所以只要註冊了就該認得——
+    這條測試守的是「有沒有真的註冊」。
+    """
+    from server import game_intent
+
+    assert game_intent.detect_start("我要玩背單字") == "spell_along"
+    assert game_intent.detect_start("我想玩背單字遊戲") == "spell_along"
+
+
+def test_talking_about_memorising_is_not_a_start_command():
+    """光講名字不算——意圖詞是必要條件（與另外三個遊戲同一條規則）。"""
+    from server import game_intent
+
+    assert game_intent.detect_start("背單字好難") is None
+
+
+def test_a_full_round_reaches_the_end_even_when_every_answer_is_wrong(tmp_db):
+    """一路唸錯也要走得完，絕不卡死。
+
+    一律唸錯 → 每一步都用掉 MAX_RETRIES 次重試才前進，所以最壞情況的
+    回合數是「詞數 × 步數 × (重試上限 + 1)」。上限用算式而不是寫死數字，
+    調 MAX_RETRIES 時測試才不會假性失敗。
+    """
+    st = games.start_spell_along(target_count=3, student_id="STU-FULL")
+    words = len(st.hints)
+    limit = words * len(games.SPELL_STEPS) * (spelling.MAX_RETRIES + 1) + 2
+    for _ in range(limit):
+        turn = games.judge_spell_along(st, "我不會")
+        st = turn.state
+        if turn.done:
+            break
+    assert st.done, f"{limit} 回合還沒走完：found={st.found} step={st.step}"
+
+
+def test_every_wrong_word_is_scheduled_for_immediate_review(tmp_db):
+    """一路唸錯的詞全部立刻到期——下一局會先練它們。"""
+    from server import store
+
+    st = games.start_spell_along(target_count=3, student_id="STU-FULL2")
+    words = list(st.hints)
+    limit = len(words) * len(games.SPELL_STEPS) * (spelling.MAX_RETRIES + 1) + 2
+    for _ in range(limit):
+        turn = games.judge_spell_along(st, "我不會")
+        st = turn.state
+        if turn.done:
+            break
+    for w in words:
+        row = store.get_word_review("STU-FULL2", w)
+        assert row is not None and row["interval_days"] == 0, f"{w} 沒被排進複習"

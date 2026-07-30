@@ -1,4 +1,4 @@
-# 三個互動小遊戲 — 現場操作
+# 四個互動小遊戲 — 現場操作
 
 實作：`server/games.py`（規則式核心）＋ `pipeline.start_game/play_turn`＋
 `/api/games`、`/api/game`。測試 89 條（`tests/test_games_*.py`）。
@@ -10,6 +10,7 @@
 | 火眼金睛 I Spy | `Naming common toys and household objects` | `I see a ___.` | animal 29／food 33／school 26 詞 |
 | 猜猜我是誰 20 Questions | `Asking about abilities` | `Is it ___?` | 同上 |
 | 點餐時間 Restaurant | `Ordering food & drinks` | `I want a ___.` | food 33 詞 |
+| 背單字 Spell Along | `Spelling and reading aloud familiar words` | `A, P, P, L, E,` | 全詞庫 136 詞，到期詞優先 |
 
 **零新詞庫**——全部取自 `scaffold.VOCAB`（136 詞，99.3% 落在教育部基本 1,200 字內）。
 
@@ -56,3 +57,17 @@ curl -s -X POST localhost:8787/api/game -H "Authorization: Bearer $T" \
 - 三個遊戲的雲端加值（追問、場景敘述）**尚未接**。目前雲端與離線的
   差異只在遊戲 B 的答題能力
 - 前端還沒有遊戲 UI，目前靠 API 開局 + 語音互動
+
+### 背單字（遊戲 D）專屬邊界
+
+- **字母念法是實測選出來的。** 只有 `"A, P, P, L, E,"` 這個格式能被本地 TTS
+  正確念成字母並被 SenseVoice 完整讀回；句點（`A. P. P.` → `A T, T, L, E.`）、
+  空白（→ `Ppili.`）、連字號（→ `AP.`）三種寫法實測全壞。
+  改格式前先跑 `edge/probes/probe_spell_tts.py`
+- **ASR 把字母黏成一個字時，分不出孩子是在拼還是在唸整個單字**
+  （兩者的 ASR 文字都是 `Apple.`）。分不出來就不假裝分得出來，一律當作拼對
+- **判定靠 ASR 文字，不是真發音評分。** 腔調很怪但字母對，仍然會過。
+  真音素評分（`server/pronunciation.py`）需要 torch，Genio 520 上能不能跑未驗證，
+  且它的定位是背景診斷層、不進即時路徑
+- **孩子真聲的字母辨識率尚未驗證。** 實測用的是 TTS 合成音當代理，不是童聲。
+  開發機沒有錄音裝置，這件事只能上真機驗收——這是本功能最大的未驗證假設
