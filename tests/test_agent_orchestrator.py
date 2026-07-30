@@ -25,6 +25,36 @@ import pytest
 # Fixture
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _recent_report(monkeypatch):
+    """讓「定期回報保底」在本檔一律不觸發，斷言只反映決策邏輯本身。
+
+    `orchestrator._apply_periodic_report_floor` 會在週報過期（或從未產出過）
+    時追加一個 `report` action 與一句 reason。它讀的是**實機 DB**
+    （`data/talkybuddy.db`），所以不擋掉的話，本檔多支斷言確切 actions／reason
+    的測試會隨那個檔案的內容與當天日期時綠時紅——最糟的一種測試。
+
+    只動 `report`，而且刻意設成 **1 天前**——落在兩個時間窗之間：
+    比節流窗（2 小時）舊 → 不節流，退步情境照樣派報告（本檔多支斷言靠這個）；
+    比過期窗（7 天）新 → floor 不觸發。其餘 kind 回空（＝從未產出過＝不節流），
+    與本檔既有斷言預期的作業派發行為一致。
+
+    需要驗 floor 本身的測試在 `tests/test_agent_orchestrator_stale_report.py`；
+    需要自訂產出時間的測試（如 Q4 節流）在函式內再 setattr 一次即可覆蓋這裡。
+    """
+    from datetime import datetime, timedelta, timezone
+
+    day_ago = (datetime.now(timezone(timedelta(hours=8))) - timedelta(days=1)
+               ).isoformat(timespec="seconds")
+
+    def _fake(kind=None, limit=20, student_id=None):
+        if kind != "report":
+            return []
+        return [{"kind": kind, "ts": day_ago, "student_id": student_id}]
+
+    monkeypatch.setattr("server.store.list_agent_outputs", _fake)
+
+
 @pytest.fixture
 def profile_mock() -> dict:
     """模擬學生 profile（已去識別化）。"""

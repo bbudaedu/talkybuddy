@@ -75,6 +75,11 @@ _TZ_TAIPEI = timezone(timedelta(hours=8))
 _THROTTLE_HOMEWORK_S = 1800  # 作業：30 分鐘內不重複
 _THROTTLE_REPORT_S = 7200    # 報告：2 小時內不重複
 
+# 定期回報保底：週報超過這個時間沒產出就補派一份，不論趨勢好壞。
+# 七天＝「週」報字面上的承諾。與節流不衝突（7 天 >> 2 小時），補派後
+# 下一次刷新就不再過期，自然自我限制。見 _apply_periodic_report_floor。
+_STALE_REPORT_S = 7 * 86400
+
 # 最少需要的 history 筆數來計算趨勢
 _MIN_HISTORY_FOR_TREND = 2
 
@@ -128,21 +133,32 @@ def _latest_scores(dim_scores: dict[str, list[float]]) -> dict[str, float]:
     }
 
 
-def _should_throttle(kind: str, student_id: str | None = None) -> bool:
-    """檢查該 kind 的產出是否在節流時間內已產出過（避免騷擾）。
+_NO_OUTPUT_YET = float("inf")
+
+
+def _last_output_age_s(kind: str, student_id: str | None = None) -> float | None:
+    """該 kind 最近一筆產出距今幾秒。三種回傳值代表三件不同的事：
+
+    - 秒數：確實查到了時間
+    - ``_NO_OUTPUT_YET``（``inf``）：查得到，但**從來沒產出過**
+    - ``None``：**查不到**（DB 讀取失敗／時間戳壞掉）
+
+    `inf` 與 `None` 必須分開，不能都當成「很久以前」：從沒產出過應該要補派
+    第一份週報，但 DB 壞掉時我們**根本沒有證據**，此時每輪都補派一次只是
+    在錯誤狀態上疊加動作。沒有證據就不動作。
+
+    節流（`_should_throttle`）與過期補派（`_report_is_stale`）共用這一份查詢，
+    刻意不各寫一份——這段時間戳解析已經出過一次真實缺陷：
 
     **時區必須對齊**：store.add_agent_output 寫出的是 aware 時間戳
-    （`2026-07-26T19:42:37+08:00`）。若這裡用 naive 的 `datetime.now()` 相減，
-    會拋 `TypeError: can't subtract offset-naive and offset-aware datetimes`，
-    節流靜默失效——這是本函式第一版的實際缺陷，因為例外被寬鬆的
-    `except Exception` 吞掉，連日誌都沒有，測試又只驗自己 mock 的 naive 資料，
-    所以一路綠燈到真機才會現形。
+    （`2026-07-26T19:42:37+08:00`）。第一版用 naive 的 `datetime.now()` 相減，
+    拋 `TypeError: can't subtract offset-naive and offset-aware datetimes`，
+    節流靜默失效；例外被寬鬆的 `except Exception` 吞掉，連日誌都沒有，
+    測試又只驗自己 mock 的 naive 資料，所以一路綠燈到真機才現形。
 
-    例外處理刻意分兩層：store 讀取失敗（DB 壞掉、表不存在）是環境問題，
-    容錯後不節流即可；但時間戳解析錯誤是程式 bug，必須留下 warning，
-    否則下次還是查不到。
+    例外處理刻意分兩層：store 讀取失敗（DB 壞掉、表不存在）是環境問題；
+    時間戳解析錯誤是程式 bug，必須留下 warning，否則下次還是查不到。
     """
-    threshold_s = _THROTTLE_HOMEWORK_S if kind == "homework" else _THROTTLE_REPORT_S
     # student_id 缺失時**不可以**原樣傳 None：store.list_agent_outputs(None)
     # 是「所有學生」（不加 WHERE），於是任何一個孩子剛拿到作業，就會把其他
     # 所有孩子一起擋住。寫入端（store.add_agent_output）在 student_id 省略時
@@ -151,25 +167,81 @@ def _should_throttle(kind: str, student_id: str | None = None) -> bool:
     try:
         recent = store.list_agent_outputs(kind=kind, limit=1, student_id=sid)
     except Exception:
-        # 環境問題（DB 不可讀）：不影響決策，保守起見不節流
-        _log.warning("節流查詢 store 失敗，本次不節流", exc_info=True)
-        return False
+        _log.warning("agent 產出時間查詢失敗（kind=%s）", kind, exc_info=True)
+        return None
     if not recent:
-        return False
+        return _NO_OUTPUT_YET
     ts_str = recent[0].get("ts", "")
     if not ts_str:
-        return False
+        _log.warning("agent 產出 kind=%s 缺 ts 欄位", kind)
+        return None
     try:
         ts = datetime.fromisoformat(ts_str)
         # store 一律寫 aware 時間戳；萬一遇到 naive（舊資料／人工寫入），
         # 補上與 store 相同的 +08:00 而非把 ts 轉成 naive，避免丟失資訊。
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=_TZ_TAIPEI)
-        return datetime.now(_TZ_TAIPEI) - ts < timedelta(seconds=threshold_s)
+        return (datetime.now(_TZ_TAIPEI) - ts).total_seconds()
     except (TypeError, ValueError):
         # 時間戳格式問題屬程式/資料 bug，明確記錄，不要靜默吞掉
-        _log.warning("節流時間戳無法判讀：%r，本次不節流", ts_str, exc_info=True)
-        return False
+        _log.warning("agent 產出時間戳無法判讀：%r", ts_str, exc_info=True)
+        return None
+
+
+def _should_throttle(kind: str, student_id: str | None = None) -> bool:
+    """檢查該 kind 的產出是否在節流時間內已產出過（避免騷擾）。
+
+    讀不到時間（DB 壞掉／沒產出過）→ 不節流，保守放行（與改版前語意一致）。
+    """
+    threshold_s = _THROTTLE_HOMEWORK_S if kind == "homework" else _THROTTLE_REPORT_S
+    age = _last_output_age_s(kind, student_id)
+    return age is not None and age < threshold_s
+
+
+def _report_is_stale(student_id: str | None = None) -> bool:
+    """距離上次學習週報是否已超過 `_STALE_REPORT_S`（含從未產出過）。
+
+    查不到時間（`None`）→ False：沒有證據就不補派，別在 DB 出問題時
+    每輪都多送一份出去。
+    """
+    age = _last_output_age_s("report", student_id)
+    return age is not None and age >= _STALE_REPORT_S
+
+
+def _apply_periodic_report_floor(decision: dict, student_id: str | None) -> dict:
+    """定期回報保底：週報過期就補派一份，不論趨勢好壞。
+
+    為什麼需要這道 floor（這是產品缺陷，不只是 demo 佈景）：
+    `_rule_based_decision` 只在 `overall_trend == "declining"` 時派 report，
+    於是**一個持續進步的孩子，家長永遠收不到週報**。而「週報」這個名字
+    承諾的是定期回報，不是壞消息通知。2026-07-30 端到端驗收就撞到這個形狀：
+    demo 學生四維 89/67/67/64、趨勢 improving，跑完六輪對話 actions 仍是 []，
+    教師儀表板上只有四天前的舊卡片。
+
+    刻意放在 `_decide_next_actions` 的**共同出口**而非只放進規則式分支：
+    雲端 LLM 同樣可能連續多輪都不派，定期回報不該取決於模型當下的判斷。
+
+    三個克制：
+    1. 只補 `report`。作業是需求驅動（弱項／到期詞），不是週期性的，
+       無條件補作業等於騷擾。
+    2. 不動 `priority`。定期回報本來就不是高優先事件。
+    3. 不覆寫 `reason`，只追加一句——原本那句說明的是趨勢判斷，仍然成立。
+
+    `source` 一律維持 base decision 的值：這份週報的**決策**確實是規則保底，
+    但欄位語意是「這次決策由誰產生」，改掉會讓儀表板的雲端/離線徽章說謊。
+    """
+    actions = list(decision.get("actions") or [])
+    if "report" in actions:
+        return decision
+    if not _report_is_stale(student_id):
+        return decision
+    actions.append("report")
+    days = int(_STALE_REPORT_S // 86400)
+    reason = (decision.get("reason") or "").rstrip("。")
+    extra = f"另外，距離上次學習週報已超過 {days} 天，依定期回報原則產生一份給家長參考"
+    decision["actions"] = actions
+    decision["reason"] = f"{reason}；{extra}。" if reason else f"{extra}。"
+    return decision
 
 
 def _deidentify_profile(profile: dict) -> dict:
@@ -454,9 +526,14 @@ def decide_next_actions(
     任何情況都不往外拋例外——**包含規則式路徑自己爆掉**。
     """
     try:
-        return _decide_next_actions(
+        decision = _decide_next_actions(
             profile, diagnosis, history, turn_count, allow_cloud=allow_cloud
         )
+        # 定期回報保底。放在**共同出口**，雲端與規則式兩條路徑一視同仁。
+        # 刻意在 try 之內：若上面整段炸掉走 _minimal_decision()，那代表決策層
+        # 失效，此時寧可什麼都不派，也不該由 floor 自行補一份出去。
+        sid = (profile or {}).get("student_id") if isinstance(profile, dict) else None
+        return _apply_periodic_report_floor(decision, sid)
     except Exception:
         _log.exception("decide_next_actions 全數路徑失敗，本輪不派發任何行動")
         return _minimal_decision()

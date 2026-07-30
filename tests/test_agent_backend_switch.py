@@ -12,6 +12,7 @@ AgentCore 路徑到 2026-07-26 為止一次都沒真的產出過內容（帳號�
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -30,6 +31,20 @@ _ENV = [
 def _clean_env(monkeypatch):
     for n in _ENV:
         monkeypatch.delenv(n, raising=False)
+    # 本檔驗的是「後端切換」，不是派發頻率。orchestrator 的定期回報保底
+    # （_apply_periodic_report_floor）會在週報過期時追加一個 action 與一句
+    # reason，而它讀的是**實機 DB**——不擋掉的話這裡的斷言會隨 data/
+    # talkybuddy.db 的內容與當天日期時綠時紅。固定回「1 天前產出過」——落在
+    # 節流窗（2 小時）之外、過期窗（7 天）之內，兩個機制都不觸發，
+    # 斷言只反映後端切換本身。
+    day_ago = (datetime.now(timezone(timedelta(hours=8))) - timedelta(days=1)
+               ).isoformat(timespec="seconds")
+    monkeypatch.setattr(
+        "server.store.list_agent_outputs",
+        lambda kind=None, limit=20, student_id=None: [
+            {"kind": kind, "ts": day_ago, "student_id": student_id},
+        ],
+    )
     return monkeypatch
 
 

@@ -172,8 +172,11 @@ class VoicePipeline:
 ## app.py（FastAPI）
 
 - `GET /` → web/index.html；`GET /teacher` → web/teacher.html（FileResponse；web/ 也掛 StaticFiles /static）
-- `GET /api/status` → `{"asr":bool,"llm":bool,"tts":bool,"cloud_tts":bool,"cloud_llm":bool,"cloud_provider":"bedrock"|"relay"|"none","network_mode":"edge|cloud","pending":int,"live_s2s":bool}`
-  - `cloud_provider`：雲端大腦實際會走的後端。優先序與 `CloudLLM.generate` 一致（Bedrock > relay）；解析失敗保守回 `"none"`。
+- `GET /api/status` → `{"asr":bool,"llm":bool,"tts":bool,"cloud_tts":bool,"cloud_tts_detail":str,"cloud_llm":bool,"cloud_llm_detail":str,"cloud_provider":"bedrock"|"relay"|"none","cloud_provider_configured":"bedrock"|"relay"|"none","network_mode":"edge|cloud","pending":int,"live_s2s":bool}`
+  - **證據欄位 vs 設定欄位**：`cloud_tts` / `cloud_llm` / `cloud_provider` 一律回報「最近一次實際呼叫的結果」，沒跑過就是 `false` / `"none"`。設定讀數在 `cloud_provider_configured`。這個分離是被咬出來的：設定齊全但隧道沒建、配額用盡、逾時過短時，舊版三個欄位都會亮綠燈，而每一輪都在悄悄降級（2026-07-29 斷網彩排的「M1 ≈ 0」就是這樣量出來的假結果）。
+  - `cloud_provider`：最近一次**成功**呼叫實際走的後端。現場當場佐證「大腦在 Bedrock」用這個。
+  - `cloud_provider_configured`：設定上會走哪條。優先序與 `CloudLLM.generate` 一致（Bedrock > relay）；解析失敗保守回 `"none"`。
+  - `cloud_llm_detail` / `cloud_tts_detail`：一句話說明狀態與依據（未啟用／尚未驗證／可用 Nms／設定齊全但上次失敗＋原因）。
 - `POST /api/network_mode` body `{"mode":"edge"|"cloud"}`；切到 cloud 時：mark_all_synced() → 以近 10 筆互動 generate_diagnosis → add_diagnosis → 回 `{"synced":n,"new_diagnosis":{...}}`
 - `GET /api/interactions?limit=50`、`GET /api/diagnoses`
 - `POST /api/seed_reset` → 清空重種子（demo 重置）

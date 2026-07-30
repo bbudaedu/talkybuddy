@@ -149,17 +149,15 @@ async def teacher_page():
 # ---------------------------------------------------------------------------
 
 def _cloud_provider_name() -> str:
-    """回報雲端大腦實際會走的後端；解析失敗一律保守回 "none"。"""
-    try:
-        from server import anthropic_relay, bedrock_converse
+    """回報**設定上**會走的後端；解析失敗一律保守回 "none"。
 
-        if bedrock_converse.resolve_config() is not None:
-            return "bedrock"
-        if anthropic_relay.resolve_config() is not None:
-            return "relay"
+    這是設定讀數，只給 `cloud_provider_configured` 用。要當場佐證大腦真的在
+    Bedrock，看 `cloud_provider`（＝`CloudLLM.verified_backend()`）。
+    """
+    try:
+        return cloud_llm_engine.configured_backend()
     except Exception:
-        pass
-    return "none"
+        return "none"
 
 
 @app.get("/api/status")
@@ -173,10 +171,17 @@ async def api_status():
         # 都逾時降級時，這裡必須是 false——2026-07-30 就是被這個綠燈騙了一輪。
         "cloud_tts": bool(cloud_tts_engine.verified()),
         "cloud_tts_detail": cloud_tts_engine.status_detail(),
-        "cloud_llm": bool(cloud_llm_engine.available()),
-        # 雲端大腦後端身分："bedrock" | "relay" | "none"。優先序與
-        # CloudLLM.generate 一致；現場靠這個欄位當場佐證「大腦在 Bedrock」。
-        "cloud_provider": _cloud_provider_name(),
+        # 同 cloud_tts：依「最近一次生成的實際結果」而非「設定齊不齊全」回報。
+        # 2026-07-30 裝置實測：cloud_llm=true、cloud_provider="relay"，但
+        # relay 指的 127.0.0.1:8317 上根本沒有行程在聽——雲端大腦是死的，
+        # 而 /api/status 說它好好的。
+        "cloud_llm": bool(cloud_llm_engine.verified()),
+        "cloud_llm_detail": cloud_llm_engine.status_detail(),
+        # 雲端大腦後端身分："bedrock" | "relay" | "none"。現場靠這個欄位當場
+        # 佐證「大腦在 Bedrock」，所以它必須是**證據**——回最近一次成功呼叫
+        # 實際走的後端，沒有成功紀錄就是 "none"。設定讀數改看下面那個欄位。
+        "cloud_provider": cloud_llm_engine.verified_backend(),
+        "cloud_provider_configured": _cloud_provider_name(),
         "network_mode": pipeline.network_mode,
         "pending": store.pending_count(),
         "live_s2s": bool(config.LIVE_S2S_ENABLED and nova_sonic.available()),
@@ -516,12 +521,19 @@ async def api_sync(body: SyncBody, authorization: str | None = Header(default=No
 
 @app.post("/api/seed_reset")
 async def api_seed_reset():
-    """清空兩表並重灌示範資料（demo 重置）。"""
+    """清空示範資料表並重灌（demo 重置）。
+
+    `agent_outputs` 也要清。這張表是後來才加的，重置卻一直漏掉它，
+    結果是：互動與診斷回到種子狀態，教師儀表板上卻還掛著**上一場 demo**
+    產生的派作業／週報卡片——那些卡片引用的互動紀錄已經不存在了。
+    重置就該是重置，留一張表在原地只會讓現場看到說不通的畫面。
+    """
     store.init_db()
     with store._lock:  # 借用 store 模組的共用連線與鎖
         conn = store._get_conn()
         conn.execute("DELETE FROM interactions")
         conn.execute("DELETE FROM diagnoses")
+        conn.execute("DELETE FROM agent_outputs")
         conn.commit()
     store.seed_demo()
     return {"ok": True}
