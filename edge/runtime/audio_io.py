@@ -115,6 +115,35 @@ def capture_16k_mono_wav(seconds: float = 4.0) -> bytes:
     return _capture_with_arecord(seconds)
 
 
+def scale_pcm16(data: bytes, factor: float) -> bytes:
+    """把 PCM16 音訊的振幅乘以 `factor`（0.0–1.0）。
+
+    **為什麼要在軟體做音量**：這塊板子的 ALSA mixer 對 3.5mm 輸出**完全無效**。
+    2026-07-30 實測：`Lineout` 7→3（-4dB）聽不出差別；`ADDA_DL_GAIN` 從 97%
+    調到 13%（約 -18dB）**音量完全沒變**。推測 3.5mm 後方接了硬體固定增益的
+    功放（`Ext_Speaker_Amp` 控制項寫入亦報 `Invalid argument`，軟體控制不了）。
+    直接改 PCM 樣本值是唯一實測有效的音量控制——把振幅降到 15% 後確認變小聲。
+
+    `factor >= 1.0` 原樣返回：不放大，避免削波（clipping）。
+    numpy 不可用時退回純 struct 實作，慢但不會壞。
+    """
+    if factor >= 1.0 or not data:
+        return data
+    if factor <= 0.0:
+        return b"\x00" * (len(data) // 2 * 2)
+    try:
+        import numpy as np
+
+        arr = np.frombuffer(data[: len(data) // 2 * 2], dtype="<i2")
+        return (arr * factor).astype("<i2").tobytes()
+    except Exception:
+        n = len(data) // 2
+        if n == 0:
+            return b""
+        samples = struct.unpack(f"<{n}h", data[: n * 2])
+        return struct.pack(f"<{n}h", *(int(s * factor) for s in samples))
+
+
 def _play_with_aplay(wav: bytes) -> None:
     """呼叫 aplay 子行程播放 WAV bytes（固定 argv 串列，非 shell 字串）。"""
     fd, wav_path = tempfile.mkstemp(suffix=".wav")

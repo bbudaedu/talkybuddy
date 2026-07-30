@@ -73,6 +73,29 @@ def test_unknown_events_are_ignored_not_fatal():
 
 
 # ---------------------------------------------------------------------------
+# 連線位址：?mode=continuous 決定 server 走哪條路
+# ---------------------------------------------------------------------------
+
+def test_ws_url_must_request_continuous_mode():
+    """少了 ?mode=continuous，server 走回合式、會等 user_end，兩邊互等。
+
+    server/app.py::ws_live 以這個 query 參數分流：有它才啟動上下行雙 Task 常駐、
+    turn 邊界交給 Nova VAD；沒有它則等 {"type":"user_end"} 才 end_user_turn 並
+    開始迭代模型事件。而持續串流的 client 從不送 user_end（那正是連續模式的語意）。
+
+    2026-07-30 實機實錄的症狀：上行 825600 bytes（25.8s）、下行 0 bytes、0 則事件。
+    音訊確實送達，但 server 從未開始產出——查了三輪才發現是少一個 query 參數。
+    """
+    assert "mode=continuous" in live_client._ws_url()
+
+
+def test_ws_url_points_at_the_live_endpoint():
+    url = live_client._ws_url()
+    assert url.startswith("ws://")
+    assert "/ws/live" in url
+
+
+# ---------------------------------------------------------------------------
 # 音訊參數：上行 16k、下行 24k，兩者不同不能混用
 # ---------------------------------------------------------------------------
 
@@ -102,10 +125,234 @@ def test_aplay_argv_plays_raw_at_24k():
     assert argv[-1] == "-"
 
 
+def test_aplay_has_a_large_enough_buffer_to_absorb_jitter():
+    """必須明示 --buffer-time，否則聲音會斷斷續續。
+
+    Nova Sonic 的音訊成批到達、中間有生成空檔，aplay 預設緩衝吸收不了。
+    2026-07-30 實機一場對話出現 16 次 `underrun!!!`，每次 0.8–1.9 秒。
+    這是裝置本機的播放緩衝問題，不是網路——client 與 server 都在同一台走 loopback。
+    """
+    argv = live_client.build_aplay_argv("plughw:0,0")
+    assert "--buffer-time" in argv, "沒設緩衝，播放會 underrun"
+    buffer_us = int(argv[argv.index("--buffer-time") + 1])
+    assert buffer_us >= 1_900_000, (
+        f"緩衝 {buffer_us}us 吸收不了實測到的最大空檔（1.9s）"
+    )
+
+
 def test_device_can_be_omitted():
     """沒指定裝置時不帶 -D，維持與 audio_io 一致的行為。"""
     assert "-D" not in live_client.build_arecord_argv("")
     assert "-D" not in live_client.build_aplay_argv("")
+
+
+# ---------------------------------------------------------------------------
+# 自我打斷：玩偶講話時必須關閉上行
+# ---------------------------------------------------------------------------
+
+class _Clock:
+    def __init__(self):
+        self.t = 100.0
+
+    def __call__(self):
+        return self.t
+
+
+def test_gate_is_open_before_any_playback():
+    """還沒播過任何東西時，上行當然要通。"""
+    assert live_client.PlaybackGate(tail_s=0.6, now=_Clock()).is_open() is True
+
+
+# 24kHz、16-bit、mono → 每秒 48000 bytes
+_ONE_SECOND = 48000
+
+
+def test_gate_closes_while_the_toy_is_speaking():
+    """玩偶正在講話 → 關閉上行。
+
+    2026-07-30 第一次成功跑通 S2S 時的現場症狀是「會自己打斷」：喇叭與 USB
+    麥克風距離很近，玩偶自己的語音被收進去，Nova 的 server VAD 判定成使用者
+    插話 → 發 interrupt → 打斷自己正在講的話，對話完全無法進行。
+    """
+    clock = _Clock()
+    gate = live_client.PlaybackGate(tail_s=0.6, now=clock)
+    gate.note_audio(_ONE_SECOND)
+    assert gate.is_open() is False
+
+
+def test_gate_stays_closed_for_the_whole_playback_duration():
+    """關鍵：閘門要涵蓋**整段播放時間**，不是只到「收完資料」。
+
+    下行音訊成批到達，aplay 收下後還要花對應時長才播完。第一版只看「最後收到
+    資料的時刻 + tail」，實機結果是丟棄 74.2s 卻播了 85.3s——中間約 11 秒的
+    空窗讓玩偶收到自己的聲音，逐字稿出現 `[USER] 你跟我一起说`。
+    """
+    clock = _Clock()
+    gate = live_client.PlaybackGate(tail_s=0.6, now=clock)
+    gate.note_audio(_ONE_SECOND * 5)      # 一次收到 5 秒的音訊
+
+    clock.t += 3.0                        # 資料早就收完了，但還在播
+    assert gate.is_open() is False, "只看『收完資料』會在播放中途就開閘"
+
+    clock.t += 2.0                        # 播完（共 5s）但 tail 還沒滿
+    assert gate.is_open() is False
+    clock.t += 0.7
+    assert gate.is_open() is True
+
+
+def test_consecutive_chunks_accumulate_playback_time():
+    """連續收到多塊音訊時，播放時間要累加而不是重設。"""
+    clock = _Clock()
+    gate = live_client.PlaybackGate(tail_s=0.0, now=clock)
+    gate.note_audio(_ONE_SECOND * 2)
+    gate.note_audio(_ONE_SECOND * 2)      # 同一時刻又收到 2 秒
+    clock.t += 3.0
+    assert gate.is_open() is False, "兩塊各 2 秒應累加成 4 秒"
+    clock.t += 1.1
+    assert gate.is_open() is True
+
+
+def test_flush_reopens_the_gate_immediately():
+    """barge-in 清掉播放緩衝後，玩偶立刻閉嘴，不該再等剩餘播放時間。"""
+    clock = _Clock()
+    gate = live_client.PlaybackGate(tail_s=0.0, now=clock)
+    gate.note_audio(_ONE_SECOND * 10)
+    assert gate.is_open() is False
+    gate.note_flush()
+    assert gate.is_open() is True
+
+
+def test_gate_tail_is_configurable():
+    """現場要能調：太短仍自我打斷，太長會吃掉孩子講話的開頭。"""
+    clock = _Clock()
+    gate = live_client.PlaybackGate(tail_s=2.0, now=clock)
+    gate.note_audio(_ONE_SECOND // 100)   # 極短的一塊，主要驗 tail
+    clock.t += 1.0
+    assert gate.is_open() is False
+    clock.t += 1.1
+    assert gate.is_open() is True
+
+
+@pytest.mark.asyncio
+async def test_uplink_drops_audio_while_the_toy_speaks():
+    """閘門關閉時不送上行，但**仍要繼續讀麥克風**（否則 arecord 緩衝會爆）。"""
+    ws = _FakeWS()
+    stop = asyncio.Event()
+
+    class _ClosedGate:
+        def is_open(self):
+            return False
+
+    class _Mic:
+        def __init__(self):
+            self.reads = 0
+
+        def read(self, _n):
+            self.reads += 1
+            if self.reads >= 3:
+                stop.set()
+            return b"\x00" * 8
+
+        def stop(self):
+            pass
+
+    mic = _Mic()
+    await live_client.pump_uplink(ws, mic, stop, _ClosedGate())
+
+    assert ws.sent_bytes == [], "玩偶講話時仍在送上行 → 會自我打斷"
+    assert mic.reads >= 3, "沒有繼續讀麥克風，arecord 緩衝會爆"
+
+
+@pytest.mark.asyncio
+async def test_downlink_audio_notifies_the_gate():
+    """收到下行音訊要通知閘門，否則閘門永遠不會關。"""
+    ws = _FakeWS(inbound=[b"\x01\x02"])
+    sink = _FakeSink()
+    noted = {"n": 0}
+
+    class _Gate:
+        def note_audio(self, nbytes):
+            noted["n"] += 1
+            noted["bytes"] = nbytes
+
+    await live_client.pump_downlink(ws, sink, _Gate())
+    assert noted["n"] == 1
+    assert noted["bytes"] == 2, "要把實際 byte 數傳給閘門才能推算播放時長"
+
+
+# ---------------------------------------------------------------------------
+# 近場門檻：擋掉遠處的電視與旁人
+# ---------------------------------------------------------------------------
+
+def _pcm(peak_value: int, n: int = 1600) -> bytes:
+    """造一塊 PCM16，峰值為 peak_value。"""
+    import struct as _s
+    samples = [0] * n
+    samples[n // 2] = peak_value
+    return _s.pack(f"<{n}h", *samples)
+
+
+def test_peak_of_silence_is_zero():
+    assert live_client.chunk_peak(_pcm(0)) == 0.0
+
+
+def test_peak_scales_to_unit_range():
+    assert live_client.chunk_peak(_pcm(32767)) == pytest.approx(1.0, abs=0.001)
+    assert live_client.chunk_peak(_pcm(16384)) == pytest.approx(0.5, abs=0.001)
+
+
+def test_peak_handles_negative_samples():
+    """負向峰值一樣算數——只看正半邊會低估一半的音量。"""
+    assert live_client.chunk_peak(_pcm(-16384)) == pytest.approx(0.5, abs=0.001)
+
+
+def test_peak_of_empty_chunk_does_not_crash():
+    assert live_client.chunk_peak(b"") == 0.0
+    assert live_client.chunk_peak(b"\x00") == 0.0  # 半個 sample
+
+
+def test_distant_television_is_filtered_out():
+    """遠處電視的音量低於門檻 → 不上行。
+
+    2026-07-30 實測：旁邊播放的《寶貝多米》講的「我明白了」被送上雲端、
+    判定成使用者插話 → 打斷玩偶 → 重講。使用者確認那句不是他說的。
+    """
+    quiet = _pcm(int(0.02 * 32768))
+    assert live_client.is_near_field(quiet, threshold=0.06) is False
+
+
+def test_child_speaking_into_the_toy_passes():
+    """近距離人聲（preflight 實測 peak≈0.135）必須通過。"""
+    close = _pcm(int(0.135 * 32768))
+    assert live_client.is_near_field(close, threshold=0.06) is True
+
+
+def test_threshold_zero_disables_filtering():
+    """安靜環境想要最高靈敏度時可完全關閉。"""
+    assert live_client.is_near_field(_pcm(1), threshold=0.0) is True
+
+
+@pytest.mark.asyncio
+async def test_uplink_drops_quiet_chunks():
+    """低於近場門檻的音訊不送出去。"""
+    ws = _FakeWS()
+    stop = asyncio.Event()
+
+    class _Mic:
+        def __init__(self):
+            self.reads = 0
+
+        def read(self, _n):
+            self.reads += 1
+            if self.reads >= 3:
+                stop.set()
+            return _pcm(int(0.01 * 32768))  # 很小聲
+
+        def stop(self):
+            pass
+
+    await live_client.pump_uplink(ws, _Mic(), stop)
+    assert ws.sent_bytes == [], "遠場噪音被送上去了，會觸發誤判插話"
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +400,35 @@ class _FakeSink:
 
     def stop(self):
         self.stopped = True
+
+
+@pytest.mark.asyncio
+async def test_speaker_writes_do_not_block_the_event_loop():
+    """寫入 aplay 是阻塞 I/O，必須丟到執行緒。
+
+    直接放在 async 迴圈裡的話，aplay 緩衝一滿就凍結 event loop，
+    websockets 的 keepalive ping 送不出去 → 連線被判定死亡。
+    2026-07-30 第一次實機跑就撞到 `1011 keepalive ping timeout`。
+    """
+    ws = _FakeWS(inbound=[b"\x01"])
+    sink = _FakeSink()
+    seen = {"to_thread": 0}
+
+    real = asyncio.to_thread
+
+    async def _spy(fn, *a, **kw):
+        seen["to_thread"] += 1
+        return await real(fn, *a, **kw)
+
+    original = asyncio.to_thread
+    asyncio.to_thread = _spy
+    try:
+        await live_client.pump_downlink(ws, sink)
+    finally:
+        asyncio.to_thread = original
+
+    assert seen["to_thread"] >= 1, "音訊寫入沒有經過 asyncio.to_thread"
+    assert sink.written == [b"\x01"]
 
 
 @pytest.mark.asyncio
@@ -214,7 +490,7 @@ async def test_uplink_stops_when_the_session_is_told_to_stop():
             self.reads += 1
             if self.reads >= 3:
                 stop.set()
-            return b"\x00" * 8
+            return _pcm(int(0.3 * 32768))   # 夠大聲，要能通過近場門檻
 
         def stop(self):
             self.stopped = True

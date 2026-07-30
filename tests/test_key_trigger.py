@@ -242,6 +242,68 @@ def test_stdin_is_not_watched_when_not_a_tty(monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# 播放音量：只能在軟體做，ALSA mixer 對本板 3.5mm 輸出無效
+# ---------------------------------------------------------------------------
+
+def _pcm16(*values) -> bytes:
+    return struct.pack(f"<{len(values)}h", *values)
+
+
+def test_scaling_halves_the_amplitude():
+    """2026-07-30 實測：Lineout（-4dB）與 ADDA_DL_GAIN（97%→13%，約 -18dB）
+    調了都毫無效果，唯一有效的是直接改 PCM 樣本值。"""
+    out = audio_io.scale_pcm16(_pcm16(1000, -2000, 4000), 0.5)
+    assert struct.unpack("<3h", out) == (500, -1000, 2000)
+
+
+def test_scaling_preserves_length():
+    data = _pcm16(1, 2, 3, 4)
+    assert len(audio_io.scale_pcm16(data, 0.3)) == len(data)
+
+
+def test_factor_one_returns_the_data_untouched():
+    """預設不改音量——只有明確設定才介入。"""
+    data = _pcm16(1000, -1000)
+    assert audio_io.scale_pcm16(data, 1.0) is data
+
+
+def test_gain_above_one_is_refused():
+    """不放大：超過 1.0 會削波（clipping），寧可維持原樣。"""
+    data = _pcm16(30000, -30000)
+    assert audio_io.scale_pcm16(data, 2.0) is data
+
+
+def test_zero_factor_gives_silence():
+    out = audio_io.scale_pcm16(_pcm16(9999, -9999), 0.0)
+    assert struct.unpack("<2h", out) == (0, 0)
+
+
+def test_empty_and_odd_length_input_do_not_crash():
+    """半個 sample 的殘料不得讓播放整個炸掉。"""
+    assert audio_io.scale_pcm16(b"", 0.5) == b""
+    assert len(audio_io.scale_pcm16(b"\x01", 0.5)) == 0
+
+
+def test_scaling_matches_the_pure_python_fallback(monkeypatch):
+    """numpy 不可用時的降級路徑要給出相同結果（裝置上不保證有 numpy）。"""
+    data = _pcm16(1000, -2000, 4000, -8000)
+    with_numpy = audio_io.scale_pcm16(data, 0.25)
+
+    import builtins
+    real_import = builtins.__import__
+
+    def _no_numpy(name, *a, **kw):
+        if name == "numpy":
+            raise ImportError("模擬沒有 numpy")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", _no_numpy)
+    without_numpy = audio_io.scale_pcm16(data, 0.25)
+
+    assert with_numpy == without_numpy
+
+
+# ---------------------------------------------------------------------------
 # 播放裝置
 # ---------------------------------------------------------------------------
 

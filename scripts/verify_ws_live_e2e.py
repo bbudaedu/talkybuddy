@@ -61,16 +61,22 @@ async def run(uri: str, wav: str) -> int:
     print(f"wav = {wav} → 16k/mono/16bit，送 {len(pcm)/2/16000:.2f}s，共 {len(pcm)} bytes")
     print("-" * 64)
 
-    ssl_ctx = ssl.create_default_context()
-    ssl_ctx.check_hostname = False
-    ssl_ctx.verify_mode = ssl.CERT_NONE
+    # 只有 wss:// 才給 ssl context——websockets 對 ws:// 傳 ssl 會直接
+    # `ValueError: ssl argument is incompatible with a ws:// URI`。
+    # 邊緣裝置上的 server 是純 ws://（loopback，無 TLS），原本寫死 ssl 會讓這支
+    # 二分工具在裝置上完全跑不起來，而它正是用來二分「server 橋接 vs client」的。
+    connect_kwargs = {"max_size": None, "open_timeout": 15}
+    if uri.startswith("wss://"):
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        connect_kwargs["ssl"] = ssl_ctx
 
     collected = {"transcripts": [], "audio_bytes": 0, "audio_frames": 0,
                  "turn_end": False, "errors": [], "other": []}
 
     try:
-        async with websockets.connect(uri, ssl=ssl_ctx, max_size=None,
-                                      open_timeout=15) as ws:
+        async with websockets.connect(uri, **connect_kwargs) as ws:
             print("[ws] 已連線，立刻上行音訊（避免 55s Nova 逾時）…", flush=True)
 
             async def send_audio():
