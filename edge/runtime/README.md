@@ -1,5 +1,8 @@
 # edge/runtime — 邊緣端啟動 launcher
 
+> **開機後只要照 `edge/BOOT_SOP.md` 做即可**（一個手動步驟＋一行自檢）。
+> 本文件是細節參考，不是開機流程。
+
 `run_edge.sh` 是裝置端（Hti G520，官方 IoT Yocto，07-03 board bring-up 實測燒錄
 成功並確認 GO）啟動 TalkyBuddy server 的唯一入口。它**引用既有 `server/`、不複製
 任何 server 程式碼**——避免兩份 `server/` 各自演進、行為分裂（D-05）。裝置上跑的
