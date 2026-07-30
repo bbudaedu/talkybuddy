@@ -293,16 +293,56 @@ _PRAISE_STUCK = [
     "我們來玩個小遊戲，你選一個：",
 ]
 
-# 純英文無誤時的延伸問句（依分類）
+# 純英文無誤時的延伸問句（依分類）。
+#
+# **每個主題必須有多句、並依 turn_index 輪替。** 固定單句會讓對話鬼打牆：
+# 2026-07-30 真機演練（store seq 121–126）孩子照著玩偶給的句子唸，純英文路徑
+# 判定無文法錯誤 → 又回同一句延伸問句 → 孩子再照著唸，連續六輪都是
+# 「跟我說一遍：What animal do you like?」，對話完全走不動。孩子唸的就是玩偶
+# 剛給的句子，所以必然再次命中同一分類，單句設計下這個迴圈無法自己脫出。
+#
+# 鼓勵語早就用 _pick 依 turn_index 輪替（見 _PRAISE_* 與 _pick 的設計註解
+# 「避免學生講很像的話時鼓勵語卡在同一句」）——問句沒跟上是疏漏，而問句才是
+# 決定對話往不往前走的那一個。
+#
+# 句子難度維持 A1（決賽對象是國小初學者）：短句、常見詞、單一文法點。
 _EXTENSION_QUESTIONS = {
-    "food":   "What is your favorite food?",
-    "school": "What is in your backpack?",
-    "animal": "What animal do you like?",
-    "family": "Do you love your family?",
-    "action": "What do you like to play?",
-    "color":  "What color do you like?",
+    "food": [
+        "What is your favorite food?",
+        "Do you like fruit?",
+        "What do you eat for breakfast?",
+    ],
+    "school": [
+        "What is in your backpack?",
+        "Who is your teacher?",
+        "Do you like your school?",
+    ],
+    "animal": [
+        "What animal do you like?",
+        "Do you have a pet?",
+        "Can you see a bird?",
+    ],
+    "family": [
+        "Do you love your family?",
+        "Who is in your family?",
+        "Do you have a sister?",
+    ],
+    "action": [
+        "What do you like to play?",
+        "Can you jump?",
+        "Do you like to run?",
+    ],
+    "color": [
+        "What color do you like?",
+        "Is it red or blue?",
+        "What color is your bag?",
+    ],
 }
-_EXTENSION_DEFAULT = "Can you tell me more?"
+_EXTENSION_DEFAULT = [
+    "Can you tell me more?",
+    "What else can you say?",
+    "Tell me one more thing.",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -610,14 +650,20 @@ def _respond_pure_en(
         return lead, sentence, True
     # 無誤：稱讚＋依詞彙分類給延伸問句
     low_words = {w.lower() for w in re.findall(r"[A-Za-z]+", text)}
-    question = None
+    questions = None
     for v in VOCAB.values():
         if v["en"] in low_words:
-            question = _EXTENSION_QUESTIONS.get(v["cat"], _EXTENSION_DEFAULT)
+            questions = _EXTENSION_QUESTIONS.get(v["cat"], _EXTENSION_DEFAULT)
             break
-    if question is None:
-        question = _EXTENSION_QUESTIONS.get(lesson_topic, _EXTENSION_DEFAULT)
-    return _pick(_PRAISE_EN_GOOD, turn_index) + "再回答我一個問題：", question, True
+    if questions is None:
+        questions = _EXTENSION_QUESTIONS.get(lesson_topic, _EXTENSION_DEFAULT)
+    # 依 turn_index 輪替，與鼓勵語同一機制——固定單句會鬼打牆（見
+    # _EXTENSION_QUESTIONS 的註解與 tests/test_scaffold.py 的真機重現測試）。
+    return (
+        _pick(_PRAISE_EN_GOOD, turn_index) + "再回答我一個問題：",
+        _pick(questions, turn_index),
+        True,
+    )
 
 
 def respond(

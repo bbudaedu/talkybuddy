@@ -135,7 +135,49 @@ def test_respond_pure_zh_no_vocab_hit_falls_back_when_no_lesson():
 def test_respond_pure_en_correct_no_vocab_hit_uses_lesson_topic_question():
     """純英文正確、句中無詞庫詞可判斷分類時，延伸問句改依今日課程主題。"""
     result = scaffold.respond("I am happy today.", lesson_topic="color")
-    assert result.target_sentence == scaffold._EXTENSION_QUESTIONS["color"]
+    assert result.target_sentence in scaffold._EXTENSION_QUESTIONS["color"]
+
+
+def test_extension_questions_rotate_so_the_toy_does_not_get_stuck():
+    """延伸問句必須依 turn_index 輪替，否則對話會鬼打牆。
+
+    2026-07-30 真機演練實錄（store seq 121–126）：孩子照著玩偶給的句子唸，
+    純英文路徑判定無文法錯誤、又回同一句延伸問句，連續六輪都是
+    「跟我說一遍：What animal do you like?」，對話完全走不動。
+
+    鼓勵語早就用 _pick 依 turn_index 輪替（設計註解寫明「避免學生講很像的話時
+    卡在同一句」），延伸問句沒跟上是疏漏——而問句才是決定對話往不往前走的那個。
+    """
+    questions = {
+        scaffold.respond("I have a dog.", turn_index=i).target_sentence
+        for i in range(len(scaffold._EXTENSION_QUESTIONS["animal"]))
+    }
+    assert len(questions) > 1, f"延伸問句沒有輪替，仍會鬼打牆：{questions}"
+
+
+def test_the_real_stuck_conversation_no_longer_repeats():
+    """重現真機那段對話：孩子每輪都跟著唸，問句不得六輪全同。"""
+    said = "What animals do you like."  # store seq 122/124/125/126 的實際逐字稿
+    questions = [
+        scaffold.respond(said, turn_index=i, lesson_topic="animal").target_sentence
+        for i in range(6)
+    ]
+    assert len(set(questions)) > 1, f"六輪仍是同一句，鬼打牆沒修好：{questions[0]!r}"
+
+
+def test_every_topic_has_more_than_one_extension_question():
+    """每個主題都要有多句可輪替——只有一句的主題仍會卡住。"""
+    single = {
+        topic: qs for topic, qs in scaffold._EXTENSION_QUESTIONS.items()
+        if not isinstance(qs, list) or len(qs) < 2
+    }
+    assert not single, f"這些主題只有一句延伸問句，會鬼打牆：{single}"
+
+
+def test_extension_default_also_rotates():
+    """完全無分類可判斷時用的預設問句同樣要能輪替。"""
+    assert isinstance(scaffold._EXTENSION_DEFAULT, list)
+    assert len(scaffold._EXTENSION_DEFAULT) > 1
 
 
 def test_respond_turn_index_rotates_praise_without_repeating():
