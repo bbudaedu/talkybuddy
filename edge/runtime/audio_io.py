@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import logging
 import os
+import select
 import struct
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -37,6 +39,11 @@ _SAMPLE_FMT = "S16_LE"
 
 # ALSA 裝置名稱可覆寫（多音效卡/測試環境）；預設 "default"。
 _ARECORD_DEVICE = os.environ.get("TALKYBUDDY_EDGE_ALSA_DEVICE", "default")
+# 播放裝置。空字串＝不帶 -D（維持原行為）。
+# Genio 520 上必須設 `plughw:0,0`（3.5mm Lineout）——USB 麥克風沒有播放能力，
+# 而 `default` 由 /etc/asound.conf 決定、不保證是那顆。不設的話玩偶會
+# 「回答了但聽不到」。
+_PLAYBACK_DEVICE = os.environ.get("TALKYBUDDY_EDGE_ALSA_PLAYBACK", "")
 
 
 def _import_sounddevice():
@@ -114,7 +121,11 @@ def _play_with_aplay(wav: bytes) -> None:
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(wav)
-        subprocess.run(["aplay", wav_path], check=True, capture_output=True, timeout=30)
+        argv = ["aplay"]
+        if _PLAYBACK_DEVICE:
+            argv += ["-D", _PLAYBACK_DEVICE]
+        argv.append(wav_path)
+        subprocess.run(argv, check=True, capture_output=True, timeout=30)
     finally:
         try:
             os.remove(wav_path)
@@ -163,8 +174,33 @@ def play_wav_bytes(wav: bytes) -> None:
 # 電源鍵(116)刻意不用——可能觸發關機。
 # ---------------------------------------------------------------------------
 
-_KEY_DEVICE: str = os.environ.get("TALKYBUDDY_EDGE_KEY_DEVICE", "/dev/input/event1")
-_KEY_CODE: int = int(os.environ.get("TALKYBUDDY_EDGE_KEY_CODE", "102"))  # KEY_HOME
+# 節點編號不可寫死。USB 音效裝置（麥克風）插上去時也會註冊自己的 input 節點，
+# 編號會位移——一旦 mtk-pmic-keys 不再是 event1，`_key_device_usable()` 的
+# 「存在且可讀」對 USB 那顆一樣成立，於是迴圈會阻塞在一個永遠不會送出
+# KEY_HOME 的裝置上。症狀是「印出提示、按了完全沒反應」，不是明確報錯，
+# 極難從外部看出來。所以預設改成從 /proc/bus/input/devices 依**名稱**解析。
+_KEY_DEVICE_ENV: str = os.environ.get("TALKYBUDDY_EDGE_KEY_DEVICE", "")
+_KEY_DEVICE_FALLBACK = "/dev/input/event1"  # 2026-07-29 探測到的節點，僅作最後退路
+_PROC_INPUT_DEVICES = "/proc/bus/input/devices"
+_KEY_NAME_HINT: str = os.environ.get("TALKYBUDDY_EDGE_KEY_NAME", "pmic").lower()
+
+# 觸發鍵＝KEY_POWER(116)，不是 KEY_HOME(102)。
+#
+# 2026-07-30 真機實測（繞過 Python、直接 `dd` 讀 evdev；並以耳機孔插拔事件當
+# 對照組，證明觀測方法本身有效）：
+#   - 自訂鍵 KEY_HOME(102)：按數十次、跨重開機，一律 0 bytes → 不可用
+#   - KEY_POWER(116)：短按 → `EV_KEY code=116 value=1` + `EV_SYN`
+# 2026-07-29 記錄的「按自訂鍵三次都收到 KEY_HOME」是錯的——kernel 位元圖確實
+# 註冊了 102（已獨立驗證兩次），但註冊不等於那顆實體鍵接得上。
+#
+# ⚠️ 用 116 的前提：systemd-logind 必須設 `HandlePowerKey=ignore`，否則按下去
+# 就是關機（見 `_power_key_guard_ok()` 與 provision_device.sh）。
+_KEY_CODE: int = int(os.environ.get("TALKYBUDDY_EDGE_KEY_CODE", "116"))  # KEY_POWER
+
+_KEY_POWER = 116
+# logind 設定：主檔 + drop-in 目錄（後者優先，systemd 語意為後讀者覆寫）。
+_LOGIND_CONF = "/etc/systemd/logind.conf"
+_LOGIND_CONF_D = "/etc/systemd/logind.conf.d"
 
 # struct input_event（64-bit）：sec, usec, type, code, value
 _EV_FMT = "llHHi"
@@ -193,21 +229,166 @@ def _decode_key_press(data, code: int) -> bool:
     return False
 
 
+def _find_key_device_from_proc(text: str) -> str | None:
+    """從 /proc/bus/input/devices 內容裡找出按鍵所在的 event 節點。
+
+    純函式（真機的 /proc 沒辦法在 CI 造出來，但挑錯節點就等於按鍵完全失效）。
+    格式每個裝置一段、段間空行，`N: Name="..."` 在 `H: Handlers=...` 之前：
+
+        N: Name="mtk-pmic-keys"
+        H: Handlers=kbd event2
+
+    解析不出來一律回 None，讓呼叫端退回其他觸發方式，不拋。
+    """
+    if not text:
+        return None
+    name = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            name = ""  # 段落結束，別讓名稱殘留到下一段
+            continue
+        if line.startswith("N: Name="):
+            name = line[len("N: Name="):].strip().strip('"').lower()
+        elif line.startswith("H: Handlers=") and _KEY_NAME_HINT and _KEY_NAME_HINT in name:
+            for token in line[len("H: Handlers="):].split():
+                if token.startswith("event"):
+                    return "/dev/input/" + token
+    return None
+
+
+def _resolve_key_device() -> str:
+    """決定要讀哪個 input 節點。
+
+    優先序：環境變數明示 > 依名稱自動偵測 > 2026-07-29 探測到的 event1。
+    自動偵測是為了吸收 USB 麥克風插拔造成的節點位移（見上方常數註解）。
+    """
+    if _KEY_DEVICE_ENV:
+        return _KEY_DEVICE_ENV
+    try:
+        with open(_PROC_INPUT_DEVICES, "r", encoding="utf-8", errors="replace") as f:
+            found = _find_key_device_from_proc(f.read())
+    except OSError:
+        found = None
+    return found or _KEY_DEVICE_FALLBACK
+
+
+def _parse_handle_power_key(text: str) -> str | None:
+    """從 logind 設定內容取出 `HandlePowerKey` 的值；沒設定回 None。
+
+    純函式。註解行不算生效（Yocto 的 logind.conf 預設整份都是註解，
+    此時 logind 走內建預設 `poweroff`——也就是按下去會關機）。
+    同檔重複設定以最後一筆為準（systemd 語意）。
+    """
+    value: str | None = None
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith(";"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        if key.strip() == "HandlePowerKey":
+            value = val.strip() or None
+    return value
+
+
+def _effective_handle_power_key() -> str:
+    """logind 實際會怎麼處理 power 鍵。
+
+    讀主檔與 drop-in（drop-in 後讀、覆寫主檔）。都沒設定時回 logind 的內建
+    預設 `poweroff`——**不是** `ignore`，這個差別就是「按下去會不會關機」。
+    """
+    texts: list[str] = []
+    try:
+        with open(_LOGIND_CONF, "r", encoding="utf-8", errors="replace") as f:
+            texts.append(f.read())
+    except OSError:
+        pass
+    try:
+        for name in sorted(os.listdir(_LOGIND_CONF_D)):
+            if not name.endswith(".conf"):
+                continue
+            try:
+                with open(os.path.join(_LOGIND_CONF_D, name), "r",
+                          encoding="utf-8", errors="replace") as f:
+                    texts.append(f.read())
+            except OSError:
+                continue
+    except OSError:
+        pass
+
+    effective = None
+    for text in texts:
+        found = _parse_handle_power_key(text)
+        if found is not None:
+            effective = found
+    return effective or "poweroff"  # logind 內建預設
+
+
+def _power_key_guard_ok() -> bool:
+    """用 KEY_POWER 當觸發鍵時，確認 logind 已放手；否則大聲警告。
+
+    不阻止啟動（設定方式不只一種，也可能在別處被覆寫），但**絕不靜默**——
+    靜默的後果是有人按下玩偶就直接斷電。
+    """
+    if _KEY_CODE != _KEY_POWER:
+        return True
+    handling = _effective_handle_power_key()
+    if handling == "ignore":
+        return True
+    print(
+        f"⚠️ 觸發鍵是 KEY_POWER(116)，但 systemd-logind 的 HandlePowerKey="
+        f"{handling!r}——現在按下去會**關機**，不是開始錄音。\n"
+        f"   修法（撐得過重開機）：\n"
+        f"     mkdir -p {_LOGIND_CONF_D}\n"
+        f"     printf '[Login]\\nHandlePowerKey=ignore\\n"
+        f"HandlePowerKeyLongPress=ignore\\n' > "
+        f"{_LOGIND_CONF_D}/10-talkybuddy-powerkey.conf\n"
+        f"     systemctl restart systemd-logind",
+        flush=True,
+    )
+    return False
+
+
 def _key_device_usable() -> bool:
     """實體按鍵讀得到嗎（開發機沒有，要能安全退回）。"""
-    return os.path.exists(_KEY_DEVICE) and os.access(_KEY_DEVICE, os.R_OK)
+    path = _resolve_key_device()
+    return os.path.exists(path) and os.access(path, os.R_OK)
 
 
 def _block_until_key_press() -> bool:
-    """擋住直到按下觸發鍵；讀取失敗回 False 讓呼叫端退回其他觸發方式。"""
+    """擋住直到按下觸發鍵**或**（互動時）使用者按下 Enter。
+
+    同時監看 stdin 是為了防死鎖：實體按鍵若因硬體或節點問題永遠不送事件，
+    只讀按鍵會無限阻塞，呼叫端寫好的 Enter 降級永遠走不到——2026-07-30
+    「卡在自訂按鍵」就是這個死鎖，而不是單純「按鍵沒反應」。
+
+    只在 stdin 是 TTY 時才監看它：非 TTY 的 stdin 恆為 ready，加進 select
+    會讓迴圈空轉燒 CPU，而裝置上 local_client 正是以背景行程執行。
+    """
     try:
-        with open(_KEY_DEVICE, "rb", buffering=0) as f:
+        with open(_resolve_key_device(), "rb", buffering=0) as f:
+            watch = [f]
+            stdin = sys.stdin
+            try:
+                watch_stdin = stdin is not None and stdin.isatty()
+            except Exception:
+                watch_stdin = False
+            if watch_stdin:
+                watch.append(stdin)
+
             while True:
-                data = f.read(_EV_SIZE)
-                if not data:
-                    return False
-                if _decode_key_press(data, _KEY_CODE):
+                ready, _, _ = select.select(watch, [], [])
+                if watch_stdin and stdin in ready:
+                    stdin.readline()  # 吃掉那一行，Enter 也算觸發
                     return True
+                if f in ready:
+                    data = f.read(_EV_SIZE)
+                    if not data:
+                        return False
+                    if _decode_key_press(data, _KEY_CODE):
+                        return True
     except Exception:
         _log.warning("讀實體按鍵失敗，退回 Enter 觸發", exc_info=True)
         return False
@@ -220,7 +401,10 @@ def wait_for_trigger() -> None:
     （開發機互動測試用）；連 stdin 都沒有就短暫 sleep，避免背景行程掛死。
     """
     if _key_device_usable():
-        print("按一下按鍵開始錄音...", flush=True)
+        # 用 KEY_POWER 當觸發鍵時先確認 logind 已放手，否則按下去是關機而非錄音。
+        _power_key_guard_ok()
+        # 印出實際挑到的節點與鍵碼：挑錯了按下去就沒反應，而從外面看只是「卡住」。
+        print(f"按一下按鍵開始錄音...（讀 {_resolve_key_device()}，鍵碼 {_KEY_CODE}）", flush=True)
         if _block_until_key_press():
             return
     try:

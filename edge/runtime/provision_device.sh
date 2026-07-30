@@ -39,8 +39,30 @@ python3 -m venv .venv
 # server/app.py 啟動最小相依（FastAPI + uvicorn + websocket 端點 + pydantic model）
 .venv/bin/pip install fastapi 'uvicorn[standard]' websockets pydantic numpy soundfile huggingface_hub 2>&1 | tail -2
 
-echo "=== [2/2] 安裝邊緣 ASR / TTS（sherpa-onnx，Apache-2.0）==="
+echo "=== [2/3] 安裝邊緣 ASR / TTS（sherpa-onnx，Apache-2.0）==="
 .venv/bin/pip install sherpa-onnx onnx opencc 2>&1 | tail -2
+
+echo "=== [3/3] 讓 systemd-logind 放開 power 鍵（錄音觸發鍵）==="
+# 錄音觸發鍵是 KEY_POWER(116)。2026-07-30 真機實測：板上「自訂鍵」KEY_HOME(102)
+# 註冊了卻不送任何 evdev 事件（按數十次、跨重開機、直接 dd 讀都是 0 bytes，
+# 並以耳機孔插拔事件作為觀測方法有效性的對照組），power 鍵才是唯一可用的實體鍵。
+#
+# 但 logind 內建預設是 HandlePowerKey=poweroff——**不設這段的話，按下玩偶就是
+# 關機而不是開始錄音**。這個 drop-in 撐得過重開機，且比改主檔容易回退。
+#
+# ⚠️ 侷限：HandlePowerKeyLongPress 只擋得住 logind 那一層。PMIC 的長按強制斷電
+# 是硬體行為、不經 kernel，軟體攔不住（約按住 8–10 秒）。因此這是 demo 場景的
+# 權宜方案，不是能出貨給兒童的設計，見 edge/runtime/README.md。
+if [ -d /etc/systemd ]; then
+  mkdir -p /etc/systemd/logind.conf.d
+  printf '[Login]\nHandlePowerKey=ignore\nHandlePowerKeyLongPress=ignore\n' \
+    > /etc/systemd/logind.conf.d/10-talkybuddy-powerkey.conf
+  systemctl restart systemd-logind || echo "  WARN: logind 重啟失敗，重開機後才會生效"
+  echo "  HandlePowerKey 生效值：$(busctl get-property org.freedesktop.login1 \
+    /org/freedesktop/login1 org.freedesktop.login1.Manager HandlePowerKey 2>/dev/null || echo '查不到')"
+else
+  echo "  跳過（非 systemd 環境）"
+fi
 
 touch .venv_ready
 echo "=== DONE: 裝置端 venv 就緒（.venv_ready）；模型下載為 Phase 8 範疇，不在本腳本 ==="

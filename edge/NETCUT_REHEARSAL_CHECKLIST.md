@@ -223,6 +223,26 @@ done
 | USB 麥克風 `plughw:1,0` | ✅ 收音正常（**須先按實體靜音鍵**） |
 | 3.5mm 喇叭 `plughw:0,0` | ✅ 已聽測確認，`Lineout` 音量 7（39%） |
 | 證據工具 `dump_recent_turns.py` | ✅ 可執行（**注意叫用方式，見下**） |
+| 錄音觸發鍵 | ✅ **power 鍵短按**（`KEY_POWER`/116）；板上「自訂鍵」實測不可用，見下 |
+
+### ⚠️ 錄音觸發鍵是 power 鍵，且有兩個前提（2026-07-30 更正）
+
+板上那顆「自訂鍵」（`KEY_HOME`/102）**不送任何 evdev 事件**——按數十次、跨重開機、
+繞過 Python 直接 `dd` 讀都是 0 bytes（同時以耳機孔插拔事件作對照組，證明觀測方法
+有效）。**07-29「按自訂鍵可用」那筆記錄是錯的。** 唯一可用的實體鍵是 power 鍵短按。
+
+1. **logind 必須設 `HandlePowerKey=ignore`，否則按下去是關機。** 每次演練前確認：
+
+   ```bash
+   busctl get-property org.freedesktop.login1 /org/freedesktop/login1 \
+     org.freedesktop.login1.Manager HandlePowerKey     # 必須是 s "ignore"
+   ```
+
+   不是 `ignore` 就跑 `provision_device.sh`（步驟 [3/3] 會寫入撐得過重開機的 drop-in），
+   或手動建 `/etc/systemd/logind.conf.d/10-talkybuddy-powerkey.conf`。
+
+2. **不要按住不放。** PMIC 的長按強制斷電是硬體行為、軟體攔不住（約 8–10 秒）。
+   短按即可。這也是為什麼這是 demo 權宜方案、不是出貨設計。
 
 ### ⚠️ `dump_recent_turns.py` 的叫用陷阱
 
