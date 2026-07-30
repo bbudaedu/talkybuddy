@@ -105,3 +105,6 @@ edge/np8/*.zip
 edge/np8/_extract/
 edge/np8/_mobilenet/
 edge/np8_out/
+# 轉換出來的 tflite 模型（如 dec_T200.tflite，6.6MB）。本 repo 為公開 repo，
+# 模型二進位一律由轉換腳本各自產生，不入版控。
+edge/np8/*.tflite
