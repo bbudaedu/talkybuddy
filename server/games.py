@@ -75,7 +75,9 @@ class GameState:
     secret: str = ""          # 遊戲 B 的謎底
     asked: tuple = ()         # 遊戲 B 問過的問題種類
     order: tuple = ()         # 遊戲 C 點了什麼
-    step: str = ""            # 遊戲 C 的腳本階段
+    step: str = ""            # 遊戲 C 的腳本階段／遊戲 D 的教學步驟
+    retries: int = 0          # 遊戲 D：同一步已重試幾次（進入新的一步歸零）
+    student_id: str = ""      # 遊戲 D：判定時要寫學習紀錄，開局時記下來
 
 
 @dataclass(frozen=True)
@@ -146,25 +148,35 @@ def _detect_vocab(text: str) -> str | None:
     return None
 
 
-def _due_first(topic: str, student_id: str | None, limit: int = _MAX_HINTS) -> tuple:
-    """該分類的提示詞：間隔重複到期的排前面，其餘照分類順序補。
+def _due_words_from(pool, student_id, limit: int) -> tuple:
+    """從 ``pool`` 挑詞：間隔重複到期的排前面，其餘照 pool 原順序補。
 
-    排程讀不到（DB 沒建、離線、壞掉）就退回純分類順序——
-    提示是加值，不能因為它失敗就開不了局。
+    排程讀不到（DB 沒建、離線、壞掉）就退回純 pool 順序——
+    挑詞是加值，不能因為它失敗就開不了局。
     """
-    pool = _words_in_cat(topic)
+    pool = list(pool or [])
     if not pool:
         return ()
     due: list[str] = []
     if student_id:
         try:
             from server import srs
-            due = [w for w in srs.due_words(student_id, limit=limit * 3) if w in pool]
+            due = [w for w in srs.due_words(student_id, limit=max(1, limit) * 3)
+                   if w in pool]
         except Exception:
-            _log.warning("讀取到期詞失敗，提示改用分類順序", exc_info=True)
+            _log.warning("讀取到期詞失敗，改用 pool 原順序", exc_info=True)
             due = []
     ordered = due + [w for w in pool if w not in due]
     return tuple(ordered[:limit])
+
+
+def _due_first(topic: str, student_id: str | None, limit: int = _MAX_HINTS) -> tuple:
+    """某分類的提示詞（到期優先）。行為與重構前逐字相同。
+
+    背單字要跨分類挑詞，所以取詞邏輯抽到 ``_due_words_from``；
+    這裡只負責「pool＝這個分類的詞」這個決定。
+    """
+    return _due_words_from(_words_in_cat(topic), student_id, limit)
 
 
 # ---------------------------------------------------------------------------
