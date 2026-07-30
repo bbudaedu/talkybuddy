@@ -33,6 +33,19 @@ rsync -az --exclude='__pycache__' --exclude='*.pyc' edge/runtime/ "${SSH_TARGET}
 echo "  - rsync web/ -> ${TARGET_ROOT}/web"
 rsync -az --exclude='__pycache__' --exclude='*.pyc' web/ "${SSH_TARGET}:${TARGET_ROOT}/web/"
 
+# systemd unit 模板與安裝/切換腳本。
+# 2026-07-30 補上：先前只推 edge/deploy/bin/，所以改了 unit 檔（例如兩個 client
+# 的 Conflicts=、S2S 的 NEAR_FIELD_PEAK=0）之後 push.sh 跑完裝置仍是舊設定，
+# 得手動 rsync——而「以為推過去了但其實沒有」是最難察覺的一種錯。
+# 注意：推檔不等於生效，unit 要重裝才會套用（見本腳本結尾提示）。
+echo "  - rsync edge/deploy 的 unit 模板與腳本 -> ${TARGET_ROOT}/edge/deploy"
+ssh "${SSH_TARGET}" "mkdir -p '${TARGET_ROOT}/edge/deploy'"
+rsync -az edge/deploy/*.service edge/deploy/install_services.sh \
+  edge/deploy/switch_mode.sh "${SSH_TARGET}:${TARGET_ROOT}/edge/deploy/"
+
+echo "  - rsync edge/probes/ -> ${TARGET_ROOT}/edge/probes（現場量測工具）"
+rsync -az --exclude='__pycache__' --exclude='*.pyc' edge/probes/ "${SSH_TARGET}:${TARGET_ROOT}/edge/probes/"
+
 echo "  - 建立裝置端 llama-server binary / GGUF 模型目標目錄"
 ssh "${SSH_TARGET}" "mkdir -p '${TARGET_ROOT}/edge/deploy/bin' '${TARGET_ROOT}/models'"
 
@@ -60,4 +73,13 @@ rsync -az "${GGUF_MODEL}" "${SSH_TARGET}:${TARGET_ROOT}/models/"
 # （沿用 scripts/setup_env.sh 之 M1 已審釘版清單子集，見該腳本註解；本 phase
 # 不新增未釘版套件，見 edge/deploy/README.md）。
 
-echo "=== push 完成：server/、edge/runtime、web、edge/deploy/bin/、models/*.gguf 已送達裝置 ${SSH_TARGET}:${TARGET_ROOT} ==="
+echo "=== push 完成：server/、edge/runtime、web、edge/deploy/、edge/probes/、models/*.gguf 已送達 ${SSH_TARGET}:${TARGET_ROOT} ==="
+echo
+echo "⚠️ 檔案送到了不等於生效："
+echo "  - server / client 的程式碼改動：systemctl restart talkybuddy-server"
+echo "  - systemd unit 檔（Environment=、Conflicts= 等）改動："
+echo "        ssh ${SSH_TARGET} 'cd ${TARGET_ROOT} && ./edge/deploy/install_services.sh'"
+echo "    只 rsync 不重裝的話 /etc/systemd/system 下還是舊的，而且不會有任何錯誤訊息。"
+echo
+echo "確認現在是哪個模式（並保證恰好有一個 client 在跑）："
+echo "        ssh ${SSH_TARGET} '${TARGET_ROOT}/edge/deploy/switch_mode.sh status'"

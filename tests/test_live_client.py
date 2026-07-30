@@ -188,7 +188,9 @@ def test_gate_stays_closed_for_the_whole_playback_duration():
     空窗讓玩偶收到自己的聲音，逐字稿出現 `[USER] 你跟我一起说`。
     """
     clock = _Clock()
-    gate = live_client.PlaybackGate(tail_s=0.6, now=clock)
+    # buffer_delay_s=0 隔離變因：這支測的是「涵蓋整段播放時長」，
+    # 緩衝延遲另有專屬測試（test_gate_accounts_for_the_playback_buffer_delay）
+    gate = live_client.PlaybackGate(tail_s=0.6, buffer_delay_s=0, now=clock)
     gate.note_audio(_ONE_SECOND * 5)      # 一次收到 5 秒的音訊
 
     clock.t += 3.0                        # 資料早就收完了，但還在播
@@ -200,10 +202,67 @@ def test_gate_stays_closed_for_the_whole_playback_duration():
     assert gate.is_open() is True
 
 
+# --- aplay 的緩衝延遲 -------------------------------------------------------
+
+def test_gate_accounts_for_the_playback_buffer_delay():
+    """寫進 aplay 的音訊不是立刻從喇叭出來——閘門要算進這段延遲。
+
+    2026-07-30 實測踩到：`--buffer-time` 是 2 秒（為了壓下 underrun 才調大的），
+    但 tail 只有 0.6 秒。閘門以「寫入時刻」推算播放區間，喇叭實際發聲卻晚了
+    整整一個緩衝深度：
+
+        閘門關閉 ： [寫入 ────────── 寫入+時長+0.6]
+        喇叭實響 ： [寫入+2.0 ──────────── 寫入+2.0+時長]
+                                  ↑ 閘門在這裡就開了，喇叭還在響
+
+    中間約 1.4 秒的空窗讓玩偶收到自己的聲音，逐字稿於是出現 `[USER] 哎西`
+    這種使用者確認沒講過的句子。
+
+    這是「修一個問題時無聲弄壞另一個」的典型：把 buffer 調大解決了
+    underrun（16 次 → 2 次），卻讓迴音防線破了個洞，而兩者之間的耦合
+    當時沒有任何地方記錄。
+    """
+    clock = _Clock()
+    gate = live_client.PlaybackGate(tail_s=0.6, buffer_delay_s=2.0, now=clock)
+    gate.note_audio(_ONE_SECOND)          # 1 秒的音訊
+
+    clock.t += 1.7                        # 若忽略緩衝，此時已「播完 1s + tail 0.6s」
+    assert gate.is_open() is False, "喇叭要等緩衝排空才發聲，這時它還在響"
+
+    clock.t += 2.0                        # 1s 播放 + 2s 緩衝 + 0.6s tail
+    assert gate.is_open() is True
+
+
+def test_the_buffer_delay_defaults_to_the_configured_playback_buffer():
+    """預設值要跟著 PLAYBACK_BUFFER_US 走，不能讓人記得手動同步兩個數字。
+
+    這正是當初出錯的原因：改了 buffer 卻沒有人想到要一起改 tail。
+    綁在一起之後，調 buffer 時閘門自動跟上。
+    """
+    expected = live_client._PLAYBACK_BUFFER_US / 1_000_000
+    assert live_client.PlaybackGate(now=_Clock())._buffer_delay == expected
+
+
+def test_flush_also_clears_the_buffered_audio():
+    """barge-in 時 aplay 子行程是被 kill 重啟的，緩衝裡的音訊一起消失。
+
+    所以打斷之後不必再等緩衝排空——那些音訊永遠不會發聲了。
+    若這裡還扣著緩衝延遲，每次打斷都會白白多關 2 秒上行，
+    孩子講的下一句會被吃掉開頭。
+    """
+    clock = _Clock()
+    gate = live_client.PlaybackGate(tail_s=0.6, buffer_delay_s=2.0, now=clock)
+    gate.note_audio(_ONE_SECOND * 5)
+    gate.note_flush()
+
+    clock.t += 0.7                        # 只需等 tail，不需等緩衝
+    assert gate.is_open() is True
+
+
 def test_consecutive_chunks_accumulate_playback_time():
     """連續收到多塊音訊時，播放時間要累加而不是重設。"""
     clock = _Clock()
-    gate = live_client.PlaybackGate(tail_s=0.0, now=clock)
+    gate = live_client.PlaybackGate(tail_s=0.0, buffer_delay_s=0, now=clock)
     gate.note_audio(_ONE_SECOND * 2)
     gate.note_audio(_ONE_SECOND * 2)      # 同一時刻又收到 2 秒
     clock.t += 3.0
@@ -225,7 +284,7 @@ def test_flush_reopens_the_gate_immediately():
 def test_gate_tail_is_configurable():
     """現場要能調：太短仍自我打斷，太長會吃掉孩子講話的開頭。"""
     clock = _Clock()
-    gate = live_client.PlaybackGate(tail_s=2.0, now=clock)
+    gate = live_client.PlaybackGate(tail_s=2.0, buffer_delay_s=0, now=clock)
     gate.note_audio(_ONE_SECOND // 100)   # 極短的一塊，主要驗 tail
     clock.t += 1.0
     assert gate.is_open() is False
@@ -234,8 +293,52 @@ def test_gate_tail_is_configurable():
 
 
 @pytest.mark.asyncio
-async def test_uplink_drops_audio_while_the_toy_speaks():
-    """閘門關閉時不送上行，但**仍要繼續讀麥克風**（否則 arecord 緩衝會爆）。"""
+async def test_uplink_sends_silence_instead_of_going_dark_while_the_toy_speaks():
+    """閘門關閉時要送**靜音**，不是什麼都不送。
+
+    2026-07-30 實測，「什麼都不送」會在串流中挖出一個洞，而 Nova Sonic 是
+    持續串流協定、由它的 server VAD 判斷 turn 邊界。同一天已經證實過兩次
+    這個模式會出事：
+
+    - 近場門檻丟棄 31s → 下行音訊 0 bytes，玩偶全程沉默
+    - 播放期間丟棄 34.5s → 玩偶自問自答、自己稱讚、繞回開頭重講
+
+    送零值 PCM 的內容是**誠實的**——使用者當下確實沒在說話——而且串流保持
+    連續，VAD 讀得到「這段是靜默」而不是「訊號不見了」。同時不含迴音，
+    因為送的不是麥克風收到的東西。
+    """
+    ws = _FakeWS()
+    stop = asyncio.Event()
+
+    class _ClosedGate:
+        def is_open(self):
+            return False
+
+    class _LoudMic:
+        """一直收到很大聲的東西——就是玩偶自己的聲音。"""
+
+        def __init__(self):
+            self.reads = 0
+
+        def read(self, n):
+            self.reads += 1
+            if self.reads >= 3:
+                stop.set()
+            return b"\x7f\x7f" * (n // 2)
+
+        def stop(self):
+            pass
+
+    await live_client.pump_uplink(ws, _LoudMic(), stop, _ClosedGate())
+
+    assert ws.sent_bytes, "閘門關著也要維持串流，不能整段斷掉"
+    assert all(c == bytes(len(c)) for c in ws.sent_bytes), \
+        "送出去的必須是靜音，不能是麥克風收到的內容（那就是迴音）"
+
+
+@pytest.mark.asyncio
+async def test_uplink_keeps_reading_the_mic_while_the_gate_is_closed():
+    """閘門關閉時仍要**繼續讀麥克風**，否則 arecord 的緩衝會爆掉。"""
     ws = _FakeWS()
     stop = asyncio.Event()
 
@@ -259,8 +362,9 @@ async def test_uplink_drops_audio_while_the_toy_speaks():
     mic = _Mic()
     await live_client.pump_uplink(ws, mic, stop, _ClosedGate())
 
-    assert ws.sent_bytes == [], "玩偶講話時仍在送上行 → 會自我打斷"
     assert mic.reads >= 3, "沒有繼續讀麥克風，arecord 緩衝會爆"
+    assert all(c == bytes(len(c)) for c in ws.sent_bytes), \
+        "玩偶講話時把麥克風內容送上去 → 會自我打斷（該送靜音）"
 
 
 @pytest.mark.asyncio
@@ -333,8 +437,13 @@ def test_threshold_zero_disables_filtering():
 
 
 @pytest.mark.asyncio
-async def test_uplink_drops_quiet_chunks():
-    """低於近場門檻的音訊不送出去。"""
+async def test_uplink_mutes_quiet_chunks_rather_than_dropping_them():
+    """低於近場門檻的音訊要換成靜音，不是整塊不送。
+
+    2026-07-30 之前這裡是 `continue`（完全不送），實測造成串流破洞、
+    Nova Sonic 的 VAD 判不出 turn → 下行音訊 0 bytes。內容一樣被擋掉
+    （遠場噪音不會上雲），但串流的連續性保住了。
+    """
     ws = _FakeWS()
     stop = asyncio.Event()
 
@@ -352,7 +461,9 @@ async def test_uplink_drops_quiet_chunks():
             pass
 
     await live_client.pump_uplink(ws, _Mic(), stop)
-    assert ws.sent_bytes == [], "遠場噪音被送上去了，會觸發誤判插話"
+    assert ws.sent_bytes, "串流不能整段斷掉（見上方 docstring）"
+    assert all(c == bytes(len(c)) for c in ws.sent_bytes), \
+        "遠場噪音被原樣送上去了，會觸發誤判插話"
 
 
 # ---------------------------------------------------------------------------

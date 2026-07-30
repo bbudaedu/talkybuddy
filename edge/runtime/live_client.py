@@ -146,13 +146,31 @@ class PlaybackGate:
     丟棄 74.2s 卻播了 85.3s，中間約 11 秒的空窗讓玩偶收到自己的聲音，
     逐字稿裡於是出現 `[USER] 你跟我一起说` 這種它自己剛講過的句子。
 
+    **還要再扣掉 aplay 的緩衝延遲**。寫進 aplay 的音訊不是立刻從喇叭出來——
+    `--buffer-time` 設多少，發聲就晚多少。2026-07-30 實測：buffer 為了壓下
+    underrun 調成 2 秒，tail 卻還是 0.6 秒，於是
+
+        閘門關閉 ： [寫入 ────────── 寫入+時長+0.6]
+        喇叭實響 ： [寫入+2.0 ──────────── 寫入+2.0+時長]
+                                  ↑ 閘門在這裡就開了，喇叭還在響
+
+    中間約 1.4 秒的空窗讓玩偶收到自己的聲音，逐字稿出現 `[USER] 哎西`
+    這種使用者確認沒講過的句子。緩衝延遲預設跟著 `_PLAYBACK_BUFFER_US` 走，
+    不要求任何人記得同步調兩個數字——沒記錄的耦合正是當初出錯的原因。
+
     `now` 可注入以便測試（真機的時序沒辦法在 CI 重現）。
     """
 
-    def __init__(self, tail_s: float = _PLAYBACK_TAIL_S, now=time.monotonic):
+    def __init__(self, tail_s: float = _PLAYBACK_TAIL_S,
+                 buffer_delay_s: float | None = None, now=time.monotonic):
         self._tail = tail_s
+        self._buffer_delay = (_PLAYBACK_BUFFER_US / 1_000_000
+                              if buffer_delay_s is None else buffer_delay_s)
         self._now = now
         self._playing_until: float = 0.0
+        # 打斷之後緩衝被清空，那些音訊永遠不會發聲——此時不該再扣緩衝延遲，
+        # 否則每次打斷都白關 2 秒上行，孩子下一句的開頭會被吃掉。
+        self._buffer_drained = True
 
     def note_audio(self, nbytes: int) -> None:
         """收到一塊下行音訊：依長度推算它會播到什麼時候。
@@ -163,14 +181,21 @@ class PlaybackGate:
         duration = nbytes / 2 / DOWNLINK_RATE
         start = max(self._now(), self._playing_until)
         self._playing_until = start + duration
+        self._buffer_drained = False
 
     def note_flush(self) -> None:
-        """播放緩衝被清掉了（barge-in）——玩偶立刻閉嘴，不必再等。"""
+        """播放緩衝被清掉了（barge-in）——玩偶立刻閉嘴，不必再等。
+
+        `flush_pending()` 是 kill 掉 aplay 子行程再重啟，緩衝裡還沒發聲的
+        音訊一起消失，所以連緩衝延遲都不必再等。
+        """
         self._playing_until = self._now()
+        self._buffer_drained = True
 
     def is_open(self) -> bool:
-        """現在可以送上行嗎（玩偶已播完並靜默滿 tail）。"""
-        return self._now() >= (self._playing_until + self._tail)
+        """現在可以送上行嗎（喇叭已真的靜下來並滿 tail）。"""
+        delay = 0.0 if self._buffer_drained else self._buffer_delay
+        return self._now() >= (self._playing_until + delay + self._tail)
 
 
 def chunk_peak(chunk: bytes) -> float:
@@ -387,15 +412,24 @@ async def pump_uplink(ws, mic, stop: asyncio.Event, gate=None) -> None:
         if not chunk:
             _log.info("上行統計：已送 %d bytes（~%.1fs @16k）", sent, sent / 2 / UPLINK_RATE)
             return  # arecord 掛了，收手
-        # 玩偶正在講話時丟棄這塊——仍然要讀麥克風（否則 arecord 緩衝會爆），
-        # 只是不送出去，免得自己的聲音被 Nova VAD 當成插話。
+        # 玩偶正在講話時，把這塊換成**靜音**再送——不是不送。
+        #
+        # 「什麼都不送」會在串流中挖出一個洞，而 Nova Sonic 是持續串流協定、
+        # 由它的 server VAD 判 turn 邊界。2026-07-30 實測，同一個模式出事兩次：
+        #   近場門檻丟棄 31s   → 下行音訊 0 bytes，玩偶全程沉默
+        #   播放期間丟棄 34.5s → 玩偶自問自答、自己稱讚、繞回開頭重講
+        # 送零值 PCM 的內容是誠實的（使用者當下確實沒說話），串流保持連續，
+        # 而且不含迴音——送的不是麥克風收到的東西。
+        muted = False
         if gate is not None and not gate.is_open():
             dropped += len(chunk)
-            continue
+            muted = True
         # 近場門檻：遠處的電視／旁人音量小，擋掉以免被當成插話（見 is_near_field）
-        if not is_near_field(chunk):
+        elif not is_near_field(chunk):
             quiet += len(chunk)
-            continue
+            muted = True
+        if muted:
+            chunk = bytes(len(chunk))
         try:
             await ws.send(chunk)
         except Exception as exc:

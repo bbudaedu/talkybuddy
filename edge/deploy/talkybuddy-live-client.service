@@ -27,11 +27,27 @@ EnvironmentFile=-@TARGET_ROOT@/.env
 Environment=TALKYBUDDY_EDGE_ALSA_DEVICE=plughw:1,0
 Environment=TALKYBUDDY_EDGE_ALSA_PLAYBACK=plughw:0,0
 
+# ⚠️ 這行不能拿掉，否則玩偶完全不會回話。
+#
+# 近場門檻（預設 0.06）會丟掉 peak 低於門檻的 100ms 音訊塊，本意是擋環境噪音。
+# 但 2026-07-30 實測，它是**從連續串流中間挖洞**，留下的突兀邊緣被 Nova Sonic
+# 的 server VAD 讀成「使用者開始說話」→ 它不斷打斷自己 → 下行音訊 0 bytes。
+#
+#     門檻 0.06：上行送 5.7s、丟棄 31.0s → 下行音訊 **0 bytes**、玩偶全程沉默
+#     門檻 0   ：上行送 23.1s、丟棄 0.0s → 下行音訊 **1,261,440 bytes（26.3s）**
+#
+# 而且實測這道防線本來就沒擋住多少噪音：這支麥克風的環境底噪偶爾會衝到
+# 0.1027，本來就穿得過 0.06。抗噪改由 PlaybackGate 與實體擺位負責。
+Environment=TALKYBUDDY_EDGE_NEAR_FIELD_PEAK=0
+
 # 音量只能靠軟體：ALSA mixer 對本板 3.5mm 輸出完全無效（實測 ADDA_DL_GAIN
 # 97%→13% 音量毫無變化），3.5mm 後方是硬體固定增益的功放。
-# 喇叭小聲同時直接減少自我迴音，對 half-duplex 閘門有幫助。
-Environment=TALKYBUDDY_EDGE_PLAYBACK_VOLUME=0.15
+# 0.15 是 07-30 早期選的值，但真機試聽確認**太小聲**；0.5 實測順暢。
+# 注意這個值與自我迴音直接相關：調越大，玩偶越容易聽見自己。
+Environment=TALKYBUDDY_EDGE_PLAYBACK_VOLUME=0.5
 # Nova Sonic 的音訊成批到達、中間有 4–6 秒生成空檔，aplay 預設緩衝吸收不了。
+# ⚠️ 這個值與 PLAYBACK_TAIL_S 有耦合：寫進 aplay 的音訊要等這麼久才出得來，
+# 閘門必須把這段延遲算進去，否則喇叭還在響、麥克風已經開了（見 PlaybackGate）。
 Environment=TALKYBUDDY_EDGE_PLAYBACK_BUFFER_US=2000000
 
 ExecStart=@TARGET_ROOT@/.venv/bin/python -u -m edge.runtime.live_client
