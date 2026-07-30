@@ -124,3 +124,34 @@ def word_hit_rate(ref_word: str, asr_text) -> float:
         sim = 1.0 - _edit_distance(ref, list(tok)) / max(len(ref), len(tok))
         best = max(best, sim)
     return round(max(0.0, best), 3)
+
+
+# ---------------------------------------------------------------------------
+# 唯一有副作用的函式：把練習結果折算成間隔重複排程
+# ---------------------------------------------------------------------------
+
+def record_word_result(student_id, word_zh: str, correct: bool, *, now=None) -> bool:
+    """把一個詞的練習結果寫入 ``store.word_reviews``；回傳有沒有寫成功。
+
+    排程演算法完全沿用 ``srs.schedule``（SM-2 二元變體），**不另立一套**：
+    兩處各寫一套，兩邊對「答對」的定義就會慢慢漂開。
+
+    任何失敗只記 log 不外拋——記錄是加值功能，不得拖垮教學迴圈
+    （與 ``games._due_first`` 讀取端同一個原則）。
+
+    ``last_seq`` 沿用既有值而非歸零：``srs.record_interactions`` 靠它判斷
+    「這筆互動算過了沒」，洗掉就會讓背景刷新把舊互動重複計分。
+    """
+    if not student_id or not word_zh:
+        return False
+    try:
+        from server import srs, store
+
+        prev = store.get_word_review(student_id, word_zh)
+        state = srs.schedule(prev, bool(correct), now=now)
+        last_seq = int((prev or {}).get("last_seq") or 0)
+        store.upsert_word_review(student_id, word_zh, state, last_seq=last_seq)
+        return True
+    except Exception:
+        _log.warning("背單字結果寫入失敗：word=%r", word_zh, exc_info=True)
+        return False

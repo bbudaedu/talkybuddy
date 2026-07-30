@@ -114,3 +114,62 @@ def test_word_hit_rate_is_zero_without_english():
     assert spelling.word_hit_rate("apple", "我不知道") == 0.0
     assert spelling.word_hit_rate("apple", "") == 0.0
     assert spelling.word_hit_rate("", "apple") == 0.0
+
+
+# ---------------------------------------------------------------------------
+# 學習狀況寫入（唯一有副作用的函式）
+# ---------------------------------------------------------------------------
+
+def test_a_wrong_word_becomes_due_immediately(tmp_db):
+    """答錯的詞 interval 歸零＝立刻到期，下一局第一個就會挑到它。
+
+    這是整個功能「紀錄確認學習狀況」的可見出口：上禮拜拼錯的詞，
+    今天第一個練。
+    """
+    from server import store
+
+    assert spelling.record_word_result("STU-1", "蘋果", False) is True
+    row = store.get_word_review("STU-1", "蘋果")
+    assert row is not None
+    assert row["interval_days"] == 0
+    assert row["lapses"] == 1
+
+
+def test_a_correct_word_gets_pushed_into_the_future(tmp_db):
+    from server import store
+
+    assert spelling.record_word_result("STU-1", "蘋果", True) is True
+    row = store.get_word_review("STU-1", "蘋果")
+    assert row["interval_days"] >= 1
+    assert row["reps"] == 1
+
+
+def test_recording_preserves_last_seq_so_the_background_pass_stays_deduped(tmp_db):
+    """不能把 last_seq 洗成 0。
+
+    srs.record_interactions 用 last_seq 判斷「這筆互動算過了沒」。
+    洗掉它，背景刷新就會把舊互動重新計分一次。
+    """
+    from server import srs, store
+
+    store.upsert_word_review("STU-1", "蘋果", srs.initial_state(), last_seq=42)
+    spelling.record_word_result("STU-1", "蘋果", True)
+    assert store.get_word_review("STU-1", "蘋果")["last_seq"] == 42
+
+
+def test_recording_never_raises_even_when_the_store_is_broken(tmp_db, monkeypatch):
+    """記錄是加值，不得拖垮教學迴圈——與 games._due_first 讀取端同一個原則。"""
+    from server import store
+
+    def _boom(*a, **kw):
+        raise RuntimeError("DB 壞了")
+
+    monkeypatch.setattr(store, "upsert_word_review", _boom)
+    assert spelling.record_word_result("STU-1", "蘋果", True) is False
+
+
+def test_recording_is_a_noop_without_a_student(tmp_db):
+    """沒有 student_id（例如測試或未登入）就不寫，也不該炸。"""
+    assert spelling.record_word_result("", "蘋果", True) is False
+    assert spelling.record_word_result(None, "蘋果", True) is False
+    assert spelling.record_word_result("STU-1", "", True) is False
