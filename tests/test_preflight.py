@@ -175,10 +175,40 @@ def test_missing_core_capability_is_a_hard_fail():
 def test_cloud_tts_missing_is_only_a_warning():
     """cloud_tts 缺金鑰不影響純離線 demo，不該擋演練。"""
     state, detail = preflight.evaluate_status(
+        {"asr": True, "llm": True, "tts": True, "cloud_tts": False,
+         "cloud_tts_detail": "未啟用：缺 ELEVENLABS_API_KEY 或 ELEVENLABS_VOICE_ID",
+         "network_mode": "cloud"})
+    assert state == WARN
+    assert "ELEVENLABS" in detail
+
+
+def test_cloud_tts_warning_says_which_kind_of_broken_it_is():
+    """「沒設金鑰」與「設了但每次逾時降級」的處置完全不同，不能顯示成同一句。
+
+    自檢原本一律印「缺 ELEVENLABS_API_KEY」——2026-07-30 金鑰其實已經設好、
+    真正的原因是 CLOUD_TTS_TIMEOUT_S 擋掉了每一次合成。照著那句話去補金鑰
+    只會白忙一輪。
+    """
+    state, detail = preflight.evaluate_status(
+        {"asr": True, "llm": True, "tts": True, "cloud_tts": False,
+         "cloud_tts_detail": "設定齊全但上次合成失敗 → 已靜默降級回邊緣語音"
+                             "（逾時 > 1.5s 上限）",
+         "network_mode": "cloud"})
+    assert state == WARN
+    assert "逾時" in detail
+    assert "ELEVENLABS_API_KEY" not in detail, "別再叫人去補一把已經設好的金鑰"
+
+
+def test_cloud_tts_warning_survives_an_old_server_without_the_detail_field():
+    """裝置端的 server 可能還沒更新到有 cloud_tts_detail 的版本。
+
+    自檢不該因為少一個欄位就爆掉——它是拿來救火的工具，本身不能是新的故障點。
+    """
+    state, detail = preflight.evaluate_status(
         {"asr": True, "llm": True, "tts": True,
          "cloud_tts": False, "network_mode": "cloud"})
     assert state == WARN
-    assert "ELEVENLABS" in detail
+    assert "cloud_tts" in detail
 
 
 def test_all_ready_in_cloud_mode_passes_clean():

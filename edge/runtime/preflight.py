@@ -130,7 +130,12 @@ def evaluate_status(status: dict) -> tuple[str, str]:
         return FAIL, f"這些能力不可用：{', '.join(missing)}"
     notes = []
     if not status.get("cloud_tts"):
-        notes.append("cloud_tts=false（缺 ELEVENLABS_API_KEY；純離線 demo 不需要）")
+        # 用 server 給的理由，不要自己臆測。原本這裡寫死「缺 ELEVENLABS_API_KEY」，
+        # 但 2026-07-30 金鑰其實已設好、真正原因是 CLOUD_TTS_TIMEOUT_S 擋掉了每一次
+        # 合成——照著那句話去補金鑰只會白忙一輪。
+        # 舊版 server 沒有 cloud_tts_detail 欄位，退回一句不臆測原因的話。
+        detail = status.get("cloud_tts_detail") or "原因不明（server 版本較舊）"
+        notes.append(f"cloud_tts=false（{detail}；純離線 demo 不需要）")
     if status.get("network_mode") != "cloud":
         notes.append(f"network_mode={status.get('network_mode')!r}（斷網演練起點需切 cloud）")
     if notes:

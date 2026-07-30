@@ -59,8 +59,8 @@ async def test_get_api_status_shape():
     assert resp.status_code == 200
     body = resp.json()
     assert set(body.keys()) == {
-        "asr", "llm", "tts", "cloud_tts", "cloud_llm", "cloud_provider",
-        "network_mode", "pending", "live_s2s",
+        "asr", "llm", "tts", "cloud_tts", "cloud_tts_detail", "cloud_llm",
+        "cloud_provider", "network_mode", "pending", "live_s2s",
     }
     # cloud_provider：雲端大腦實際會走的後端，供現場佐證「大腦在 Bedrock」
     assert body["cloud_provider"] in {"bedrock", "relay", "none"}
@@ -69,6 +69,9 @@ async def test_get_api_status_shape():
     assert isinstance(body["llm"], bool)
     assert isinstance(body["tts"], bool)
     assert isinstance(body["cloud_tts"], bool)
+    # cloud_tts 是布林、cloud_tts_detail 講理由：光看布林分不出「沒設金鑰」與
+    # 「設了但每次逾時降級」，而這兩者的處置完全不同
+    assert isinstance(body["cloud_tts_detail"], str) and body["cloud_tts_detail"]
     assert isinstance(body["cloud_llm"], bool)
     assert body["network_mode"] == "edge"
     assert isinstance(body["pending"], int)

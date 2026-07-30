@@ -169,7 +169,10 @@ async def api_status():
         "asr": bool(asr_engine.available()),
         "llm": bool(llm_engine.available()),
         "tts": bool(tts_engine.available()),
-        "cloud_tts": bool(cloud_tts_engine.available()),
+        # 依「最近一次合成的實際結果」而非「設定齊不齊全」回報。設定齊全但每次
+        # 都逾時降級時，這裡必須是 false——2026-07-30 就是被這個綠燈騙了一輪。
+        "cloud_tts": bool(cloud_tts_engine.verified()),
+        "cloud_tts_detail": cloud_tts_engine.status_detail(),
         "cloud_llm": bool(cloud_llm_engine.available()),
         # 雲端大腦後端身分："bedrock" | "relay" | "none"。優先序與
         # CloudLLM.generate 一致；現場靠這個欄位當場佐證「大腦在 Bedrock」。
