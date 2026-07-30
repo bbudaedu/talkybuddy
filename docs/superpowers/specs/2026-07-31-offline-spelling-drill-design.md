@@ -133,8 +133,13 @@ GAMES += ({"kind":"spell_along", "zh":"背單字", "en":"Spell Along", ...},)
 | `target_count` | 3 |
 | `topic` | 可選；給了就只練該分類，空字串＝全詞庫 |
 
-**新增一個欄位** `retries: int = 0`（同一步已重試幾次）。有預設值，
-其他三個遊戲完全不受影響。**每進入新的一步就歸零**，重試上限是「同一步」
+**新增兩個欄位**，都有預設值，其他三個遊戲完全不受影響：
+
+- `retries: int = 0` — 同一步已重試幾次
+- `student_id: str = ""` — 判定時才需要寫學習紀錄，而 `judge()` 的簽章只吃
+  `(state, student_text)`，不在開局時存進 state 就傳不到判定端
+
+`retries` **每進入新的一步就歸零**，重試上限是「同一步」
 的上限而不是整個詞的上限——否則第一步用掉配額，後面兩步就一次機會都沒有。
 
 選詞不能直接用既有的 `_due_first(topic, ...)`：它以分類為單位取詞
@@ -156,8 +161,10 @@ GAMES += ({"kind":"spell_along", "zh":"背單字", "en":"Spell Along", ...},)
 - 經 `srs.schedule()` 算出 `ease`／`interval_days`／`due_at` — 既有 SM-2 二元變體，不改
 - 答錯 → `interval_days = 0` → **下一局第一個就會挑到它**（`_due_first` 已經是這個行為）
 
-三步的命中率一併進 `interactions` payload 的既有 `scores` 欄位，教師端看得到。
-不新增 DB 表、不新增 API。
+**逐步命中率刻意不另外落地。** 每一輪的 ASR 文字與遊戲欄位（`game.kind`／
+`game.turns`）本來就會進 `interactions`，事後要重算命中率的原料都在；
+為了多存一個數字去改 `pipeline.py` 的熱路徑不划算。
+不新增 DB 表、不新增 API、不改 `pipeline.py`。
 
 現場可以講的一句話：「這孩子上禮拜 `banana` 拼錯，今天第一個練的就是 `banana`。」
 
