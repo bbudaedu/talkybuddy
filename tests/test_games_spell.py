@@ -126,3 +126,134 @@ def test_generic_start_dispatches_through_the_shared_contract():
     st = games.start("spell_along")
     assert st.game == "spell_along"
     assert games.prompt(st).en
+
+
+# ---------------------------------------------------------------------------
+# 三步狀態機
+# ---------------------------------------------------------------------------
+
+def _game_on(word_zh="蘋果", **kw):
+    """開一局並強制第一個詞，讓測試不依賴選詞順序。"""
+    st = games.start_spell_along(**kw)
+    return games.replace(st, hints=(word_zh, "狗", "書"), secret=word_zh)
+
+
+def test_saying_the_word_advances_to_spelling():
+    turn = games.judge_spell_along(_game_on(), "apple")
+    assert turn.correct
+    assert turn.state.step == "spell"
+    assert turn.target_en == "A, P, P, L, E,"
+
+
+def test_spelling_correctly_advances_to_the_sentence():
+    st = games.replace(_game_on(), step="spell")
+    turn = games.judge_spell_along(st, "A, P, P, L, E.")
+    assert turn.correct
+    assert turn.state.step == "sentence"
+    assert turn.target_en == "I want to eat an apple."
+
+
+def test_one_wrong_letter_still_passes():
+    """寬鬆鼓勵制：80% 命中就過。"""
+    st = games.replace(_game_on(), step="spell")
+    turn = games.judge_spell_along(st, "A, P, P, O, E.")
+    assert turn.correct
+    assert turn.state.step == "sentence"
+
+
+def test_a_bad_attempt_repeats_the_same_step_instead_of_advancing():
+    st = games.replace(_game_on(), step="spell")
+    turn = games.judge_spell_along(st, "我不會")
+    assert not turn.correct
+    assert turn.state.step == "spell", "沒過卻前進了"
+    assert turn.state.retries == 1
+    assert turn.target_en == "A, P, P, L, E,", "重來時要再念一次同樣的內容"
+
+
+def test_the_child_is_never_stuck_on_one_step():
+    """第 MAX_RETRIES+1 次一律往下走。卡在同一個詞出不去是最糟的失敗模式。"""
+    st = games.replace(_game_on(), step="spell")
+    for _ in range(spelling.MAX_RETRIES):
+        st = games.judge_spell_along(st, "我不會").state
+        assert st.step == "spell"
+    turn = games.judge_spell_along(st, "我不會")
+    assert turn.state.step == "sentence", "重試用完仍卡在原地"
+    assert not turn.correct, "往下走不代表判定成功"
+
+
+def test_retries_reset_when_a_new_step_begins():
+    """重試上限是「同一步」的上限，不是整個詞的上限——否則第一步用掉配額，
+    後面兩步一次機會都沒有。"""
+    st = games.judge_spell_along(games.replace(_game_on()), "我不會").state
+    assert st.retries == 1
+    turn = games.judge_spell_along(st, "apple")
+    assert turn.state.step == "spell"
+    assert turn.state.retries == 0
+
+
+def test_finishing_the_sentence_moves_to_the_next_word():
+    st = games.replace(_game_on(), step="sentence")
+    turn = games.judge_spell_along(st, "I want to eat an apple.")
+    assert turn.state.found == ("蘋果",)
+    assert turn.state.secret == "狗"
+    assert turn.state.step == "say_word"
+    assert turn.state.retries == 0
+    assert not turn.done
+
+
+def test_the_last_word_ends_the_round():
+    st = games.replace(_game_on(), step="sentence", target_count=1)
+    turn = games.judge_spell_along(st, "I want to eat an apple.")
+    assert turn.done
+    assert turn.state.done
+    assert "背了 1 個" in turn.reply_zh
+
+
+def test_judging_a_finished_round_does_not_crash():
+    st = games.replace(_game_on(), done=True, secret="")
+    turn = games.judge_spell_along(st, "apple")
+    assert not turn.correct
+    assert turn.reply_zh
+
+
+def test_judging_never_raises_on_garbage():
+    for junk in (None, "", 12345, "。" * 600):
+        assert games.judge_spell_along(_game_on(), junk).reply_zh
+
+
+# ---------------------------------------------------------------------------
+# 學習狀況記錄
+# ---------------------------------------------------------------------------
+
+def test_a_clean_spelling_is_recorded_as_learned(tmp_db):
+    from server import store
+
+    st = games.replace(_game_on(student_id="STU-R"), step="spell")
+    games.judge_spell_along(st, "A, P, P, L, E.")
+    row = store.get_word_review("STU-R", "蘋果")
+    assert row is not None and row["reps"] == 1
+
+
+def test_a_spelling_that_needed_retries_is_not_counted_as_learned(tmp_db):
+    """重試才過的不算學會——記下來的必須是真的會了。"""
+    from server import store
+
+    st = games.replace(_game_on(student_id="STU-R"), step="spell")
+    st = games.judge_spell_along(st, "我不會").state      # retries → 1
+    games.judge_spell_along(st, "A, P, P, L, E.")         # 這次過了
+    assert store.get_word_review("STU-R", "蘋果")["interval_days"] == 0
+
+
+def test_recording_happens_at_the_spelling_step_not_the_sentence_step(tmp_db):
+    """拼音是判定主力，例句那一步的 ASR 太糊，不參與對錯判定。"""
+    from server import store
+
+    st = games.replace(_game_on(student_id="STU-R"), step="sentence")
+    games.judge_spell_along(st, "完全不相干的話")
+    assert store.get_word_review("STU-R", "蘋果") is None
+
+
+def test_a_round_without_a_student_still_plays(tmp_db):
+    """沒有 student_id 就不寫紀錄，但遊戲照樣玩得完。"""
+    st = games.replace(_game_on(), step="spell")
+    assert games.judge_spell_along(st, "A, P, P, L, E.").state.step == "sentence"

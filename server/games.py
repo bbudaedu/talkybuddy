@@ -681,6 +681,95 @@ def spell_along_prompt(state: GameState) -> Line:
     )
 
 
+def judge_spell_along(state: GameState, student_text) -> GameTurn:
+    """判定一次跟讀。純規則、離線、不拋。"""
+    try:
+        return _judge_spell_along(state, student_text)
+    except Exception:
+        _log.exception("judge_spell_along 失敗，回中性提示")
+        return GameTurn(state=state, correct=False,
+                        reply_zh="我沒有聽清楚，再說一次好嗎？")
+
+
+def _judge_spell_along(state: GameState, student_text) -> GameTurn:
+    from server import spelling
+
+    if state.done or not state.secret:
+        return GameTurn(state=state, correct=False,
+                        reply_zh="這一局已經背完囉！要不要再來一局？")
+
+    word = state.secret
+    info = scaffold.VOCAB.get(word) or {}
+    en = str(info.get("en", ""))
+    turns = state.turns + 1
+
+    # --- 感知：這一步唸得對不對 -------------------------------------------
+    # 拼音那一步比字母序列，其餘兩步比目標單字。這個分工是實測結論：
+    # ASR 對字母序列比對整個單字準得多。
+    if state.step == "spell":
+        rate = spelling.letter_hit_rate(
+            spelling.ref_letters(en), spelling.heard_letters(student_text)
+        )
+    else:
+        rate = spelling.word_hit_rate(en, student_text)
+    passed = rate >= spelling.PASS_THRESHOLD
+
+    # --- 決策 1：沒過而且還有重試額度 → 放慢再來一次，不前進 --------------
+    if not passed and state.retries < spelling.MAX_RETRIES:
+        return GameTurn(
+            state=replace(state, turns=turns, retries=state.retries + 1),
+            correct=False, word=word,
+            target_en=_spell_step_en(state.step, word),
+            reply_zh="沒關係，我再慢慢念一次，你跟著我：",
+        )
+
+    # --- 決策 2：前進。過了要前進，重試用完也要前進 -----------------------
+    # 卡在同一個詞出不去是現場最糟的失敗模式，比答錯還糟。
+    if state.step == "say_word":
+        return GameTurn(
+            state=replace(state, turns=turns, step="spell", retries=0),
+            correct=passed, word=word,
+            target_en=_spell_step_en("spell", word),
+            reply_zh="很棒！我們來拼拼看：" if passed else "沒關係，我們先來拼拼看：",
+        )
+
+    if state.step == "spell":
+        # 判定主力就在這一步 → 學習狀況也在這裡記。
+        # correct 的定義是「第一次嘗試就過」：重試才過的不算學會，
+        # 記下來的必須是真的會了，否則教師端看到的是灌水的數字。
+        spelling.record_word_result(
+            state.student_id, word, passed and state.retries == 0
+        )
+        return GameTurn(
+            state=replace(state, turns=turns, step="sentence", retries=0),
+            correct=passed, word=word,
+            target_en=_spell_step_en("sentence", word),
+            reply_zh=(f"拼對了！「{word}」就是 {en}。用一句話說說看："
+                      if passed else f"「{word}」是 {en}。我們用一句話說說看："),
+        )
+
+    # --- step == "sentence"：這個詞完成，換下一個 ------------------------
+    found = state.found + (word,)
+    remaining = [w for w in state.hints if w not in found]
+    if len(found) >= state.target_count or not remaining:
+        return GameTurn(
+            state=replace(state, found=found, turns=turns, done=True,
+                          secret="", step="", retries=0),
+            correct=passed, word=word, done=True,
+            reply_zh=f"太棒了！今天我們背了 {len(found)} 個單字，"
+                     f"最後一個是「{word}」。你好厲害！",
+        )
+
+    nxt = remaining[0]
+    return GameTurn(
+        state=replace(state, found=found, turns=turns,
+                      secret=nxt, step=SPELL_STEPS[0], retries=0),
+        correct=passed, word=word,
+        target_en=_spell_step_en("say_word", nxt),
+        reply_zh=f"很好！「{word}」背完了。下一個是「{nxt}」，跟我念：",
+    )
+
+
 # ---------------------------------------------------------------------------
 # 對外目錄：前端拿它畫按鈕，pipeline 拿它分派
 #
@@ -741,6 +830,7 @@ _JUDGES = {
     "i_spy": judge_i_spy,
     "guess_who": judge_guess_who,
     "restaurant": judge_restaurant,
+    "spell_along": judge_spell_along,
 }
 
 
