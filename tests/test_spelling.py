@@ -1,0 +1,116 @@
+# -*- coding: utf-8 -*-
+"""test_spelling.py — 背單字判定核心（server/spelling.py）。
+
+這裡的門檻與字串格式**不是設計出來的，是實測選出來的**。
+2026-07-31 在開發機上把五種字母寫法丟給本地 TTS 合成、再用 SenseVoice
+讀回，只有 "A, P, P, L, E," 完美來回。所以下面第一條測試釘住的是一個
+實測結論，不是風格偏好——改它之前先重跑 edge/probes/probe_spell_tts.py。
+"""
+
+from __future__ import annotations
+
+from server import scaffold, spelling
+
+
+# ---------------------------------------------------------------------------
+# 字母念法：實測選出來的唯一可靠格式
+# ---------------------------------------------------------------------------
+
+def test_letter_format_is_the_one_that_survived_the_spike():
+    """大寫、", " 分隔、結尾一個逗號。四種替代寫法實測全部壞掉。"""
+    assert spelling.letters_for_tts("apple") == "A, P, P, L, E,"
+
+
+def test_letter_format_handles_short_and_dirty_words():
+    assert spelling.letters_for_tts("I") == "I,"
+    assert spelling.letters_for_tts("ice cream") == "I, C, E, C, R, E, A, M,"
+    assert spelling.letters_for_tts("") == ""
+    assert spelling.letters_for_tts(None) == ""
+
+
+def test_letter_sequence_becomes_a_single_english_tts_segment():
+    """字母序列必須整段進英文 voice，不能被中英切段切碎。"""
+    text = f"我們來拼：{spelling.letters_for_tts('apple')}"
+    assert ("en", "A, P, P, L, E,") in scaffold.split_tts_segments(text)
+
+
+def test_ref_letters_is_the_comparison_sequence():
+    assert spelling.ref_letters("apple") == ["A", "P", "P", "L", "E"]
+    assert spelling.ref_letters("") == []
+
+
+# ---------------------------------------------------------------------------
+# 聽回來的字母
+# ---------------------------------------------------------------------------
+
+def test_heard_letters_reads_a_normal_spelling():
+    assert spelling.heard_letters("A, P, P, L, E.") == ["A", "P", "P", "L", "E"]
+    assert spelling.heard_letters("a p p l e") == ["A", "P", "P", "L", "E"]
+
+
+def test_heard_letters_falls_back_when_asr_glues_them_together():
+    """ASR 把字母黏成一個字時退而求其次逐字元拆。
+
+    **這代表分不出「孩子在拼」與「孩子在唸整個單字」**——兩者的 ASR 文字
+    一模一樣。分不出來就不假裝分得出來，一律當作拼對了（已知邊界）。
+    """
+    assert spelling.heard_letters("Apple.") == ["A", "P", "P", "L", "E"]
+
+
+def test_heard_letters_never_raises_on_garbage():
+    for junk in (None, "", "。。。", "我不會", 12345):
+        assert isinstance(spelling.heard_letters(junk), list)
+
+
+# ---------------------------------------------------------------------------
+# 命中率
+# ---------------------------------------------------------------------------
+
+def test_letter_hit_rate_is_full_when_perfect():
+    assert spelling.letter_hit_rate(["A", "P", "P", "L", "E"],
+                                    ["A", "P", "P", "L", "E"]) == 1.0
+
+
+def test_letter_hit_rate_tolerates_one_wrong_letter():
+    """唸錯一個字母＝80%，在 0.6 門檻之上——寬鬆鼓勵制的具體樣子。"""
+    rate = spelling.letter_hit_rate(["A", "P", "P", "L", "E"],
+                                    ["A", "P", "P", "O", "E"])
+    assert rate == 0.8
+    assert rate >= spelling.PASS_THRESHOLD
+
+
+def test_letter_hit_rate_fails_when_most_letters_are_missing():
+    """只唸兩個字母＝40%，該重來。"""
+    rate = spelling.letter_hit_rate(["A", "P", "P", "L", "E"], ["A", "P"])
+    assert rate == 0.4
+    assert rate < spelling.PASS_THRESHOLD
+
+
+def test_letter_hit_rate_handles_empty_input():
+    assert spelling.letter_hit_rate([], ["A"]) == 0.0
+    assert spelling.letter_hit_rate(["A", "B"], []) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# 整字／例句命中
+# ---------------------------------------------------------------------------
+
+def test_word_hit_rate_is_full_on_an_exact_match():
+    assert spelling.word_hit_rate("apple", "Apple.") == 1.0
+
+
+def test_word_hit_rate_finds_the_word_inside_a_sentence():
+    """例句那一步比的是**目標單字**，不是整句——整句逐字比對對國小生太嚴。"""
+    assert spelling.word_hit_rate("apple", "I want to eat an apple.") == 1.0
+
+
+def test_word_hit_rate_is_low_when_asr_mangles_the_word():
+    """實測：TTS 念 apple 被 SenseVoice 聽成 Bbble。整字跟讀本來就脆弱，
+    所以判定主力放在拼音那一步，而且重試有上限、不會卡死。"""
+    assert spelling.word_hit_rate("apple", "Bbble.") < spelling.PASS_THRESHOLD
+
+
+def test_word_hit_rate_is_zero_without_english():
+    assert spelling.word_hit_rate("apple", "我不知道") == 0.0
+    assert spelling.word_hit_rate("apple", "") == 0.0
+    assert spelling.word_hit_rate("", "apple") == 0.0
