@@ -272,6 +272,66 @@ pipecat 的 TTS 音訊走 audio context + 背景 `_audio_context_task`，比 STT
 而這四輪的教訓完全一致：**憑推測會錯**。onnxruntime 假陰性、numpy 顧慮不成立、
 sample_rate 陷阱、STT 繼承錯基底——每一個都是實測才發現的，沒有一個是想出來的。
 
+---
+
+# 第五輪（04:20）— 板子回來，最大的未知數解除
+
+半夜斷網（使用者確認），板子約 04:20 恢復，RTT 87ms。
+
+## ✅ 完整 pipeline RSS：747MB，通過
+
+```
+[0] baseline         8 MB
+[1] +pipecat        34 MB   (+26)
+[2] +VAD           136 MB   (+102)
+[3] +SenseVoice    664 MB   (+528)  ← 最大宗
+[4] +TTS           744 MB   (+80)
+[5] 跑過一輪       747 MB
+```
+
+可用 1759MB，spec 設的紅線是 1.2G——**通過，還剩約 1G 餘裕**。
+llama-server 另吃 1413MB，兩者相加約 2.16G / 總共 3.7G：塞得下，
+但沒有第二個大模型的空間了。
+
+## ✅ TTS 即時率 0.25x（一度誤判成 1.0x）
+
+第一次量到「合成 2.3s / 音訊 2.23s」，差點下結論說 TTS 即時率只有 1.0x。
+**那是冷啟動**——含 voice 模型首次載入 2068ms。暖機後：
+
+| 文字 | 合成 | 音訊 | 即時率 |
+|---|---|---|---|
+| 你好 | 153ms | 0.63s | 0.24x |
+| 你好，我們來練習說蘋果 | 533ms | 2.11s | 0.25x |
+| 蘋果是 apple，你跟我念一次好不好 | 746ms | 2.87s | 0.26x |
+
+**合成比播放快 4 倍**，first-audio 150–750ms。TTS 不是瓶頸。
+（冷啟動那 2s 只發生一次，開機預熱一句就消化掉了。）
+
+## 完整成本圖像
+
+```
+VAD    1.90ms/窗（即時率 6%）
+STT   147ms（2 秒音訊）
+TTS   150-750ms（即時率 0.25x）
+LLM  3859ms  ←──── 瓶頸，pipecat 動不到它
+```
+
+**全部量完之後這個結論只有更強**：除 LLM 外所有元件加起來不到 1 秒，
+LLM 一個人 3.9 秒。
+
+## ⚠️ 順帶發現：live-client 變成 inactive
+
+板子回來後 `talkybuddy-live-client` 是 **inactive**（之前 active）。
+不是我停的（鐵律禁止碰 service，斷網期間也連不上）。記憶記過它
+**刻意沒有 `[Install]` 段、開機不會自動起來**，所以板子很可能重開過。
+要 demo S2S 需 `switch_mode.sh live`（別用 `systemctl stop`，那會兩個 client 都死）。
+
+## 仍未驗證
+
+1. **TTS adapter 在真實 pipeline 中輸出 0 frame** ← 現在是最高風險項
+2. 端到端 round_total
+3. CPU 爭用（各元件單獨都快，同時跑未測）
+
 ## 還沒有答案的問題
 
 - **決賽現場 tunnel 的穩定性**：RTT 116ms 是可接受的，但 tunnel 斷掉的頻率沒有資料
