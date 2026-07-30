@@ -212,3 +212,45 @@ async def test_spell_along_never_calls_the_cloud(tmp_db, monkeypatch):
     vp.start_game("spell_along", target_count=1)
     for text in ("apple", "A, P, P, L, E.", "I want to eat an apple."):
         vp.play_turn(text)
+
+
+# ---------------------------------------------------------------------------
+# 中文句子裡不准出現阿拉伯數字（四個遊戲共用）
+# ---------------------------------------------------------------------------
+
+def _zh_segments_are_clean(text: str) -> bool:
+    """中文段裡不含數字，且數字沒有被切成獨立的英文段。"""
+    from server import scaffold
+
+    return not any(
+        lang == "en" and seg.strip().isdigit()
+        for lang, seg in scaffold.split_tts_segments(text)
+    )
+
+
+async def test_no_game_line_speaks_a_number_in_english(tmp_db):
+    """**中文句子裡的阿拉伯數字會被英文 voice 唸出來。**
+
+    split_tts_segments 把數字切成英文段，所以「一共要找 5 個喔！」在裝置上
+    是「一共要找 five 個喔！」。玩偶只有聲音沒有螢幕，唸錯就是錯。
+    2026-07-31 背單字的端到端實跑聽出來的，回頭查發現另外三個遊戲也有。
+    """
+    for kind in games.GAME_KINDS:
+        st = games.start(kind)
+        line = games.prompt(st)
+        assert _zh_segments_are_clean(line.zh), f"{kind} 開場白唸出英文數字：{line.zh}"
+
+
+async def test_i_spy_progress_lines_do_not_speak_numbers_in_english(tmp_db):
+    st = games.start_i_spy(topic="animal", target_count=3)
+    turn = games.judge_i_spy(st, "I see a dog.")
+    assert _zh_segments_are_clean(turn.reply_zh), turn.reply_zh
+    st = games.replace(turn.state, target_count=1)
+    done = games.judge_i_spy(st, "I see a cat.")
+    assert _zh_segments_are_clean(done.reply_zh), done.reply_zh
+
+
+async def test_guess_who_remaining_count_is_not_spoken_in_english(tmp_db):
+    st = games.start_guess_who(topic="animal", seed="x")
+    turn = games.judge_guess_who(st, "Is it a dog?")
+    assert _zh_segments_are_clean(turn.reply_zh), turn.reply_zh

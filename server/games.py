@@ -112,6 +112,21 @@ def _safe_text(value) -> str:
         return ""
 
 
+# 量詞前的中文數字。2 是「兩」不是「二」——「一共二個」唸出來就是錯的，
+# 而這個玩偶只有聲音沒有螢幕，唸錯就是錯。
+_ZH_COUNT = ("零", "一", "兩", "三", "四", "五", "六", "七", "八", "九", "十")
+
+
+def _zh_count(n: int) -> str:
+    """個位數 → 量詞前的中文數字。**中文句子裡不准出現阿拉伯數字。**
+
+    `scaffold.split_tts_segments` 把數字當成英文段，所以「背了 2 個單字」
+    會被英文 voice 念成「背了 two 個單字」。2026-07-31 端到端實跑時聽出來的
+    ——單元測試看不到，因為它比對的是文字，不是切段結果。
+    """
+    return _ZH_COUNT[n] if 0 <= n < len(_ZH_COUNT) else str(n)
+
+
 def _words_in_cat(cat: str) -> list[str]:
     """某分類底下的中文詞鍵，保留 VOCAB 原始順序（確定性）。"""
     return [k for k, v in scaffold.VOCAB.items() if v.get("cat") == cat]
@@ -209,7 +224,7 @@ def i_spy_prompt(state: GameState) -> Line:
     zh_topic = _CAT_ZH.get(state.topic, state.topic)
     return Line(
         zh=f"我們來玩「火眼金睛」！這一關是{zh_topic}。"
-           f"看到什麼就說 I see a …，一共要找 {state.target_count} 個喔！",
+           f"看到什麼就說 I see a …，一共要找{_zh_count(state.target_count)}個喔！",
         en="I see a dog.",
     )
 
@@ -263,12 +278,12 @@ def _judge_i_spy(state: GameState, student_text) -> GameTurn:
             state=new_state, correct=True, word=word, done=True,
             target_en=info["sent"],
             reply_zh=f"找到「{word}」了，恭喜你完成這一關！"
-                     f"你總共找到 {len(found)} 個{zh_topic}，好厲害！",
+                     f"你總共找到{_zh_count(len(found))}個{zh_topic}，好厲害！",
         )
     left = state.target_count - len(found)
     return GameTurn(
         state=new_state, correct=True, word=word, target_en=info["sent"],
-        reply_zh=f"對！找到「{word}」了。還差 {left} 個，繼續找！",
+        reply_zh=f"對！找到「{word}」了。還差{_zh_count(left)}個，繼續找！",
     )
 
 
@@ -382,7 +397,7 @@ def guess_who_prompt(state: GameState) -> Line:
     """開場白。**必須示範句型**——孩子不會問問句就玩不下去。"""
     return Line(
         zh=f"我想好一個{_CAT_ZH.get(state.topic, state.topic)}了，你來問我！"
-           f"可以問「是不是動物？」「是不是 D 開頭？」，最多問 {state.target_count} 次。",
+           f"可以問「是不是動物？」「是不是 D 開頭？」，最多問{_zh_count(state.target_count)}次。",
         en="Is it an animal?",
     )
 
@@ -436,7 +451,7 @@ def _judge_guess_who(state: GameState, student_text) -> GameTurn:
         return GameTurn(
             state=replace(state, asked=asked, turns=turns),
             correct=False, answer="no",
-            reply_zh=f"不是「{guessed}」喔！還可以問 {left} 次。",
+            reply_zh=f"不是「{guessed}」喔！還可以問{_zh_count(left)}次。",
             reply_en="No, it isn't.",
         )
 
@@ -451,7 +466,7 @@ def _judge_guess_who(state: GameState, student_text) -> GameTurn:
         return GameTurn(
             state=replace(state, asked=asked, turns=turns),
             correct=False, answer="yes" if hit else "no",
-            reply_zh=("對！" if hit else "不是喔！") + f"還可以問 {left} 次。",
+            reply_zh=("對！" if hit else "不是喔！") + f"還可以問{_zh_count(left)}次。",
             reply_en="Yes, it is." if hit else "No, it isn't.",
         )
 
@@ -466,7 +481,7 @@ def _judge_guess_who(state: GameState, student_text) -> GameTurn:
         return GameTurn(
             state=replace(state, asked=asked, turns=turns),
             correct=False, answer="yes" if hit else "no",
-            reply_zh=("對！" if hit else "不是喔！") + f"還可以問 {left} 次。",
+            reply_zh=("對！" if hit else "不是喔！") + f"還可以問{_zh_count(left)}次。",
             reply_en="Yes, it is." if hit else "No, it isn't.",
         )
 
@@ -628,21 +643,6 @@ SPELL_STEPS = ("say_word", "spell", "sentence")
 # 一局幾個詞。既有遊戲是 5 題，這裡只有 3——一個詞要三步＝三個回合，
 # 3 個詞已經是 9 回合，比其他遊戲都長。
 SPELL_TARGET_COUNT = 3
-
-# 量詞前的中文數字。2 是「兩」不是「二」——「一共二個」唸出來就是錯的，
-# 而這個玩偶只有聲音沒有螢幕，唸錯就是錯。
-_ZH_COUNT = ("零", "一", "兩", "三", "四", "五", "六", "七", "八", "九", "十")
-
-
-def _zh_count(n: int) -> str:
-    """個位數 → 量詞前的中文數字。**中文句子裡不准出現阿拉伯數字。**
-
-    `scaffold.split_tts_segments` 把數字當成英文段，所以「背了 2 個單字」
-    會被英文 voice 念成「背了 two 個單字」。2026-07-31 端到端實跑時聽出來的
-    ——單元測試看不到，因為它比對的是文字，不是切段結果。
-    """
-    return _ZH_COUNT[n] if 0 <= n < len(_ZH_COUNT) else str(n)
-
 
 def _is_spellable(word_zh: str) -> bool:
     """這個詞適不適合拿來拼。片語一律排除（VOCAB 目前只有 ice cream 一個）。
