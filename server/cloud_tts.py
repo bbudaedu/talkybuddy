@@ -28,6 +28,22 @@ from server.timestretch import stretch_pcm16
 TARGET_RATE = 22050  # 輸出取樣率（與 server/tts.py 一致）
 _API_BASE = "https://api.elevenlabs.io/v1/text-to-speech"
 
+# 這些模型的 API 會忽略 voice_settings.speed（2026-07-30 真 API 實測：
+# eleven_v3 給 speed=0.7 與 1.0 產出的語音長度是 4.16s vs 4.32s，無差別；
+# 同一份文字在 eleven_turbo_v2_5 則是 5.94s vs 4.74s，明顯有效）。
+# 對這些模型，放慢改在合成後用 WSOLA 補（見 synth）。
+_MODELS_IGNORING_SPEED = frozenset({"eleven_v3"})
+
+
+def _model_honours_speed(model: str) -> bool:
+    """這個模型的 API 會照做 voice_settings.speed 嗎。
+
+    未知模型一律當成「會照做」，因為猜錯的後果不對稱：
+    - 猜「不會」但其實會 → API 放慢一次、WSOLA 再放慢一次，慢到不能聽，且不報錯
+    - 猜「會」但其實不會 → 語速維持原速，只是沒放慢，仍然可用
+    """
+    return model not in _MODELS_IGNORING_SPEED
+
 
 class CloudTTS:
     """ElevenLabs 雲端合成引擎（與 TTSEngine 同契約、降級安全）。
@@ -122,18 +138,26 @@ class CloudTTS:
                 return None
 
             url = f"{_API_BASE}/{ELEVENLABS_VOICE_ID}?output_format=pcm_22050"
-            # v3 情緒參數（見 config）：真 API 驗證確認 eleven_v3 忽略 speed，改以
-            # stability/style 控制情緒起伏、similarity_boost 貼近原聲。不送 speed（無效）。
+            # 情緒參數（見 config）：stability/style 控制情緒起伏、
+            # similarity_boost 貼近原聲。
+            voice_settings = {
+                "stability": ELEVENLABS_STABILITY,
+                "similarity_boost": ELEVENLABS_SIMILARITY_BOOST,
+                "style": ELEVENLABS_STYLE,
+                "use_speaker_boost": ELEVENLABS_USE_SPEAKER_BOOST,
+            }
+            # 放慢語速：吃 speed 的模型交給 API（免一次 WSOLA 運算），
+            # 不吃的留到合成後補。兩邊只能擇一，都做會變成放慢兩次。
+            api_slows_it_down = (
+                _model_honours_speed(ELEVENLABS_MODEL) and CLOUD_TTS_SPEED != 1.0
+            )
+            if api_slows_it_down:
+                voice_settings["speed"] = CLOUD_TTS_SPEED
             body = json.dumps(
                 {
                     "text": text,
                     "model_id": ELEVENLABS_MODEL,
-                    "voice_settings": {
-                        "stability": ELEVENLABS_STABILITY,
-                        "similarity_boost": ELEVENLABS_SIMILARITY_BOOST,
-                        "style": ELEVENLABS_STYLE,
-                        "use_speaker_boost": ELEVENLABS_USE_SPEAKER_BOOST,
-                    },
+                    "voice_settings": voice_settings,
                 }
             ).encode("utf-8")
             req = urllib.request.Request(
@@ -176,9 +200,10 @@ class CloudTTS:
             if ct.startswith("text/") or ct.startswith("application/json"):
                 self._record(False, f"回應不是音訊（Content-Type: {ct}）", elapsed_ms)
                 return None
-            # v3 忽略 speed → 在此對 raw PCM 做保持音高的放慢（WSOLA）。
-            # 僅處理 raw PCM（非 RIFF 容器）；放慢失敗（None/空）則沿用原音訊。
-            if raw[:4] != b"RIFF":
+            # 只有 API 沒幫忙放慢時才自己來（見上方 api_slows_it_down）。
+            # 對 raw PCM 做保持音高的時間伸縮（WSOLA）；僅處理 raw PCM
+            # （非 RIFF 容器）；放慢失敗（None/空）則沿用原音訊。
+            if not api_slows_it_down and CLOUD_TTS_SPEED != 1.0 and raw[:4] != b"RIFF":
                 slowed = stretch_pcm16(raw, CLOUD_TTS_SPEED, TARGET_RATE)
                 if slowed:
                     raw = slowed

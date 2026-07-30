@@ -112,15 +112,30 @@ ELEVENLABS_API_KEY: str = os.environ.get("ELEVENLABS_API_KEY", "")
 # 正好契合「外國企鵝來跟小朋友學中文」的角色設定（免費 tier，繞過付費台灣腔）。
 # 克隆/換聲僅覆蓋此 env，架構不動。空=不啟用雲端。
 ELEVENLABS_VOICE_ID: str = os.environ.get("ELEVENLABS_VOICE_ID", "Xb7hH8MSUJpSbSDYk0k2")
-# 合成模型：eleven_v3 情緒表現最強（真 API 驗證確認 v3 忽略 speed，改用下列情緒參數）。
-ELEVENLABS_MODEL: str = os.environ.get("ELEVENLABS_MODEL", "eleven_v3")
-# 雲端合成逾時（秒）；逾時即靜默降級回邊緣 TTS。1.5s 為斷網示範（NETCUT-02／
-# D-03）選定值，可經同名環境變數覆寫。
+# 合成模型。2026-07-30 從 eleven_v3 換成 eleven_turbo_v2_5：真機 A/B 試聽後
+# 確認 turbo 相對邊緣 sherpa-onnx 已有明顯提升，不值得為 v3 多付延遲。實測
+# （暖機後整包收完的中位數）：
+#     eleven_v3          2.97s   ← 冷啟動 7.92s
+#     eleven_turbo_v2_5  0.37s
+#     eleven_flash_v2_5  0.48s   ← 最快但單次抖動大（0.34–0.72s）
+# 換模型會改變放慢語速的實作路徑（v3 忽略 speed、v2_5 不忽略），
+# 分流見 server/cloud_tts.py::_model_honours_speed。
+ELEVENLABS_MODEL: str = os.environ.get("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
+# 雲端合成逾時（秒）；逾時即靜默降級回邊緣 TTS。
+# 這個值有硬上界：斷網時的降級延遲必須 < 1–2 秒（ROADMAP／NETCUT-02、D-03），
+# 由 tests/test_pipeline_timeout_isolation.py 釘住 <= 2.0。逾時等待是白花的
+# 牆鐘時間——之後還要再跑一次邊緣合成，使用者聽到的是「先沉默、再回答」。
+#
+# 1.5s 對 eleven_turbo_v2_5（實測中位數 0.37s）有 4 倍餘裕，夠用。
+# 2026-07-30 一度想放寬到 3.0s，那是為了遷就 eleven_v3 的約 3s 延遲——換成
+# turbo 之後這個理由消失了。**逾時不該為了配合慢模型而放寬**，那是把降級
+# 體驗賠掉去救一個本來就不該選的模型。
+# 若實際耗時經常逼近這個值，問題是網路不是模型。
 CLOUD_TTS_TIMEOUT_S: float = float(os.environ.get("CLOUD_TTS_TIMEOUT_S", "1.5"))
 # 發音評測（B 軸背景，見 server/pronunciation.py）逾時（秒）；含首輪模型載入。
 # 逾時→該輪 pron=None 照寫 transcript，避免分數與 interaction 脫鉤。
 PRON_SCORE_TIMEOUT_S: float = float(os.environ.get("PRON_SCORE_TIMEOUT_S", "15.0"))
-# v3 voice_settings 情緒參數（取代無效的 speed；預設值＝真 API 手測聽感選定，可用 env 調）：
+# voice_settings 情緒參數（預設值＝真 API 手測聽感選定，可用 env 調）：
 # stability 低→情緒起伏大、高→平穩；style 誇張說話特色；similarity_boost 貼近原聲。
 ELEVENLABS_STABILITY: float = float(os.environ.get("ELEVENLABS_STABILITY", "0.5"))
 ELEVENLABS_SIMILARITY_BOOST: float = float(
@@ -130,9 +145,13 @@ ELEVENLABS_STYLE: float = float(os.environ.get("ELEVENLABS_STYLE", "0.2"))
 ELEVENLABS_USE_SPEAKER_BOOST: bool = os.environ.get(
     "ELEVENLABS_USE_SPEAKER_BOOST", "true"
 ).strip().lower() in ("1", "true", "yes", "on")
-# 放慢雲端 v3 語音的播放速度。eleven_v3 忽略 API speed → 改在合成後對 raw PCM 做
-# 保持音高的時間伸縮（WSOLA，見 server/timestretch.py）。<1 放慢、1.0 不處理。
+# 放慢雲端語音的播放速度。<1 放慢、1.0 完全不處理。
 # 預設 0.90＝比原聲再慢一點點，讓國小雙語帶讀更清楚；env 可微調（0.85 更慢等）。
+# 實作路徑依模型而異（見 server/cloud_tts.py::_model_honours_speed）：
+#   吃 speed 的（turbo/flash v2_5、multilingual_v2）→ 交給 API，零額外運算
+#   不吃的（eleven_v3）→ 合成後對 raw PCM 做保持音高的時間伸縮
+#                        （WSOLA，見 server/timestretch.py）
+# 兩條路只能擇一，都做會變成放慢兩次、慢到不能聽且不報錯。
 CLOUD_TTS_SPEED: float = float(os.environ.get("CLOUD_TTS_SPEED", "0.90"))
 
 # ---------------------------------------------------------------------------
