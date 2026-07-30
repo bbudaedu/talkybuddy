@@ -175,6 +175,6 @@ async def test_playable_games_are_discoverable(tmp_db):
         r = await c.get("/api/games", headers=_AUTH)
     body = r.json()
     kinds = {g["kind"] for g in body["games"]}
-    assert kinds == {"i_spy", "guess_who", "restaurant"}
+    assert kinds == {"i_spy", "guess_who", "restaurant", "spell_along"}
     for g in body["games"]:
         assert g["zh"] and g["en_pattern"] and g["function"]

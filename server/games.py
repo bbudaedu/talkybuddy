@@ -610,6 +610,78 @@ def _judge_restaurant(state: GameState, student_text) -> GameTurn:
 
 
 # ---------------------------------------------------------------------------
+# 遊戲 D：背單字 Spell Along
+#
+# 一個詞三步：念單字 → 逐字母拼 → 例句，孩子每一步都跟著念。
+# 判定主力是**拼音那一步**——2026-07-31 開發機實測，ASR 對字母序列
+# 比對整個單字準得多（apple 被聽成 Bbble，A, P, P, L, E 卻一字不差）。
+# 詳見 server/spelling.py 的模組 docstring。
+#
+# 感知（ASR 模糊比對）→ 決策（SRS 挑詞 + 前進/重來）→ 行動（TTS 三步腳本），
+# 三段全在本地跑，斷網與連網逐字相同。
+#
+# 零新詞庫：拼音由 scaffold.VOCAB 的 en 現算，例句直接用 sent。
+# ---------------------------------------------------------------------------
+
+SPELL_STEPS = ("say_word", "spell", "sentence")
+
+# 一局幾個詞。既有遊戲是 5 題，這裡只有 3——一個詞要三步＝三個回合，
+# 3 個詞已經是 9 回合，比其他遊戲都長。
+SPELL_TARGET_COUNT = 3
+
+
+def start_spell_along(topic: str = "", *, target_count: int = SPELL_TARGET_COUNT,
+                      student_id: str | None = None) -> GameState:
+    """開一局背單字。
+
+    ``topic`` 給了就只練該分類，空字串＝**跨分類練整個詞庫**。
+    到期詞排前面：上禮拜拼錯的詞，今天第一個練。
+    """
+    valid_topic = topic if topic in _CAT_ZH else ""
+    pool = _words_in_cat(valid_topic) if valid_topic else list(scaffold.VOCAB.keys())
+    try:
+        count = max(1, min(int(target_count), len(pool)))
+    except (TypeError, ValueError):
+        count = min(SPELL_TARGET_COUNT, len(pool))
+    words = _due_words_from(pool, student_id, count)
+    return GameState(
+        game="spell_along",
+        topic=valid_topic,
+        target_count=len(words) or count,
+        hints=words,
+        secret=words[0] if words else "",
+        step=SPELL_STEPS[0],
+        student_id=str(student_id or ""),
+    )
+
+
+def _spell_step_en(step: str, word_zh: str) -> str:
+    """某一步要孩子跟著念的英文內容；查不到詞回空字串。"""
+    from server import spelling
+
+    info = scaffold.VOCAB.get(word_zh) or {}
+    if step == "spell":
+        return spelling.letters_for_tts(info.get("en", ""))
+    if step == "sentence":
+        return str(info.get("sent", ""))
+    return str(info.get("en", ""))
+
+
+def spell_along_prompt(state: GameState) -> Line:
+    """開場白：講清楚玩法，並直接念出第一個詞。
+
+    裝置沒有螢幕，規則說明只能用聽的（與另外三個遊戲同一個限制）。
+    """
+    if not state.secret:
+        return Line(zh="今天沒有要背的單字，我們玩別的好嗎？")
+    return Line(
+        zh=f"我們來背單字！我念一次，你跟著念，一共 {state.target_count} 個。"
+           f"第一個是「{state.secret}」，跟我念：",
+        en=_spell_step_en("say_word", state.secret),
+    )
+
+
+# ---------------------------------------------------------------------------
 # 對外目錄：前端拿它畫按鈕，pipeline 拿它分派
 #
 # 放在這裡而不是前端硬編：兩份清單遲早不同步，而不同步的症狀是
@@ -641,6 +713,14 @@ GAMES = (
         "function": "Ordering food & drinks",
         "desc": "我當店員，你來點餐",
     },
+    {
+        "kind": "spell_along",
+        "zh": "背單字",
+        "en": "Spell Along",
+        "en_pattern": "A, P, P, L, E,",
+        "function": "Spelling and reading aloud familiar words",
+        "desc": "我念單字、拼字母、說例句，你跟著念",
+    },
 )
 
 GAME_KINDS = tuple(g["kind"] for g in GAMES)
@@ -649,11 +729,13 @@ _STARTERS = {
     "i_spy": start_i_spy,
     "guess_who": start_guess_who,
     "restaurant": start_restaurant,
+    "spell_along": start_spell_along,
 }
 _PROMPTS = {
     "i_spy": i_spy_prompt,
     "guess_who": guess_who_prompt,
     "restaurant": restaurant_prompt,
+    "spell_along": spell_along_prompt,
 }
 _JUDGES = {
     "i_spy": judge_i_spy,
