@@ -72,6 +72,23 @@ systemctl restart talkybuddy-server talkybuddy-local-client
 journalctl -u talkybuddy-local-client -f -o cat     # 看「按一下按鍵開始錄音...」
 ```
 
+### 切到 S2S（Nova Sonic 即時對話）
+
+`talkybuddy-live-client.service` 已安裝但**不 enable**——開機預設永遠是上面
+那條回合式、可 demo 的路。要切換：
+
+```bash
+systemctl start talkybuddy-live-client      # 需 .env 裡有 AWS 憑證
+systemctl start talkybuddy-local-client     # 切回回合式
+```
+
+**不需要記得先停另一個。** 兩個 unit 互相 `Conflicts=`，systemd 會自動停掉對方。
+
+> 為什麼要這樣：兩個 client 搶同一支 USB 麥克風，ALSA capture 是獨佔的。
+> 同時開的話後起的那個上行是 0 bytes、玩偶毫無反應，**症狀跟按鍵故障
+> 一模一樣**（2026-07-30 有三輪測試因此無效）。手動 `python -m` 啟動時
+> Conflicts 管不到，但 `live_client` 自己會擋下來並印出解法。
+
 ## 開機**不會**自動處理的
 
 1. **USB 麥克風實體靜音鍵**（上面第 1 步）——硬體開關，無解，只能手按。
@@ -85,7 +102,8 @@ journalctl -u talkybuddy-local-client -f -o cat     # 看「按一下按鍵開�
 
 ```bash
 ./edge/runtime/provision_device.sh      # venv + 套件 + logind drop-in（步驟 3/3）
-./edge/deploy/install_services.sh --now # 安裝並啟動兩個 service
+./edge/deploy/install_services.sh --now # 安裝三個 unit，啟動並 enable 前兩個
+                                        # （live-client 安裝但不 enable，見上）
 ```
 
 同步程式碼（**不要用 `push.sh`，它會連 1GB GGUF 一起推**）：

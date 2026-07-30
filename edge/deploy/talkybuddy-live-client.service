@@ -1,0 +1,44 @@
+[Unit]
+# 模板：@TARGET_ROOT@ 由 edge/deploy/install_services.sh 在安裝時替換。
+Description=TalkyBuddy edge live_client (Nova Sonic S2S continuous dialogue)
+Documentation=file://@TARGET_ROOT@/edge/runtime/README.md
+After=talkybuddy-server.service sound.target
+Wants=talkybuddy-server.service
+
+# ⚠️ 這是本 unit 存在的主要理由。
+# local_client（回合式）與 live_client（S2S）搶同一支 USB 麥克風，而 ALSA 的
+# capture 是獨佔的：後起的那個拿到 `audio open error: Device or resource busy`，
+# 上行變 0 bytes、玩偶完全沒反應——**看起來跟按鍵故障一模一樣**。
+# 2026-07-30 有連續三輪實機測試因此無效。
+#
+# Conflicts= 讓 systemd 在啟動本 unit 時自動停掉回合式那邊，反之亦然，
+# 所以「切模式」就是單純 `systemctl start` 另一個，不需要記得先停。
+Conflicts=talkybuddy-local-client.service
+
+[Service]
+Type=simple
+WorkingDirectory=@TARGET_ROOT@
+# `-` 前綴：.env 不存在也不讓 service 啟動失敗。
+# 注意 S2S 與回合式不同，**必須有 AWS 憑證**才跑得起來（Nova Sonic 在雲端）。
+EnvironmentFile=-@TARGET_ROOT@/.env
+
+# 錄音＝USB 麥克風（card 1，只支援 48kHz，用 plughw 讓 ALSA 重採樣到 16k）；
+# 播放＝3.5mm Lineout（card 0）。理由同 talkybuddy-local-client.service。
+Environment=TALKYBUDDY_EDGE_ALSA_DEVICE=plughw:1,0
+Environment=TALKYBUDDY_EDGE_ALSA_PLAYBACK=plughw:0,0
+
+# 音量只能靠軟體：ALSA mixer 對本板 3.5mm 輸出完全無效（實測 ADDA_DL_GAIN
+# 97%→13% 音量毫無變化），3.5mm 後方是硬體固定增益的功放。
+# 喇叭小聲同時直接減少自我迴音，對 half-duplex 閘門有幫助。
+Environment=TALKYBUDDY_EDGE_PLAYBACK_VOLUME=0.15
+# Nova Sonic 的音訊成批到達、中間有 4–6 秒生成空檔，aplay 預設緩衝吸收不了。
+Environment=TALKYBUDDY_EDGE_PLAYBACK_BUFFER_US=2000000
+
+ExecStart=@TARGET_ROOT@/.venv/bin/python -u -m edge.runtime.live_client
+Restart=always
+RestartSec=3
+
+# 刻意不寫 [Install]：本 unit **不該開機自動啟動**。
+# 開機預設是回合式那條已可 demo 的路；S2S 體驗尚未收斂（自我迴音、半雙工閘門
+# 讓體感降級成回合式），要用時再手動 `systemctl start talkybuddy-live-client`。
+# install_services.sh 會安裝但不 enable 本 unit。

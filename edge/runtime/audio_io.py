@@ -22,9 +22,11 @@ profile 觸發 WavSpecMismatchError（見 server/pipeline.py::_webm_to_wav）。
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import os
 import select
+import signal
 import struct
 import subprocess
 import sys
@@ -32,6 +34,31 @@ import tempfile
 import time
 
 _log = logging.getLogger(__name__)
+
+# prctl(2) 的 PR_SET_PDEATHSIG。Python 沒有包裝這個 syscall，只能走 ctypes。
+_PR_SET_PDEATHSIG = 1
+
+
+def die_with_parent() -> None:
+    """`preexec_fn`：要求 kernel 在父行程死亡時對自己送 SIGTERM。
+
+    **為什麼需要**（2026-07-30 實機事故）：`arecord` 以 `Popen` 起在背景串流，
+    父行程被 `pkill` 掉之後它**不會跟著死**，變成孤兒繼續獨佔 USB 麥克風。
+    下一次啟動就拿到 `audio open error: Device or resource busy`，而且從外面
+    看跟麥克風壞掉一模一樣——要 `pgrep arecord` 才找得到兇手。
+
+    這是 fork 之後、exec 之前執行的（`preexec_fn` 的語意），所以設定會被
+    exec 保留給 arecord/aplay 本身。
+
+    非 Linux 或 libc 取不到時靜默略過：這是防呆機制，不該讓錄音本身起不來
+    （比照本模組 sounddevice 不可用時的降級 idiom）。
+    """
+    try:
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        libc.prctl(_PR_SET_PDEATHSIG, signal.SIGTERM)
+    except Exception:
+        # preexec_fn 跑在 fork 之後的子行程裡，這裡不能用 logging（可能死鎖）
+        pass
 
 _SAMPLE_RATE = 16000
 _CHANNELS = 1

@@ -7,6 +7,13 @@ After=talkybuddy-server.service sound.target
 # 它自己會等 /api/status 就緒並在斷線後重連（見 local_client.run_loop）。
 Wants=talkybuddy-server.service
 
+# ⚠️ live_client（S2S）與本程式搶同一支 USB 麥克風，ALSA capture 獨佔，
+# 後起的那個上行會是 0 bytes、玩偶毫無反應（2026-07-30 三輪測試因此無效）。
+# 詳細理由見 talkybuddy-live-client.service 的註解。
+# systemd 的 Conflicts= 其實會隱含建立反向關係，這裡仍明寫一次：讀這個檔的人
+# 必須知道有另一個 client 存在——「不知道有另一個 client」正是當天踩坑的原因。
+Conflicts=talkybuddy-live-client.service
+
 [Service]
 Type=simple
 WorkingDirectory=@TARGET_ROOT@

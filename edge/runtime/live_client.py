@@ -47,6 +47,9 @@ from edge.runtime import audio_io
 
 _log = logging.getLogger(__name__)
 
+# 回合式 client 的 unit 名稱。它與本程式搶同一支 USB 麥克風（見 assert_exclusive_mic）。
+LOCAL_CLIENT_UNIT = "talkybuddy-local-client.service"
+
 WS_HOST: str = os.environ.get("TALKYBUDDY_EDGE_WS_HOST", "127.0.0.1")
 WS_PORT: int = int(os.environ.get("TALKYBUDDY_EDGE_WS_PORT", "8787"))
 
@@ -242,7 +245,12 @@ class MicSource:
         # stderr 不吞：arecord 起不來時（裝置被佔用、名稱錯）唯一的線索就在這裡。
         # 第一次實機除錯時把它丟進 DEVNULL，結果只看得到「session 立刻結束」
         # 這個症狀，完全無法定位。arecord 正常時也只會印一行 "Recording raw data"。
-        self._proc = subprocess.Popen(self._argv, stdout=subprocess.PIPE)
+        # preexec_fn：父行程被 pkill 掉時 arecord 必須跟著死，否則變孤兒
+        # 繼續獨佔麥克風（見 audio_io.die_with_parent）。
+        self._proc = subprocess.Popen(
+            self._argv, stdout=subprocess.PIPE,
+            preexec_fn=audio_io.die_with_parent,
+        )
         _log.info("arecord 啟動：%s", " ".join(self._argv))
 
     def read(self, n: int) -> bytes:
@@ -281,6 +289,7 @@ class SpeakerSink:
         # stderr 同樣不吞（見 MicSource 的理由）
         self._proc = subprocess.Popen(
             build_aplay_argv(self._device), stdin=subprocess.PIPE,
+            preexec_fn=audio_io.die_with_parent,
         )
 
     def write(self, data: bytes) -> None:
@@ -458,6 +467,7 @@ async def run_loop() -> None:
 
     待機期間完全不連線、不送音訊：零誤觸、零雲端流量（見模組 docstring）。
     """
+    assert_exclusive_mic()
     local_client_ready()
 
     while True:
@@ -500,6 +510,44 @@ async def run_loop() -> None:
             if sink is not None:
                 sink.stop()
             print("  ○ 已結束，回待機", flush=True)
+
+
+def local_client_is_active(run=subprocess.run) -> bool:
+    """回合式 client 是否正在跑（＝麥克風已被佔走）。
+
+    systemctl 不存在（開發機、容器）或查詢失敗時回 False：守衛的職責是
+    「發現已知衝突就明講」，不是「無法確認就一律拒絕」——後者會讓這支程式
+    在沒有 systemd 的環境完全不能跑。
+    """
+    try:
+        proc = run(
+            ["systemctl", "is-active", LOCAL_CLIENT_UNIT],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception:
+        return False
+    return proc.stdout.strip() == "active"
+
+
+def assert_exclusive_mic() -> None:
+    """麥克風被回合式 client 佔著就拒絕啟動，並直接給出解法。
+
+    `Conflicts=` 只在經 systemd 啟動時生效；手動 `python -m edge.runtime.
+    live_client` 繞過了它，而這正是 2026-07-30 當天的啟動方式。少了這道守衛，
+    症狀是上行 0 bytes、玩偶毫無反應，看起來跟按鍵故障一模一樣。
+
+    真正浪費時間的不是被擋住，是**不知道被誰擋住**，所以訊息要能直接複製貼上。
+    """
+    if not local_client_is_active():
+        return
+    raise RuntimeError(
+        f"{LOCAL_CLIENT_UNIT} 正在執行，它獨佔著同一支 USB 麥克風。\n"
+        "兩個 client 不能共存（ALSA capture 是獨佔的），繼續下去上行會是 0 bytes。\n"
+        "改用 systemd 啟動，Conflicts= 會自動幫你停掉回合式那邊：\n"
+        "    systemctl start talkybuddy-live-client\n"
+        "或先手動停掉再跑：\n"
+        f"    systemctl stop {LOCAL_CLIENT_UNIT}"
+    )
 
 
 def local_client_ready() -> None:

@@ -19,7 +19,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_ROOT="${TALKYBUDDY_EDGE_DEVICE_ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
-UNITS=(talkybuddy-server talkybuddy-local-client)
+# 安裝＝寫入 /etc/systemd/system；enable＝開機自動啟動。兩者刻意分開：
+# talkybuddy-live-client（S2S）要能被 `systemctl start`，但**不該開機自己起來**。
+# 開機預設是回合式那條已可 demo 的路；S2S 體驗尚未收斂。
+# 兩個 client 互相 Conflicts=，所以切模式只要 start 另一個，systemd 會自動停這個。
+UNITS=(talkybuddy-server talkybuddy-local-client talkybuddy-live-client)
+ENABLE_UNITS=(talkybuddy-server talkybuddy-local-client)
 SYSTEMD_DIR=/etc/systemd/system
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -42,28 +47,33 @@ for unit in "${UNITS[@]}"; do
 done
 
 systemctl daemon-reload
-systemctl enable "${UNITS[@]}"
-echo "=== 已 enable（開機自動啟動）==="
+systemctl enable "${ENABLE_UNITS[@]}"
+echo "=== 已 enable（開機自動啟動）：${ENABLE_UNITS[*]} ==="
+echo "    talkybuddy-live-client 已安裝但不 enable——要用 S2S 時手動 start"
 
-# 手動起的行程會與 service 搶 8787 埠，先警告再說
-stale=$(pgrep -af 'uvicorn|llama-server|local_client' 2>/dev/null | grep -v systemd || true)
+# 手動起的行程會與 service 搶 8787 埠或麥克風，先警告再說
+stale=$(pgrep -af 'uvicorn|llama-server|local_client|live_client' 2>/dev/null | grep -v systemd || true)
 if [ -n "$stale" ]; then
   echo
-  echo "⚠️ 偵測到手動啟動的行程，會與 service 搶埠："
+  echo "⚠️ 偵測到手動啟動的行程，會與 service 搶埠或搶麥克風："
   echo "$stale" | sed 's/^/    /'
-  echo "    停掉：pkill -f 'uvicorn|llama-server|local_client'"
+  # 注意：pkill -f 會殺掉 cmdline 含該字串的 shell（包括你正在打字的這個），
+  # 所以這裡不給 -f 一次殺全部的寫法。
+  echo "    停掉：systemctl stop ${UNITS[*]}"
 fi
 
 if [ "${1:-}" = "--now" ]; then
   echo
-  echo "=== 立刻啟動 ==="
-  systemctl restart "${UNITS[@]}"
+  # 只啟動 enable 的那些。若把 live-client 也 restart 進來，它的 Conflicts=
+  # 會立刻把剛起來的 local-client 停掉，結果是開機預設變成 S2S——不是我們要的。
+  echo "=== 立刻啟動（僅 ${ENABLE_UNITS[*]}）==="
+  systemctl restart "${ENABLE_UNITS[@]}"
   sleep 3
-  systemctl --no-pager --lines=0 status "${UNITS[@]}" || true
+  systemctl --no-pager --lines=0 status "${ENABLE_UNITS[@]}" || true
 else
   echo
   echo "尚未啟動。要現在啟動："
-  echo "  systemctl start ${UNITS[*]}"
+  echo "  systemctl start ${ENABLE_UNITS[*]}"
 fi
 
 echo
@@ -71,3 +81,7 @@ echo "常用："
 echo "  systemctl status talkybuddy-local-client"
 echo "  journalctl -u talkybuddy-local-client -f    # 看「按一下按鍵開始錄音...」"
 echo "  systemctl restart talkybuddy-server"
+echo
+echo "切換對話模式（兩者互斥，start 一個會自動停另一個）："
+echo "  systemctl start talkybuddy-live-client     # S2S（Nova Sonic，需 AWS 憑證）"
+echo "  systemctl start talkybuddy-local-client    # 回合式（預設，可 demo）"
