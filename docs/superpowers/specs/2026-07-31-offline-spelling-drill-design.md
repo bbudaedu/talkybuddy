@@ -95,7 +95,10 @@ def letter_hit_rate(ref: list[str], heard: list[str]) -> float
     # （同一種 DP，但比的是字母不是音素），刻意不另立一套對齊邏輯。
 
 def word_hit_rate(ref_word: str, asr_text: str) -> float
-    # 整字／例句用。以正規化 token 做 edit-distance 比率，取最佳命中的 token。
+    # 整字（步驟①）與例句（步驟③）共用。把 asr_text 切成小寫英文 token，
+    # 每個 token 與 ref_word 算 edit-distance 相似度，**取最高的那一個**。
+    # 例句那一步的 ref_word 一樣是目標單字（apple），不是整句——整句逐字比對
+    # 對國小生太嚴，只要例句裡把目標詞唸出來就算數。
 
 PASS_THRESHOLD = 0.6
 MAX_RETRIES = 2
@@ -123,14 +126,22 @@ GAMES += ({"kind":"spell_along", "zh":"背單字", "en":"Spell Along", ...},)
 
 | 欄位 | 這個遊戲拿來裝什麼 |
 |---|---|
-| `hints` | 這一局要練的詞（中文鍵 tuple），由 `_due_first` 挑——**SRS 到期詞排前面** |
+| `hints` | 這一局要練的詞（中文鍵 tuple），**SRS 到期詞排前面** |
 | `secret` | 目前正在練哪個詞 |
 | `step` | `say_word` \| `spell` \| `sentence` |
 | `found` | 已經練完的詞 |
 | `target_count` | 3 |
+| `topic` | 可選；給了就只練該分類，空字串＝全詞庫 |
 
 **新增一個欄位** `retries: int = 0`（同一步已重試幾次）。有預設值，
-其他三個遊戲完全不受影響。
+其他三個遊戲完全不受影響。**每進入新的一步就歸零**，重試上限是「同一步」
+的上限而不是整個詞的上限——否則第一步用掉配額，後面兩步就一次機會都沒有。
+
+選詞不能直接用既有的 `_due_first(topic, ...)`：它以分類為單位取詞
+（`_words_in_cat`），而背單字要跨分類練「這孩子到期的詞」。
+→ 抽出 `_due_words_from(pool, student_id, limit)`，`_due_first` 改成
+傳 `_words_in_cat(topic)` 呼叫它，背單字則在 `topic` 為空時傳整個
+`scaffold.VOCAB` 的鍵。既有三個遊戲的行為逐字不變（有測試守著）。
 
 `game_intent.detect_start` 從 `games.GAMES` 自動讀名稱，不必改——
 「我要玩背單字」＝意圖詞「我要」＋名字「背單字」，開局即可用。
@@ -155,7 +166,7 @@ GAMES += ({"kind":"spell_along", "zh":"背單字", "en":"Spell Along", ...},)
 | 檔案 | 動作 | 規模 |
 |---|---|---|
 | `server/spelling.py` | 新增 | ~130 行，純函式 |
-| `server/games.py` | 三個函式 + 註冊 + `retries` 欄位 | ~+150 行 |
+| `server/games.py` | 三個函式 + 註冊 + `retries` 欄位 + `_due_first` 抽共用 | ~+160 行 |
 | `tests/test_spelling.py` | 新增 | 純單元，免模型免 DB |
 | `tests/test_games_spell.py` | 新增 | 含斷網一致性測試 |
 | `docs/GAMES.md` | 補第四個遊戲 | 文件 |
