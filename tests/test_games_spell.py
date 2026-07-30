@@ -96,6 +96,25 @@ def test_opening_line_names_the_first_word_in_both_languages():
     assert line.en == scaffold.VOCAB[st.secret]["en"]
 
 
+def test_no_arabic_numerals_survive_into_the_chinese_speech():
+    """**中文句子裡不准出現阿拉伯數字。**
+
+    `split_tts_segments` 把數字切成英文段，「一共 2 個」會被英文 voice
+    念成「一共 two 個」。2026-07-31 端到端實跑時聽出來的——單元測試比對
+    文字看不到，所以這條直接驗切段結果。
+    """
+    for n in (1, 2, 3, 5):
+        st = games.replace(games.start_spell_along(), target_count=n)
+        zh = games.spell_along_prompt(st).zh
+        assert not any(c.isdigit() for c in zh), f"target_count={n} 漏了數字：{zh}"
+        assert all(lang == "zh" for lang, _ in scaffold.split_tts_segments(zh))
+
+
+def test_chinese_counting_uses_liang_not_er():
+    """「一共兩個」不是「一共二個」——只有聲音沒有螢幕，唸錯就是錯。"""
+    assert games._zh_count(2) == "兩"
+
+
 def test_step_content_is_what_the_child_repeats():
     """每一步要孩子跟著念的英文內容。拼音那一步必須是實測選出來的格式。"""
     assert games._spell_step_en("say_word", "蘋果") == "apple"
@@ -206,7 +225,7 @@ def test_the_last_word_ends_the_round():
     turn = games.judge_spell_along(st, "I want to eat an apple.")
     assert turn.done
     assert turn.state.done
-    assert "背了 1 個" in turn.reply_zh
+    assert "背了一個" in turn.reply_zh
 
 
 def test_judging_a_finished_round_does_not_crash():

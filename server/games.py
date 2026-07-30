@@ -629,6 +629,20 @@ SPELL_STEPS = ("say_word", "spell", "sentence")
 # 3 個詞已經是 9 回合，比其他遊戲都長。
 SPELL_TARGET_COUNT = 3
 
+# 量詞前的中文數字。2 是「兩」不是「二」——「一共二個」唸出來就是錯的，
+# 而這個玩偶只有聲音沒有螢幕，唸錯就是錯。
+_ZH_COUNT = ("零", "一", "兩", "三", "四", "五", "六", "七", "八", "九", "十")
+
+
+def _zh_count(n: int) -> str:
+    """個位數 → 量詞前的中文數字。**中文句子裡不准出現阿拉伯數字。**
+
+    `scaffold.split_tts_segments` 把數字當成英文段，所以「背了 2 個單字」
+    會被英文 voice 念成「背了 two 個單字」。2026-07-31 端到端實跑時聽出來的
+    ——單元測試看不到，因為它比對的是文字，不是切段結果。
+    """
+    return _ZH_COUNT[n] if 0 <= n < len(_ZH_COUNT) else str(n)
+
 
 def start_spell_along(topic: str = "", *, target_count: int = SPELL_TARGET_COUNT,
                       student_id: str | None = None) -> GameState:
@@ -675,8 +689,8 @@ def spell_along_prompt(state: GameState) -> Line:
     if not state.secret:
         return Line(zh="今天沒有要背的單字，我們玩別的好嗎？")
     return Line(
-        zh=f"我們來背單字！我念一次，你跟著念，一共 {state.target_count} 個。"
-           f"第一個是「{state.secret}」，跟我念：",
+        zh=f"我們來背單字！我念一次，你跟著念，一共{_zh_count(state.target_count)}個。"
+           f"第一個是「{state.secret}」。",
         en=_spell_step_en("say_word", state.secret),
     )
 
@@ -720,7 +734,7 @@ def _judge_spell_along(state: GameState, student_text) -> GameTurn:
             state=replace(state, turns=turns, retries=state.retries + 1),
             correct=False, word=word,
             target_en=_spell_step_en(state.step, word),
-            reply_zh="沒關係，我再慢慢念一次，你跟著我：",
+            reply_zh="沒關係，我再慢慢念一次。",
         )
 
     # --- 決策 2：前進。過了要前進，重試用完也要前進 -----------------------
@@ -730,7 +744,7 @@ def _judge_spell_along(state: GameState, student_text) -> GameTurn:
             state=replace(state, turns=turns, step="spell", retries=0),
             correct=passed, word=word,
             target_en=_spell_step_en("spell", word),
-            reply_zh="很棒！我們來拼拼看：" if passed else "沒關係，我們先來拼拼看：",
+            reply_zh="很棒！我們來拼拼看。" if passed else "沒關係，我們先來拼拼看。",
         )
 
     if state.step == "spell":
@@ -744,8 +758,8 @@ def _judge_spell_along(state: GameState, student_text) -> GameTurn:
             state=replace(state, turns=turns, step="sentence", retries=0),
             correct=passed, word=word,
             target_en=_spell_step_en("sentence", word),
-            reply_zh=(f"拼對了！「{word}」就是 {en}。用一句話說說看："
-                      if passed else f"「{word}」是 {en}。我們用一句話說說看："),
+            reply_zh=(f"拼對了！「{word}」就是 {en}。用一句話說說看。"
+                      if passed else f"「{word}」是 {en}。我們用一句話說說看。"),
         )
 
     # --- step == "sentence"：這個詞完成，換下一個 ------------------------
@@ -756,7 +770,7 @@ def _judge_spell_along(state: GameState, student_text) -> GameTurn:
             state=replace(state, found=found, turns=turns, done=True,
                           secret="", step="", retries=0),
             correct=passed, word=word, done=True,
-            reply_zh=f"太棒了！今天我們背了 {len(found)} 個單字，"
+            reply_zh=f"太棒了！今天我們背了{_zh_count(len(found))}個單字，"
                      f"最後一個是「{word}」。你好厲害！",
         )
 
@@ -766,7 +780,7 @@ def _judge_spell_along(state: GameState, student_text) -> GameTurn:
                       secret=nxt, step=SPELL_STEPS[0], retries=0),
         correct=passed, word=word,
         target_en=_spell_step_en("say_word", nxt),
-        reply_zh=f"很好！「{word}」背完了。下一個是「{nxt}」，跟我念：",
+        reply_zh=f"很好！「{word}」背完了。下一個是「{nxt}」。",
     )
 
 
