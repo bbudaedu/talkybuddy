@@ -86,6 +86,14 @@ _NEAR_FIELD_PEAK = float(os.environ.get("TALKYBUDDY_EDGE_NEAR_FIELD_PEAK", "0.06
 # 喇叭小聲一點也直接減少自我迴音，對 S2S 的自我打斷有幫助。
 _PLAYBACK_VOLUME = float(os.environ.get("TALKYBUDDY_EDGE_PLAYBACK_VOLUME", "1.0"))
 
+# 空檔多久沒有下行音訊就補一段靜音給 aplay（見 SpeakerSink.keepalive）。
+# 太長會來不及阻止 underrun，太短則徒增寫入次數。0.1s 對 24kHz 是 4800 bytes。
+_KEEPALIVE_INTERVAL_S = 0.1
+# 單次補靜音的上限。照理說「補等長」在任何長度下都維持緩衝水位，但迴圈若被
+# 卡住很久（或時鐘跳動），真的塞十幾秒進 aplay 會讓後續真音訊排在很後面，
+# 萬一水位估計有誤就無從恢復。這是保險，不是常態路徑。
+_KEEPALIVE_MAX_FILL_S = 1.0
+
 # classify_live_event 的動作。
 # 注意這裡沒有「播放」——**音訊不走 JSON**，一律是 binary frame（server/app.py
 # 的 emit_bytes）。JSON 事件只有 interrupt / live_error / live_transcript /
@@ -305,10 +313,39 @@ class SpeakerSink:
     的緩衝」的介面，只寫入端停手的話，被打斷的那句仍會播完，體感就不是即時對話了。
     """
 
-    def __init__(self, device: str):
+    def __init__(self, device: str, now=time.monotonic):
         self._device = device
         self._proc = None
+        self._now = now
+        self._last_write_at = now()
         self._start()
+
+    def keepalive(self, now=None) -> bool:
+        """空檔沒有下行音訊時餵靜音給 aplay，避免它 underrun。
+
+        **為什麼需要**（2026-07-30 實測）：讓玩偶「講兩句就停下來等孩子回答」
+        之後，那些等待空檔出現 4 次 underrun，每次長 2.4–4.1 秒。underrun 之後
+        ALSA 要重新起流，下一句的開頭就破音——使用者聽到的是「句子中間卡、
+        有雜音」。
+
+        與上行的靜音填充是同一個道理：不要讓串流餓死。差別在這裡要**以播放
+        速率餵**——一次灌太多的話，靜音會排在真音訊前面，玩偶下一句得等這些
+        靜音播完才出得來，等於自己製造延遲。
+
+        回傳有沒有真的寫入（測試用）。
+        """
+        clock = self._now if now is None else now
+        idle = clock() - self._last_write_at
+        if idle < _KEEPALIVE_INTERVAL_S:
+            return False
+        # 只補這段空檔對應的長度（aplay 同期間消耗的量），不預先灌滿
+        nbytes = int(min(idle, _KEEPALIVE_MAX_FILL_S) * 2 * DOWNLINK_RATE)
+        nbytes -= nbytes % 2                      # 對齊 16-bit 樣本邊界
+        if nbytes <= 0:
+            return False
+        self._write_raw(bytes(nbytes))
+        self._last_write_at = clock()
+        return True
 
     def _start(self) -> None:
         # stderr 同樣不吞（見 MicSource 的理由）
@@ -318,10 +355,13 @@ class SpeakerSink:
         )
 
     def write(self, data: bytes) -> None:
+        # 音量只能在這裡做——ALSA mixer 對本板 3.5mm 輸出無效
+        self._write_raw(audio_io.scale_pcm16(data, _PLAYBACK_VOLUME))
+        self._last_write_at = self._now()
+
+    def _write_raw(self, data: bytes) -> None:
         try:
             if self._proc and self._proc.stdin:
-                # 音量只能在這裡做——ALSA mixer 對本板 3.5mm 輸出無效
-                data = audio_io.scale_pcm16(data, _PLAYBACK_VOLUME)
                 self._proc.stdin.write(data)
                 self._proc.stdin.flush()
         except Exception:
@@ -444,14 +484,33 @@ async def pump_uplink(ws, mic, stop: asyncio.Event, gate=None) -> None:
               quiet / 2 / UPLINK_RATE)
 
 
+async def pump_keepalive(sink, stop: asyncio.Event) -> None:
+    """定期餵靜音給 aplay，讓它在等待空檔不要 underrun（見 SpeakerSink.keepalive）。
+
+    不能靠下行迴圈順便做：空檔的定義就是「下行沒有資料」，那時 pump_downlink
+    正阻塞在 `ws.recv()` 上，根本沒有機會執行任何東西。
+    """
+    while not stop.is_set():
+        await asyncio.sleep(_KEEPALIVE_INTERVAL_S)
+        try:
+            sink.keepalive()
+        except Exception:
+            # 餵靜音失敗不該中斷對話——它是防 underrun 的優化，不是必要路徑
+            _log.debug("keepalive 失敗", exc_info=True)
+
+
 async def run_session(ws, mic, sink, stop: asyncio.Event) -> None:
     """跑一場 live 對話：上行、下行並行，任一結束就收攤。"""
     gate = PlaybackGate()
     up = asyncio.create_task(pump_uplink(ws, mic, stop, gate), name="uplink")
     down = asyncio.create_task(pump_downlink(ws, sink, gate), name="downlink")
+    # keepalive 不參與「誰先收工」的判定——它永遠不會自己結束，列進 wait 的
+    # 集合只會讓 FIRST_COMPLETED 的語意變模糊。
+    alive = asyncio.create_task(pump_keepalive(sink, stop), name="keepalive")
     done, pending = await asyncio.wait(
         {up, down}, return_when=asyncio.FIRST_COMPLETED
     )
+    pending = set(pending) | {alive}
     # 哪一邊先收工決定了「session 為什麼結束」——沒有這行就只看得到
     # 「session 立刻結束」這個症狀，分不出是麥克風起不來還是伺服器關了連線。
     for task in done:

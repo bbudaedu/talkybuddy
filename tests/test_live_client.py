@@ -259,6 +259,106 @@ def test_flush_also_clears_the_buffered_audio():
     assert gate.is_open() is True
 
 
+# --- 空檔餵靜音，避免 aplay underrun ---------------------------------------
+
+class _RecordingProc:
+    """假的 aplay 子行程，記下寫進去的東西。"""
+
+    def __init__(self):
+        self.written = []
+
+    class _Stdin:
+        def __init__(self, outer):
+            self._outer = outer
+
+        def write(self, data):
+            self._outer.written.append(data)
+
+        def flush(self):
+            pass
+
+    @property
+    def stdin(self):
+        return self._Stdin(self)
+
+
+def _sink_with_fake_proc(monkeypatch, clock):
+    # 時鐘要一路傳進建構子：_last_write_at 若用真實時間，與測試時鐘相減
+    # 會得到巨大的負數，keepalive 永遠不會觸發
+    monkeypatch.setattr(live_client.subprocess, "Popen",
+                        lambda *a, **k: _RecordingProc())
+    return live_client.SpeakerSink("plughw:0,0", now=clock)
+
+
+def test_keepalive_feeds_silence_when_nothing_is_playing(monkeypatch):
+    """玩偶等孩子回答的空檔，aplay 沒有資料可播就會 underrun。
+
+    2026-07-30 實測，改 prompt 讓玩偶「講兩句就停下來等」之後，那些等待空檔
+    出現 4 次 underrun，每次長 2.4–4.1 秒。underrun 之後 ALSA 要重新起流，
+    下一句的開頭就破音——使用者聽到的是「句子中間卡、有雜音」。
+
+    修法與上行的靜音填充同一個道理：**不要讓串流餓死**，空檔餵靜音。
+    """
+    clock = _Clock()
+    sink = _sink_with_fake_proc(monkeypatch, clock)
+    sink._proc.written.clear()
+
+    clock.t += 1.0
+    assert sink.keepalive(now=clock) is True
+    assert sink._proc.written, "空檔沒有餵任何東西，aplay 會 underrun"
+    assert all(b == bytes(len(b)) for b in sink._proc.written), "餵的必須是靜音"
+
+
+def test_keepalive_stays_out_of_the_way_while_real_audio_flows(monkeypatch):
+    """玩偶正在講話時不要插入靜音——會把它自己的聲音切斷。"""
+    clock = _Clock()
+    sink = _sink_with_fake_proc(monkeypatch, clock)
+    sink.write(b"\x11\x22" * 100)
+    sink._proc.written.clear()
+
+    clock.t += 0.01                       # 才剛寫過真音訊
+    assert sink.keepalive(now=clock) is False
+    assert sink._proc.written == []
+
+
+def test_keepalive_writes_exactly_what_the_speaker_consumed(monkeypatch):
+    """靜音長度要等於經過的時間，不多不少。
+
+    aplay 在這段時間也消耗了同樣長度的音訊，所以「補等長」讓緩衝水位維持不變：
+    - 寫太多 → 靜音排在真音訊前面，玩偶下一句得等它們播完才出得來（自製延遲）
+    - 寫太少 → 追不上消耗速度，還是會 underrun
+    """
+    clock = _Clock()
+    sink = _sink_with_fake_proc(monkeypatch, clock)
+    sink._proc.written.clear()
+
+    clock.t += 0.3
+    sink.keepalive(now=clock)
+    written = sum(len(b) for b in sink._proc.written)
+    seconds = written / 2 / live_client.DOWNLINK_RATE
+    assert abs(seconds - 0.3) < 0.01, f"補了 {seconds:.3f}s，應該補 0.3s"
+
+    # 沒有再前進時間 → 沒有東西被消耗，不該再寫
+    sink._proc.written.clear()
+    assert sink.keepalive(now=clock) is False
+
+
+def test_keepalive_does_not_dump_a_huge_block_after_a_stall(monkeypatch):
+    """迴圈若被卡住很久（或時鐘跳動），不要一次灌進好幾秒靜音。
+
+    照理說「補等長」在任何長度下都維持水位，但真的塞十幾秒進 aplay 會讓
+    後續真音訊排在很後面，萬一水位估計有誤就無從恢復。設上限是保險。
+    """
+    clock = _Clock()
+    sink = _sink_with_fake_proc(monkeypatch, clock)
+    sink._proc.written.clear()
+
+    clock.t += 30.0
+    sink.keepalive(now=clock)
+    seconds = sum(len(b) for b in sink._proc.written) / 2 / live_client.DOWNLINK_RATE
+    assert seconds <= live_client._KEEPALIVE_MAX_FILL_S
+
+
 def test_consecutive_chunks_accumulate_playback_time():
     """連續收到多塊音訊時，播放時間要累加而不是重設。"""
     clock = _Clock()
