@@ -42,6 +42,7 @@ from collections.abc import AsyncGenerator, Callable
 
 from loguru import logger
 from pipecat.frames.frames import ErrorFrame, Frame, TTSAudioRawFrame
+from pipecat.services.settings import TTSSettings
 from pipecat.services.tts_service import TTSService
 
 from server.tts import TARGET_RATE, TTSEngine
@@ -49,6 +50,10 @@ from server.tts import TARGET_RATE, TTSEngine
 # 每個 TTSAudioRawFrame 的位元組數。22050Hz×2 bytes = 44100 B/s，
 # 4410 bytes ≈ 100ms，與既有 live_client 的下行分塊同量級。
 _CHUNK_BYTES = 4410
+
+# 回報給 pipecat settings 的模型識別字串（僅供 log/metrics；實際模型路徑由
+# server.tts 的 PIPER_ZH / PIPER_EN 決定，聲音依文字語言動態選）。
+_MODEL_ID = "sherpa-onnx-vits-piper"
 
 
 def _has_cjk(text: str) -> bool:
@@ -64,6 +69,9 @@ def _wav_to_pcm(wav_bytes: bytes) -> bytes:
 
 class EdgeVitsTTSService(TTSService):
     """以板上既有 sherpa-onnx VITS 實作的 pipecat TTS 服務。"""
+
+    Settings = TTSSettings
+    """沿用基底的 settings 形狀——聲音是依語言動態選的，沒有額外參數要暴露。"""
 
     def __init__(
         self,
@@ -84,7 +92,18 @@ class EdgeVitsTTSService(TTSService):
             segments_provider: Optional splitter turning one string into
                 `[(lang, text), ...]`, for proper mixed zh/en narration.
         """
-        super().__init__(sample_rate=sample_rate or TARGET_RATE, **kwargs)
+        # push_start_frame=True 是**必要的，不是選項**：基底類別預設 False，
+        # 那表示它不會建立 audio context，而我們 yield 的 TTSAudioRawFrame 帶著
+        # 一個不存在的 context_id → **音訊會被靜靜丟棄，下游收到 0 個 frame**。
+        # 這個症狀在直接呼叫 run_tts() 的單元測試裡完全看不出來（frame 明明有產出），
+        # 只有跑真實 pipeline 才會現形。官方本地 TTS（Piper）同樣是這兩個都設 True。
+        super().__init__(
+            push_start_frame=True,
+            push_stop_frames=True,
+            settings=self.Settings(model=_MODEL_ID, voice=None, language=None),
+            sample_rate=sample_rate or TARGET_RATE,
+            **kwargs,
+        )
         self._engine = engine or TTSEngine()
         self._chunk_bytes = chunk_bytes
         self._segments_provider = segments_provider

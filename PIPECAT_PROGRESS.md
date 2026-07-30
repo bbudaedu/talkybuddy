@@ -186,14 +186,91 @@ transport 從頭持有到尾。這直接解掉記憶裡的兩個事故——`Con
 
 ---
 
-## 下一輪要做的（需要板子回來）
+---
 
-1. **量完整 pipeline 的 RSS**（VAD+STT+TTS 同時載入）— 仍是最大未知數。
-   **若超過約 1.2G 就該停下重新評估，別硬上**
-2. **端到端 pipeline 組裝**，用檔案餵音訊量 round_total，絕不搶麥克風
-3. CPU 爭用量測（與 llama-server 搶 8 核）
+# 第四輪（03:50–04:05）— 用官方 harness 抓到一個結構性錯誤
 
-板子不回來的話這三項都做不了；不需要板子的工作（adapter、狀態機、spec）已經做完。
+板子第四輪仍不可達。原本要寫 pipeline 組裝，但先找到了更好的東西：
+**pipecat 內建 `pipecat.tests.utils.run_test`**，可以在**真實 pipeline 驅動下**
+測 processor，不需要板子。用它立刻抓到一個單元測試永遠抓不到的錯誤。
+
+## 🔴 STT 繼承錯基底類別（已修）
+
+`SenseVoiceSTTService` 原本繼承 `STTService`。**那是給串流式 ASR 用的**——
+它對收到的**每一個** `AudioRawFrame`（約 20ms）都呼叫一次 `run_stt`。
+
+SenseVoice 是離線非自回歸模型，單次推論約 147ms、需要完整語句才有意義。兩者湊在一起：
+
+- 每 20ms 觸發一次 147ms 推論 → 佇列直接爆掉
+- 每次只拿到 20ms 音訊 → 辨識結果無意義
+
+**而 17 個單元測試全部通過**，因為它們直接呼叫 `run_stt()`，繞過了 pipeline 的分派。
+這種結構性錯誤只有真實驅動才看得見。
+
+改繼承 `SegmentedSTTService`（官方 Whisper 也是它），並覆寫
+`wants_wav_segments → False`（基底給本地模型的正式契約，預設會包成 WAV 給雲端 API）。
+它還附帶一個好處：**維護前置緩衝補償 VAD 偵測延遲**，正好對應
+`project-edge-s2s-tuning` 記的「孩子話音剛落就跟讀，開頭會被吃掉」。
+
+真實驅動下的驗證結果：
+
+```
+辨識次數: 1              ← 一句話只辨識一次（改之前會是 3）
+sample_rate: 16000        ← StartFrame 補上了
+收到 640 samples 純 PCM   ← 含 WAV header 會是 662
+DOWN: [STTMetadataFrame, VAD…, InputAudio×2, VAD…, TranscriptionFrame]
+```
+
+## 🟡 另外兩個 pipecat 抱怨（已修）
+
+真實 pipeline 啟動時 pipecat 會檢查 service 設定，log 直接指出：
+
+1. `STTSettings / TTSSettings: the following fields are NOT_GIVEN` —
+   settings 必須在 `__init__` 初始化。已加 `Settings` 類別屬性與初始值
+   （`language=None` 是「服務自己偵測語言」的正式表達，SenseVoice 正是多語言自動偵測）
+2. `ttfs_p99_latency not set, using default 1.0s` —
+   預設值比實測慢了將近一個數量級，會讓 pipeline 多等。已用實測值設為 0.4s
+   （依據：SenseVoice 辨識 2 秒音訊 147ms，留餘裕）
+
+## 🔴 未解：TTS 在 run_test 下輸出 0 個 frame
+
+同一個 harness 下，`EdgeVitsTTSService` 的行為是：
+
+```
+synth 呼叫: [[('zh', '你好')]]   ← 合成確實被觸發
+DOWN: []                          ← 但下游一個 frame 都沒收到
+audio frames: 0
+```
+
+已排除的可能：settings 未初始化（已修）、`push_start_frame`／`push_stop_frames`
+未開（已依官方 Piper 的做法設為 True）、非同步未完成（SleepFrame 等到 4 秒仍為 0）。
+
+pipecat 的 TTS 音訊走 audio context + 背景 `_audio_context_task`，比 STT 複雜得多。
+**傾向判斷是 `run_test` 對 `TTSService` 的支援限制而非 adapter 缺陷**——依據是
+同一 harness 下 STT 完全正常、`run_tts` 確實被正確驅動、且遍尋 pipecat 原始碼
+找不到任何官方用 `run_test` 測 TTSService 的範例。**但這只是傾向，沒有證實。**
+
+⚠️ **所以 TTS adapter 目前的狀態是「單元測試通過、真實 pipeline 未驗證」**，
+必須在板子上實跑才能確認。這是接線的必經之路，不能跳過。
+
+累計 **44 測試全綠**。
+
+---
+
+## 停在這裡的理由
+
+剩下的驗證**全部需要板子**，而板子已連續四輪不可達：
+
+1. 完整 pipeline RSS（最大未知數，超過約 1.2G 就該停下重新評估）
+2. 端到端 round_total
+3. CPU 爭用
+4. **TTS 在真實 pipeline 中到底有沒有出聲**（本輪新增的未解項）
+
+不需要板子的工作已經做完了：四個元件 + 44 測試 + spec。
+
+**沒有繼續空轉的價值**——再往下就是在沒有驗證回饋的情況下累積程式碼，
+而這四輪的教訓完全一致：**憑推測會錯**。onnxruntime 假陰性、numpy 顧慮不成立、
+sample_rate 陷阱、STT 繼承錯基底——每一個都是實測才發現的，沒有一個是想出來的。
 
 ## 還沒有答案的問題
 
