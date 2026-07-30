@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 說說學伴 PC 原型 — 環境安裝與模型下載（Phase 0：x86 軟體先行）
 set -uo pipefail
-cd /home/budaedu/hackathon/talkybuddy
+# 同 run.sh：路徑寫死會把 venv 與 1GB 模型裝到別的 repo 去。用腳本自身位置推根目錄。
+cd "$(dirname "$0")/.."
 mkdir -p models logs data
 
 echo "=== [1/4] 建立 venv 並安裝基礎套件 ==="
