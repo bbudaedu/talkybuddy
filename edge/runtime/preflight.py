@@ -47,6 +47,16 @@ OK, WARN, FAIL = "OK", "WARN", "FAIL"
 MIC_PEAK_MIN = 0.05
 MIC_VOICE_BAND_MIN = 0.25
 
+# 削波判定：接近滿刻度的樣本占比超過這個數就算持續打頂。
+# 刻意**不用 peak** 當判準：偶爾一個樣本碰到頂是正常的，那不是削波，
+# 拿 peak==1.0 當條件會製造假警告。理由與上面「只看 peak 會誤判低頻噪音
+# 為人聲」同源——單一極值不足以描述一段訊號。
+MIC_CLIP_RATIO_MAX = 0.001          # 0.1%
+_CLIP_SAMPLE_FLOOR = 32000          # |sample| >= 此值視為壓在滿刻度（滿檔 32767）
+# 建議的 USB 麥克風擷取增益。裝置實測滿檔是 147，開滿會削波；100 是掃描
+# （edge/probes/probe_mic_gain.py）之前的保守起點，實測後可調整這個常數。
+MIC_SUGGESTED_CAPTURE_GAIN = 100
+
 # 板上唯一可用的實體觸發鍵（2026-07-30 實測；KEY_HOME/102 不送事件）
 EXPECTED_KEY_CODE = 116
 
@@ -102,11 +112,21 @@ def evaluate_alsa_devices(service_env: dict) -> tuple[str, str]:
     return OK, f"錄音 {capture}／播放 {playback}"
 
 
-def evaluate_mic(peak: float, voice_band_ratio: float) -> tuple[str, str]:
-    """收音訊號夠不夠。
+def evaluate_mic(peak: float, voice_band_ratio: float,
+                 clip_ratio: float = 0.0) -> tuple[str, str]:
+    """收音訊號夠不夠——以及會不會太大。
 
-    peak 過低幾乎都是 USB 麥克風的實體靜音鍵沒按（軟體偵測不到）。
-    人聲頻段占比是為了擋掉「音量夠但全是低頻噪音」的假通過。
+    三個判準，優先序刻意如此：
+
+    1. **peak 過低** → FAIL。幾乎都是 USB 麥克風的實體靜音鍵沒按（軟體偵測
+       不到）。這是「現在完全不能 demo」，必須排在最前面。
+    2. **削波** → WARN。訊號壓在滿刻度、頂端被切平，ASR 準確度會打折，但
+       還能 demo。排在人聲頻段之前是因為**它是另一個的成因**：削波產生的
+       高頻諧波會稀釋人聲頻段占比，先叫人去查頻段只會白忙。
+    3. **人聲頻段占比過低** → WARN。擋掉「音量夠但全是低頻噪音」的假通過。
+
+    `clip_ratio` 預設 0.0，讓沒有削波資訊的呼叫端（例如無 numpy 的降級路徑）
+    維持原本的行為。
     """
     if peak < MIC_PEAK_MIN:
         return (
@@ -114,13 +134,22 @@ def evaluate_mic(peak: float, voice_band_ratio: float) -> tuple[str, str]:
             f"peak={peak:.3f} < {MIC_PEAK_MIN}——幾乎可以確定是"
             f"**USB 麥克風的實體靜音鍵沒按**（重開機後會回到靜音，軟體控制不了）",
         )
+    if clip_ratio > MIC_CLIP_RATIO_MAX:
+        return (
+            WARN,
+            f"peak={peak:.3f}，但 {clip_ratio:.1%} 的樣本壓在滿刻度——**訊號削波**，"
+            f"波形頂端被切平會拉低 ASR 準確度。USB 麥克風的擷取增益調得下來："
+            f"    amixer -c 1 set Mic {MIC_SUGGESTED_CAPTURE_GAIN} && alsactl store"
+            f"（不下 alsactl store 的話重開機會打回原形；"
+            f"用 edge/probes/probe_mic_gain.py 可實測掃出最適值）",
+        )
     if voice_band_ratio < MIC_VOICE_BAND_MIN:
         return (
             WARN,
             f"peak={peak:.3f} 夠，但人聲頻段只占 {voice_band_ratio:.0%}"
             f"（需 >{MIC_VOICE_BAND_MIN:.0%}）——錄到的可能是噪音而非人聲",
         )
-    return OK, f"peak={peak:.3f}，人聲頻段 {voice_band_ratio:.0%}"
+    return OK, f"peak={peak:.3f}，人聲頻段 {voice_band_ratio:.0%}，無削波"
 
 
 def evaluate_status(status: dict) -> tuple[str, str]:
@@ -251,23 +280,30 @@ def _check_memory() -> tuple[str, str]:
     return evaluate_memory(available_mb)
 
 
-def _voice_band_ratio(samples: list[int], rate: int) -> tuple[float, float]:
-    """回 (peak, 人聲頻段能量占比)。用 numpy FFT；不可用時占比回 -1。"""
+def _voice_band_ratio(samples: list[int], rate: int) -> tuple[float, float, float]:
+    """回 (peak, 人聲頻段能量占比, 削波樣本占比)。
+
+    人聲頻段占比用 numpy FFT；numpy 不可用時回 -1（呼叫端據此降級）。
+    **削波占比不依賴 numpy**——它只是計數，沒有 numpy 時仍然算得出來，
+    而削波正是那條降級路徑最需要知道的事。
+    """
     if not samples:
-        return 0.0, -1.0
+        return 0.0, -1.0, 0.0
     peak = max(abs(s) for s in samples) / 32768.0
+    clipped = sum(1 for s in samples if abs(s) >= _CLIP_SAMPLE_FLOOR)
+    clip_ratio = clipped / len(samples)
     try:
         import numpy as np
     except Exception:
-        return peak, -1.0
+        return peak, -1.0, clip_ratio
     arr = np.asarray(samples, dtype=np.float64)
     spec = np.abs(np.fft.rfft(arr)) ** 2
     freqs = np.fft.rfftfreq(len(arr), d=1.0 / rate)
     total = float(spec.sum())
     if total <= 0:
-        return peak, 0.0
+        return peak, 0.0, clip_ratio
     band = float(spec[(freqs >= 500) & (freqs <= 3000)].sum())
-    return peak, band / total
+    return peak, band / total, clip_ratio
 
 
 def _check_mic(device: str = "") -> tuple[str, str]:
@@ -305,11 +341,16 @@ def _capture_and_judge(audio_io) -> tuple[str, str]:
     except Exception as exc:
         return FAIL, f"WAV 解析失敗（{type(exc).__name__}）"
 
-    peak, ratio = _voice_band_ratio(samples, rate)
+    peak, ratio, clip = _voice_band_ratio(samples, rate)
     if ratio < 0:
+        # 沒有 numpy 就判不了人聲頻段，但削波仍然判得出來（只是計數），
+        # 而且那是這條降級路徑上最值得講的事——不要因為缺一個判準就全部放棄。
+        if clip > MIC_CLIP_RATIO_MAX:
+            state, detail = evaluate_mic(peak, MIC_VOICE_BAND_MIN, clip)
+            return state, f"{detail}（無 numpy，未判頻段）"
         return (OK if peak >= MIC_PEAK_MIN else FAIL,
                 f"peak={peak:.3f}（無 numpy，未判頻段）")
-    state, detail = evaluate_mic(peak, ratio)
+    state, detail = evaluate_mic(peak, ratio, clip)
     return state, f"{detail}（裝置 {audio_io._ARECORD_DEVICE}）"
 
 

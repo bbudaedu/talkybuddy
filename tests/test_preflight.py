@@ -155,6 +155,91 @@ def test_real_voice_passes():
     assert state == OK
 
 
+# --- 削波：訊號太大跟太小一樣會壞事 -----------------------------------------
+
+def test_clipping_is_flagged_even_though_the_signal_is_plenty_loud():
+    """真機現況：peak=1.000（滿刻度）而自檢回 OK。
+
+    削波把語音波形的頂端切平，直接拉低 ASR 準確度——2026-07-30 S2S 實測的
+    那些誤判（電視聲被判成插話、噪音被判成韓文字符）很可能與此有關。
+
+    原本的 evaluate_mic 只檢查訊號**夠不夠大**，沒檢查**是不是太大**。
+    這是同一天第三個「自檢說綠燈但實際壞掉」的案例。
+    """
+    state, detail = preflight.evaluate_mic(
+        peak=1.0, voice_band_ratio=0.26, clip_ratio=0.05)
+    assert state == WARN
+    assert "削波" in detail
+
+
+def test_the_clipping_warning_carries_a_copy_pastable_fix():
+    """USB 麥克風的 capture gain 是真的可調的（與 3.5mm 輸出不同）。
+
+    真機現況是開在滿檔 147/147。訊息要能直接複製執行，不要只說「太大聲」。
+    """
+    _, detail = preflight.evaluate_mic(
+        peak=1.0, voice_band_ratio=0.4, clip_ratio=0.05)
+    assert "amixer" in detail
+    assert "alsactl store" in detail, "不持久化的話重開機就打回原形"
+
+
+def test_an_occasional_sample_hitting_the_ceiling_is_not_clipping():
+    """peak=1.0 本身不算削波——偶爾一個樣本打到頂是正常的，持續打頂才是。
+
+    這條是刻意防止製造出新的假警告：判定依據是「接近滿刻度的樣本占比」，
+    不是 peak 這個單一極值。理由與模組既有的那條教訓同源（只看 peak 曾
+    誤判過低頻噪音為人聲）。
+    """
+    state, _ = preflight.evaluate_mic(
+        peak=1.0, voice_band_ratio=0.6, clip_ratio=0.0001)
+    assert state == OK
+
+
+def test_clipping_outranks_the_voice_band_warning():
+    """兩個問題同時成立時要先講削波，因為它是另一個的成因。
+
+    削波會把能量灌進高頻諧波，人聲頻段占比因此被稀釋。先叫人去調頻段
+    只會白忙——調完增益，頻段占比很可能自己就回來了。
+    """
+    _, detail = preflight.evaluate_mic(
+        peak=1.0, voice_band_ratio=0.02, clip_ratio=0.05)
+    assert "削波" in detail
+
+
+def test_a_silent_mic_still_wins_over_everything():
+    """靜音鍵沒按是 FAIL、現在不能 demo；削波只是 WARN、還能 demo。
+
+    優先序不能顛倒，否則會把「完全錄不到」講成「音量稍大」。
+    """
+    state, detail = preflight.evaluate_mic(
+        peak=0.001, voice_band_ratio=0.5, clip_ratio=0.0)
+    assert state == FAIL
+    assert "靜音鍵" in detail
+
+
+def test_clip_ratio_is_measured_not_guessed():
+    """_voice_band_ratio 要一併算出削波占比，不能讓呼叫端自己從 peak 猜。
+
+    削波占比＝接近滿刻度（|sample| >= 32000）的樣本比例。用合成訊號驗：
+    一半樣本壓在滿刻度、一半在中間值。
+    """
+    samples = [32767] * 500 + [8000] * 500
+    peak, _ratio, clip = preflight._voice_band_ratio(samples, 16000)
+    assert peak == 32767 / 32768.0
+    assert abs(clip - 0.5) < 0.01
+
+
+def test_clean_audio_reports_no_clipping():
+    peak, _ratio, clip = preflight._voice_band_ratio([8000, -8000] * 500, 16000)
+    assert clip == 0.0
+    assert abs(peak - 8000 / 32768.0) < 1e-6
+
+
+def test_empty_capture_does_not_crash_the_clip_measurement():
+    peak, ratio, clip = preflight._voice_band_ratio([], 16000)
+    assert (peak, ratio, clip) == (0.0, -1.0, 0.0)
+
+
 def test_mic_thresholds_match_the_rehearsal_checklist():
     """門檻須與 NETCUT_REHEARSAL_CHECKLIST 步驟 0 一致，否則兩份文件會互相矛盾。"""
     assert preflight.MIC_PEAK_MIN == 0.05
