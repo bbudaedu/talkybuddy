@@ -27,9 +27,55 @@ _TAIL_SILENCE_SEC = 0.8
 _TAIL_SILENCE_PCM = b"\x00\x00" * int(_TAIL_SILENCE_SEC * 16000)
 
 
+def _ensure_env_credentials() -> bool:
+    """確保 SigV4 憑證在環境變數裡；必要時從 boto3 憑證鏈補上。回是否可用。
+
+    **為什麼需要這一步**：bidi client 用 `EnvironmentCredentialsResolver`
+    （見 `_build_client` 的已知踩雷註記），**只讀環境變數**。但憑證通常不在
+    env——開發機是 `~/.aws/credentials`（botocore 稱 shared-credentials-file），
+    另有 SSO、IAM role、容器 metadata 等來源。2026-07-30 實測：憑證有效
+    （`sts.get_caller_identity` 成功、us-west-2、`nova-2-sonic-v1:0` 可列出）、
+    SDK 也裝好了，`live_s2s` 卻永遠是 false，就是卡在這個落差；先前把它誤記成
+    「卡在沒有 AWS 憑證」，其實憑證一直都有。
+
+    設計取捨：
+    - **env 已顯式設定就原樣不動**（顯式優先，也避免蓋掉刻意指定的身分）。
+    - 不改用其他 resolver：`EnvironmentCredentialsResolver` 是踩過雷才選定的，
+      這裡只補上它需要的輸入，不動已驗證的路徑。
+    - 缺 secret 等半套憑證一律視為不可用，不注入——半套會在 SigV4 階段才爆，
+      比早點回 False 難查得多。
+    - 憑證鏈本身炸掉（設定檔壞、boto3 缺）只回 False，不得讓伺服器起不來
+      （比照 server/cloud_llm.py 的降級 idiom）。
+
+    ⚠️ 這會把憑證寫進本行程的 os.environ，子行程會繼承。臨時憑證的自動續期
+    也會失效（注入的是當下快照），長時間執行後過期需重啟。demo 場景可接受。
+    """
+    if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
+        return True
+    try:
+        import boto3
+
+        creds = boto3.session.Session().get_credentials()
+        if creds is None:
+            return False
+        frozen = creds.get_frozen_credentials()
+        if not (frozen.access_key and frozen.secret_key):
+            return False
+        os.environ["AWS_ACCESS_KEY_ID"] = frozen.access_key
+        os.environ["AWS_SECRET_ACCESS_KEY"] = frozen.secret_key
+        if frozen.token:
+            # SSO／IAM role／STS 的臨時憑證少了它會 SigV4 驗簽失敗
+            os.environ["AWS_SESSION_TOKEN"] = frozen.token
+        _log.info("已從 boto3 憑證鏈補上 AWS 憑證供 Nova Sonic bidi 使用")
+        return True
+    except Exception:
+        _log.debug("boto3 憑證鏈不可用", exc_info=True)
+        return False
+
+
 def available() -> bool:
-    """能否啟用 Nova Sonic bidi：SigV4 env 齊全 + SDK 可 import。"""
-    if not (os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY")):
+    """能否啟用 Nova Sonic bidi：可取得 SigV4 憑證 + SDK 可 import。"""
+    if not _ensure_env_credentials():
         return False
     try:
         import aws_sdk_bedrock_runtime  # noqa: F401
@@ -73,7 +119,13 @@ class NovaSonicSession:
         self._recv_task: asyncio.Task | None = None
 
     def _build_client(self):
-        """lazy 建 bidi client（SigV4 需顯式 EnvironmentCredentialsResolver）。"""
+        """lazy 建 bidi client（SigV4 需顯式 EnvironmentCredentialsResolver）。
+
+        這裡再確保一次憑證在 env：`available()` 不保證會先被呼叫（例如直接
+        建 session 的測試腳本），而 EnvironmentCredentialsResolver 讀不到就會
+        在 SigV4 階段才失敗，錯誤訊息離根因很遠。
+        """
+        _ensure_env_credentials()
         from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient
         from aws_sdk_bedrock_runtime.config import Config
         from smithy_aws_core.identity.environment import EnvironmentCredentialsResolver
