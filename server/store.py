@@ -198,6 +198,15 @@ def init_db() -> None:
             " due_at TEXT NOT NULL,"
             " PRIMARY KEY (student_id, word))"
         )
+        # 老師上傳教材（子專案 F）。全域共用，不分學生——教材是詞庫擴充，
+        # 不是某個孩子的個人資料。entries_json 存 agent 回傳的已驗證詞條，
+        # 供 app 啟動時 replay 回 scaffold.VOCAB（見 server/app.py 的 lifespan）。
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS materials ("
+            " seq INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " ts TEXT NOT NULL,"
+            " payload TEXT NOT NULL)"
+        )
         conn.commit()
 
 
@@ -431,6 +440,43 @@ def list_agent_outputs(
         d["seq"] = int(seq)
         d["kind"] = k
         d["student_id"] = sid
+        d["ts"] = ts
+        out.append(d)
+    return out
+
+
+def add_material(payload: dict) -> int:
+    """新增一筆教材上傳紀錄，回傳自增 seq。
+
+    payload 應含 title/text/topic/entries/accepted_count/rejected_count/source
+    （見 server/agents/material.py 的回傳 schema，外加呼叫端補的 title/text）。
+    全域共用，不帶 student_id——教材是詞庫擴充，不分學生。
+    """
+    body = dict(payload)
+    ts = datetime.datetime.now(
+        datetime.timezone(datetime.timedelta(hours=8))
+    ).isoformat(timespec="seconds")
+    with _lock:
+        conn = _get_conn()
+        cur = conn.execute(
+            "INSERT INTO materials (ts, payload) VALUES (?, ?)",
+            (ts, json.dumps(body, ensure_ascii=False)),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def list_materials() -> list[dict]:
+    """列出全部已上傳教材（舊→新），供 app 啟動時依序 replay 回 scaffold.VOCAB。"""
+    with _lock:
+        conn = _get_conn()
+        rows = conn.execute(
+            "SELECT seq, ts, payload FROM materials ORDER BY seq ASC"
+        ).fetchall()
+    out: list[dict] = []
+    for seq, ts, payload in rows:
+        d = json.loads(payload)
+        d["seq"] = int(seq)
         d["ts"] = ts
         out.append(d)
     return out
