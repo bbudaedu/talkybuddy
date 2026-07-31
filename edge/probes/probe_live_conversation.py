@@ -101,6 +101,11 @@ from edge.runtime.pipecat_adapters.playback_gate import (
     PlaybackGateFilter,
     PlaybackGateSink,
 )
+from edge.runtime.pipecat_adapters.press_to_talk import (
+    PressToTalkDisarmer,
+    PressToTalkFilter,
+    PressToTalkGate,
+)
 from edge.runtime.pipecat_adapters.readalong_guard import ReadalongGuardProcessor
 from edge.runtime.pipecat_adapters.safety_gate import SafetyGateProcessor
 from edge.runtime.pipecat_adapters.sensevoice_stt import SenseVoiceSTTService
@@ -118,6 +123,11 @@ TARGET_SENTENCE = "I want an apple."
 # 大腦悄悄換人會讓所有觀察失去意義。設了但憑證不全時直接報錯退出，
 # 不靜默跑成 edge——「以為在跑雲端、其實沒有」正是這個專案被咬過三次的坑。
 CLOUD_ENV = "TALKYBUDDY_PIPECAT_CLOUD"
+
+# 按鍵觸發也要**明確打開**，預設仍是已經真人驗證過的 VAD 連續聽。
+# 決賽會場很吵時打開它（local-client 那條路天生免疫，這條不是）；
+# 安靜環境下關著比較好演示，孩子不必記得先按鍵。見 press_to_talk 的 docstring。
+PTT_ENV = "TALKYBUDDY_PIPECAT_PTT"
 
 # 每則回覆字數上限。板子實測：36 字 = 合成 3.12s + 播放 5.77s + 死區 2.6s
 # = 一輪光是「玩偶講話」就吃掉 11.5 秒。砍字數是唯一同時砍合成與播放的手段。
@@ -372,6 +382,13 @@ async def main() -> int:
     narrator_llm = Narrator("llm")   # LLMTextFrame 會被 TTS 消費，探針必須在 TTS 之前
     # 上下行共享同一個 gate：sink 記下播放時長，filter 立刻據此關閘。
     gate = PlaybackGate(rate=TTS_RATE)
+    # 按鍵觸發同樣要兩個節點共享一個 state：封嘴必須在 VAD 之前，
+    # 而「孩子講完」的訊號只在 VAD 之後才存在。見 press_to_talk 的 docstring。
+    ptt = (
+        PressToTalkGate()
+        if (os.environ.get(PTT_ENV) or "").strip() in ("1", "true", "yes")
+        else None
+    )
 
     context = LLMContext(messages=[{"role": "system", "content": SYSTEM_PROMPT}])
     # AlwaysUserMuteStrategy：玩偶講話時一律不聽使用者。
@@ -388,8 +405,12 @@ async def main() -> int:
         Pipeline(
             [
                 transport.input(),
+                # 沒按鍵之前就換靜音，會場噪音連 VAD 都碰不到（opt-in，預設不接）。
+                *([PressToTalkFilter(ptt)] if ptt is not None else []),
                 PlaybackGateFilter(gate),   # 玩偶講話時上行換靜音，攔在 VAD 之前
                 vad,
+                # 孩子講完就關閘門等下一次按鍵。只有 VAD 之後看得到這個訊號。
+                *([PressToTalkDisarmer(ptt)] if ptt is not None else []),
                 stt,
                 narrator_in,        # 探針要在 agg.user() 之前，否則看不到逐字稿
                 # 無狀態只留給 edge：llama-server --ctx-size 512 塞不下歷史
