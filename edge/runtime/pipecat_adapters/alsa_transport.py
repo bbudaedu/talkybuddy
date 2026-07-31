@@ -34,6 +34,7 @@ arecord 起不來（裝置被佔用、名稱打錯）時，唯一的線索就在
 from __future__ import annotations
 
 import asyncio
+import time
 
 from loguru import logger
 from pipecat.frames.frames import InputAudioRawFrame, OutputAudioRawFrame, StartFrame
@@ -62,6 +63,8 @@ class AlsaTransportParams(TransportParams):
     input_device: str = ""
     output_device: str = ""
     read_chunk_bytes: int = _READ_CHUNK_BYTES
+    keepalive_interval_s: float = 0.1
+    keepalive_enabled: bool = True
 
 
 class AlsaInputTransport(BaseInputTransport):
@@ -180,6 +183,8 @@ class AlsaOutputTransport(BaseOutputTransport):
         super().__init__(params, **kwargs)
         self._proc: asyncio.subprocess.Process | None = None
         self._sample_rate = 0
+        self._keepalive_task: asyncio.Task | None = None
+        self._last_write: float = 0.0
 
     async def start(self, frame: StartFrame):
         """Spawn aplay ready to receive raw PCM on stdin.
@@ -204,7 +209,40 @@ class AlsaOutputTransport(BaseOutputTransport):
             stderr=None,
         )
 
+        self._last_write = time.monotonic()
+        if self._params.keepalive_enabled:
+            self._keepalive_task = self.create_task(self._keepalive_handler())
+
         await self.set_transport_ready(frame)
+
+    async def _keepalive_handler(self):
+        """空檔餵靜音，避免 aplay 緩衝空轉。
+
+        **為什麼需要**：玩偶等 LLM 的那幾秒沒有音訊寫入，ALSA 環形緩衝就會
+        underrun。2026-07-31 真人實測量到 8.9s / 17.0s / **41.3s** 三次。
+
+        **真正的代價不只是聽感**：`--buffer-time` 之所以調到 2 秒就是為了吸收
+        這種空檔，而那 2 秒直接變成 `PlaybackGate` 的死區——玩偶講完後上行要
+        再聾 2.6 秒（2.0 緩衝 + 0.6 tail），孩子話音剛落就講會被吃掉開頭
+        （實測：辨識從「三句全對」變成全錯）。
+
+        有了 keepalive 撐住空檔，緩衝就能調小，死區才跟著縮短。
+        這是記憶 `project-edge-s2s-tuning` 早就寫下的「未做的優化」。
+        """
+        interval = self._params.keepalive_interval_s
+        silence = b"\x00" * int(self._sample_rate * 2 * interval)
+        while True:
+            await asyncio.sleep(interval)
+            if not self._proc or not self._proc.stdin:
+                continue
+            # 只在真的沒人寫入時補：正常播放期間不要插靜音進去。
+            if time.monotonic() - self._last_write < interval:
+                continue
+            try:
+                self._proc.stdin.write(silence)
+                await self._proc.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                return
 
     async def stop(self, frame):
         """Flush and terminate aplay.
@@ -222,6 +260,9 @@ class AlsaOutputTransport(BaseOutputTransport):
 
     async def _teardown(self):
         """關閉 stdin 讓 aplay 播完緩衝後自然結束；逾時才強制收掉。"""
+        if self._keepalive_task:
+            await self.cancel_task(self._keepalive_task)
+            self._keepalive_task = None
         if not self._proc:
             return
         if self._proc.stdin and not self._proc.stdin.is_closing():
@@ -246,6 +287,7 @@ class AlsaOutputTransport(BaseOutputTransport):
         if not self._proc or not self._proc.stdin:
             return False
         try:
+            self._last_write = time.monotonic()
             self._proc.stdin.write(frame.audio)
             await self._proc.stdin.drain()
         except (BrokenPipeError, ConnectionResetError):
