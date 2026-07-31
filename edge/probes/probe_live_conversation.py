@@ -90,6 +90,10 @@ from edge.runtime.live_client import PlaybackGate
 from edge.runtime.pipecat_adapters.alsa_transport import AlsaTransport, AlsaTransportParams
 from edge.runtime.pipecat_adapters.cloud_llm_service import CloudLLMService
 from edge.runtime.pipecat_adapters.edge_tts import EdgeVitsTTSService
+from edge.runtime.pipecat_adapters.lesson_progress import (
+    LessonProgress,
+    LessonProgressProcessor,
+)
 from edge.runtime.pipecat_adapters.lesson_prompt import LessonPromptInjector
 from edge.runtime.pipecat_adapters.opencc_processor import OpenCCProcessor
 from edge.runtime.pipecat_adapters.playback_gate import (
@@ -198,7 +202,7 @@ def _todays_lesson():
         return None
 
 
-def _build_llm(lesson=None):
+def _build_llm(lesson=None, progress=None):
     """組出這一跑要用的大腦，回 `(service, cloud_or_None, 一句話說明)`。
 
     雲端關閉時回傳與過去完全相同的 `OpenAILLMService`——那條路徑已經真人
@@ -238,6 +242,7 @@ def _build_llm(lesson=None):
     def _live_system() -> str:
         from server import scaffold
 
+        current = (progress.current if progress else None) or target
         # max_chars：玩偶講話時孩子的麥克風是關的（半雙工），所以回覆長度
         # 直接等於「孩子不能開口的秒數」。實測不加這個上限會講到 76 字≈17 秒。
         try:
@@ -247,13 +252,13 @@ def _build_llm(lesson=None):
         except Exception:
             more = []
         return scaffold.build_live_system_prompt(
-            target, directive, topic, max_chars=LIVE_MAX_CHARS, more_sentences=more
+            current, directive, topic, max_chars=LIVE_MAX_CHARS,
         )
 
     service = CloudLLMService(
         cloud=cloud,
         fallback=edge.generate_from_prompt,
-        target_provider=lambda: target,
+        target_provider=lambda: (progress.current if progress else None) or target,
         system_provider=_live_system,
         warmup=False,
     )
@@ -288,9 +293,21 @@ async def main() -> int:
     vad = VADProcessor(vad_analyzer=SileroVADAnalyzer())
     stt = SenseVoiceSTTService(sample_rate=STT_RATE)
     lesson = _todays_lesson()
-    llm, cloud, brain_desc = _build_llm(lesson)
+    # 「孩子會了就換下一句」由狀態機決定，不由模型在 prompt 裡數數。
+    # 決賽鏡頭 1 只有 60 秒約 3～4 輪，交給模型判斷會慢到台上換不了句子
+    # （實測要第 7 輪）。見 lesson_progress 的 docstring。
+    try:
+        from server import lesson as _lm
+
+        _sents = _lm.topic_sentences(lesson.topic, limit=5) if lesson else []
+    except Exception:
+        _sents = []
+    progress = LessonProgress(_sents or [])
+    llm, cloud, brain_desc = _build_llm(lesson, progress)
     # 教材決定目標句；取不到就用寫死的預設（對話仍可進行）。
-    target_sentence = (lesson.target_sentence if lesson else None) or TARGET_SENTENCE
+    target_sentence = (
+        progress.current or (lesson.target_sentence if lesson else None) or TARGET_SENTENCE
+    )
     lesson_directive = lesson.directive if lesson else None
     tts = EdgeVitsTTSService(engine=tts_engine)
     narrator = Narrator("out")
@@ -325,9 +342,12 @@ async def main() -> int:
                   [StatelessContextProcessor(context=context)]),
                 # 走雲端才遮個資：edge 是本機推論，孩子的話沒有離開玩偶，
                 # 遮了只會讓 llama-server 看到 [名字] 而降低回覆品質。
+                # 進度觀察要在教材注入**之前**：後者會把逐字稿覆寫成整段 prompt。
+                LessonProgressProcessor(progress),
                 LessonPromptInjector(
-                    target=target_sentence,
-                    directive=lesson_directive,
+                    lesson_provider=lambda: (
+                        progress.current or target_sentence, lesson_directive
+                    ),
                     deidentify=cloud is not None,
                 ),
                 agg.user(),
@@ -337,7 +357,8 @@ async def main() -> int:
                 # 孩子換句子（孩子說想練貓，帶讀 I see a cat. 是對的）。
                 # edge 仍要嚴格對齊教材的目標句。
                 ReadalongGuardProcessor(
-                    target=target_sentence, allow_variation=cloud is not None
+                    target_provider=lambda: progress.current or target_sentence,
+                    allow_variation=cloud is not None,
                 ),
                 narrator_llm,
                 tts,

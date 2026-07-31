@@ -50,6 +50,10 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.utils.time import time_now_iso8601
 
 from edge.runtime.pipecat_adapters.cloud_llm_service import CloudLLMService
+from edge.runtime.pipecat_adapters.lesson_progress import (
+    LessonProgress,
+    LessonProgressProcessor,
+)
 from edge.runtime.pipecat_adapters.lesson_prompt import LessonPromptInjector
 from edge.runtime.pipecat_adapters.readalong_guard import ReadalongGuardProcessor
 from edge.runtime.pipecat_adapters.safety_gate import SafetyGateProcessor
@@ -202,26 +206,47 @@ async def main() -> int:
         more = _lm.topic_sentences(topic, limit=5) if topic else []
     except Exception:
         more = []
-    system_prompt = scaffold.build_live_system_prompt(
-        target, directive, topic, max_chars=LIVE_MAX_CHARS, more_sentences=more
-    )
+    # 進度由狀態機決定，不是由模型在 prompt 裡數數（見 lesson_progress 的
+    # docstring：交給模型判斷時要第 7 輪才換，決賽鏡頭只有 3～4 輪）。
+    progress = LessonProgress(more or [target])
+
+    def _system() -> str:
+        return scaffold.build_live_system_prompt(
+            progress.current or target, directive, topic,
+            max_chars=LIVE_MAX_CHARS,
+            # 刻意**不**傳 more_sentences：進度已經由 LessonProgress 決定，
+            # 模型不需要知道接下來有哪些句子。2026-07-31 實測，把清單給它會
+            # 讓它自己去點名別句（「試試看這句：I see a rabbit.」）而護欄再補
+            # 一句舊的，孩子當場抓包「為什麼又要說狗狗啦？」。
+            # 它每輪只拿到「現在該練哪一句」，其餘由狀態機負責。
+        )
+
+    system_prompt = _system()
     context = LLMContext(messages=[{"role": "system", "content": system_prompt}])
     agg = LLMContextAggregatorPair(context)
     collector = Collector()
     service = CloudLLMService(
         cloud=cloud,
-        target_provider=lambda: target,
-        system_provider=lambda: system_prompt,
+        target_provider=lambda: progress.current or target,
+        system_provider=_system,
         warmup=False,
     )
 
     worker = PipelineWorker(
         Pipeline([
-            LessonPromptInjector(target=target, directive=directive, deidentify=True),
+            # 進度觀察要在教材注入**之前**：後者會把逐字稿覆寫成整段 prompt。
+            LessonProgressProcessor(progress),
+            LessonPromptInjector(
+                lesson_provider=lambda: (progress.current or target, directive),
+                deidentify=True,
+            ),
             agg.user(),
             service,
             SafetyGateProcessor(),
-            ReadalongGuardProcessor(target=target, allow_variation=True),
+            ReadalongGuardProcessor(
+                target_provider=lambda: progress.current or target,
+                allow_variation=True,
+            ),
             collector,
             agg.assistant(),
         ])
@@ -253,6 +278,7 @@ async def main() -> int:
                 if collector._buf:
                     collector.take()
             reply = collector.replies[-1] if len(collector.replies) > before else "(無回覆)"
+            print(f"   [狀態機] current={progress.current!r} upcoming={progress.upcoming}")
             print(f"🧸 玩偶 {i + 1}：{reply}")
             child_history.append({"role": "user", "content": reply})
             if i < turns - 1:
