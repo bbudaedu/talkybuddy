@@ -46,9 +46,11 @@ setup/cleanup 生命週期走。
 
 from __future__ import annotations
 
+import math
+import struct
 import threading
 import time
-from typing import Callable
+from typing import Awaitable, Callable
 
 from loguru import logger
 from pipecat.frames.frames import Frame, InputAudioRawFrame, UserStoppedSpeakingFrame
@@ -62,6 +64,43 @@ DEFAULT_IDLE_TIMEOUT_S = 15.0
 # 等待「孩子講完 → 閘門關上」的輪詢間隔。20Hz 對背景執行緒是免費的，
 # 換來不必在兩個執行緒之間拉一條 Event。
 _REARM_POLL_S = 0.05
+
+
+def beep_pcm(
+    sample_rate: int,
+    *,
+    freq_hz: float = 880.0,
+    ms: int = 150,
+    volume: float = 0.35,
+) -> bytes:
+    """產生「我在聽了」的提示音（16-bit mono PCM）。
+
+    **為什麼是純音而不是說一句話**：玩偶只要講話，`PlaybackGate` 就得關上行
+    （否則它把自己的話收回去——2026-07-31 逐字稿出現過玩偶自己剛講的句子），
+    成本是每輪多 3.4 秒（語音 0.8s + aplay 緩衝 2.0s + tail 0.6s）。純音不會被
+    SenseVoice 辨識成字，Silero VAD 是**語音**偵測器、對單一正弦波不敏感，
+    所以不必關閘門。
+
+    **淡入淡出是必要的**：突然開始／結束的邊緣是寬頻的「喀」聲，那反而像人聲
+    的爆破音，可能觸發 VAD——正好毀掉上面那個前提。
+
+    Args:
+        sample_rate: 取樣率，要與 aplay 啟動時的一致（對不上會變調）。
+        freq_hz: 音高。880Hz（A5）在玩偶的小喇叭上聽得清楚。
+        ms: 長度。
+        volume: 0–1，會留餘裕避免削波（削波產生諧波＝寬頻噪音）。
+
+    Returns:
+        little-endian 16-bit mono PCM bytes。
+    """
+    n = int(sample_rate * ms / 1000)
+    fade = max(1, int(n * 0.15))
+    peak = 32767 * min(volume, 0.95)
+    out = []
+    for i in range(n):
+        env = min(1.0, i / fade, (n - 1 - i) / fade)
+        out.append(int(peak * env * math.sin(2 * math.pi * freq_hz * i / sample_rate)))
+    return struct.pack(f"<{n}h", *out)
 
 
 class PressToTalkGate:
@@ -83,10 +122,27 @@ class PressToTalkGate:
         self._now = now
         self._armed_at: float | None = None
         self._always_armed = False
+        self._cue_pending = False
 
     def arm(self) -> None:
         """Open the gate; it stays open until disarmed or idle-timed-out."""
         self._armed_at = self._now()
+        self._cue_pending = True
+
+    def take_cue(self) -> bool:
+        """這次 arm 的提示音還沒發過嗎（發過就回 False）。
+
+        一次按鍵一聲。重複發會變成連續嗶嗶，比沒有提示更糟。
+        由 `arm()`（等按鍵的執行緒）設旗標、由 pipeline（event loop）取走，
+        兩邊都是單一 bool 的讀寫，GIL 之下不需要鎖。
+
+        Returns:
+            True 代表現在該發提示音。
+        """
+        if not self._cue_pending:
+            return False
+        self._cue_pending = False
+        return True
 
     def disarm(self) -> None:
         """Close the gate immediately."""
@@ -121,6 +177,7 @@ class PressToTalkFilter(FrameProcessor):
         gate: PressToTalkGate,
         *,
         trigger: Callable[[], object] | None = None,
+        cue: Callable[[], Awaitable[None]] | None = None,
         **kwargs,
     ):
         """Initialize the press-to-talk filter.
@@ -129,10 +186,13 @@ class PressToTalkFilter(FrameProcessor):
             gate: Shared gate instance, also held by the disarmer.
             trigger: Blocking call that returns when the key is pressed.
                 Defaults to the device's physical-key wait.
+            cue: Awaitable played once right after arming, so the child knows
+                the doll is listening. `None` = 沒有提示音（原本的行為）。
         """
         super().__init__(**kwargs)
         self._gate = gate
         self._trigger = trigger or audio_io.wait_for_trigger
+        self._cue = cue
         self._thread: threading.Thread | None = None
         self._muted_frames = 0
         self._was_armed: bool | None = None
@@ -182,6 +242,12 @@ class PressToTalkFilter(FrameProcessor):
         """
         await super().process_frame(frame, direction)
         self._ensure_waiter()
+        if self._cue is not None and self._gate.take_cue():
+            try:
+                await self._cue()
+            except Exception:
+                # 喇叭出問題不該讓玩偶聾掉——提示音是加分項，聽孩子講話不是。
+                logger.warning("提示音發不出來，對話照常進行", exc_info=True)
         if isinstance(frame, InputAudioRawFrame):
             armed = self._gate.is_armed()
             if armed != self._was_armed:

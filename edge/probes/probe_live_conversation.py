@@ -69,6 +69,7 @@ from pipecat.frames.frames import (
     Frame,
     LLMFullResponseEndFrame,
     LLMTextFrame,
+    OutputAudioRawFrame,
     TranscriptionFrame,
     TTSAudioRawFrame,
     UserStartedSpeakingFrame,
@@ -106,6 +107,7 @@ from edge.runtime.pipecat_adapters.press_to_talk import (
     PressToTalkDisarmer,
     PressToTalkFilter,
     PressToTalkGate,
+    beep_pcm,
 )
 from edge.runtime.pipecat_adapters.readalong_guard import ReadalongGuardProcessor
 from edge.runtime.pipecat_adapters.safety_gate import SafetyGateProcessor
@@ -512,6 +514,20 @@ async def main() -> int:
         else None
     )
 
+    # 按下去要有提示音，否則人不知道玩偶已經在聽了。2026-08-01 真人測試回報
+    # 「我按了 沒反應」，而 log 裡他自己講出了原因：「要按按鍵才開始說，我都
+    # 不知道」——按了沒反應的樣子跟玩偶壞掉分不出來，決賽現場小孩一定會踩。
+    #
+    # 直接寫進 aplay（write_audio_frame）而不是往 pipeline 推 TTSAudioRawFrame：
+    # 後者會讓 PlaybackGateSink 關上行 2.6 秒，正好把要聽的時間吃掉。純音不會被
+    # SenseVoice 辨識成字、也不易觸發 Silero VAD，所以不必關閘門。
+    _cue_pcm = beep_pcm(TTS_RATE)
+
+    async def _play_cue() -> None:
+        await transport.output().write_audio_frame(
+            OutputAudioRawFrame(audio=_cue_pcm, sample_rate=TTS_RATE, num_channels=1)
+        )
+
     context = LLMContext(messages=[{"role": "system", "content": SYSTEM_PROMPT}])
     # AlwaysUserMuteStrategy：玩偶講話時一律不聽使用者。
     # 2026-07-31 真人實測，沒有它會自我打斷 4 次——喇叭與麥克風同在玩偶內、
@@ -530,7 +546,7 @@ async def main() -> int:
             [
                 transport.input(),
                 # 沒按鍵之前就換靜音，會場噪音連 VAD 都碰不到（opt-in，預設不接）。
-                *([PressToTalkFilter(ptt)] if ptt is not None else []),
+                *([PressToTalkFilter(ptt, cue=_play_cue)] if ptt is not None else []),
                 PlaybackGateFilter(gate),   # 玩偶講話時上行換靜音，攔在 VAD 之前
                 vad,
                 # 孩子講完就關閘門等下一次按鍵。只有 VAD 之後看得到這個訊號。
