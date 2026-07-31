@@ -74,7 +74,7 @@ from pipecat.frames.frames import (
     UserStoppedSpeakingFrame,
 )
 from pipecat.pipeline.pipeline import Pipeline
-from pipecat.pipeline.runner import PipelineRunner
+from pipecat.pipeline.runner import WorkerRunner
 from pipecat.pipeline.worker import PipelineWorker
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import (
@@ -198,10 +198,14 @@ def _build_llm():
     # fallback 用 EdgeLLM 而不是上面那顆 OpenAILLMService：當輪降級發生在
     # service 內部，換不了 pipeline 上的節點，所以要一個同形狀的可呼叫物件。
     edge = _EdgeLLM()
+    # warmup=False：這裡改由 main() 在印出「開始了」**之前**明確暖機。
+    # service 內建的暖機發生在 pipeline 啟動時，而本 probe 是先印提示、
+    # 才啟動 pipeline——孩子看到提示就開口，第一輪會排在還沒飛完的暖機後面。
     service = CloudLLMService(
         cloud=cloud,
         fallback=edge.generate_from_prompt,
         target_provider=lambda: TARGET_SENTENCE,
+        warmup=False,
     )
     return service, cloud, f"雲端 {cloud.configured_backend()}（失敗當輪降級回 llama-server）"
 
@@ -280,7 +284,27 @@ async def main() -> int:
             ]
         )
     )
-    runner = PipelineRunner()
+    # WorkerRunner 而非 PipelineRunner：後者自 pipecat 1.3.0 起 deprecated，
+    # 會在 log 印警告。現場有人在讀這份 log，雜訊要清掉。兩者 run() 簽章相同
+    # （1.5.0 與板子的 1.6.0 都查證過）。
+    runner = WorkerRunner()
+
+    if cloud is not None:
+        # 雲端也要暖機，理由與上面 TTS 那行完全相同，只是成本更大。
+        # 板子實測（Gemini 直連）：第一次呼叫 1209-1905ms，穩態 691-950ms。
+        # 冷的那一次**超過 CLOUD_LLM_TIMEOUT_S 的 1.5s 上界**，會讓孩子講的
+        # 第一句話降級成本機的笨回覆——而第一印象是最貴的一輪。
+        #
+        # 一定要在下面那句「開始了」**之前**做完：孩子看到提示就開口，
+        # 暖機還在飛的話第一輪就排在它後面，等於沒暖。
+        # 印成完整一行而不是 end=""：ALSA 與 loguru 會往同一個終端寫東西，
+        # 半行的進度提示會被插斷成讀不懂的樣子（板子實測）。現場有人在讀
+        # 這份 log 判斷雲端到底通了沒，它必須一眼看得懂。
+        _t0 = time.perf_counter()
+        cloud.generate_from_prompt("暖機", target=None)
+        _ms = int((time.perf_counter() - _t0) * 1000)
+        _verdict = "成功" if cloud.verified() else "失敗，第一輪會照常嘗試並降級"
+        print(f"雲端暖機：{_ms}ms（{_verdict}）")
 
     print("=" * 62)
     print(f"🟢 開始了，請對著玩偶說話（{seconds:.0f} 秒後自動結束，Ctrl-C 可提前停）")

@@ -65,6 +65,7 @@ from pipecat.frames.frames import (
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.llm_service import LLMService
+from pipecat.services.settings import LLMSettings
 
 from edge.runtime.pipecat_adapters.failover import FailoverPolicy
 
@@ -108,6 +109,21 @@ def _last_user_text(context: LLMContext) -> str | None:
 class CloudLLMService(LLMService):
     """以既有 `CloudLLM` 為大腦的 pipecat LLM 服務，帶當輪降級與跨輪路由。"""
 
+    Settings = LLMSettings
+    """沿用基底的 settings 形狀。
+
+    這些欄位**必須全部初始化**，否則 pipeline 啟動時 pipecat 會印一行紅色
+    `ERROR: LLMSettings: the following fields are NOT_GIVEN: ...`。功能不受
+    影響，但決賽現場有人在讀那份 log，一行 ERROR 就得花時間解釋它不是問題。
+    不支援的欄位一律填 `None`，那是基底類別給的正式表達方式（同
+    `sensevoice_stt` 對 `language=None` 的處理）。
+
+    這裡幾乎全是 None，因為取樣參數（temperature / top_p / seed…）由
+    `server.cloud_llm` 那一層決定，各後端各自對應到自己的 API；
+    `system_instruction` 也一樣——它是 `cloud_llm._SYSTEM_PROMPT`，不由
+    pipecat 這層管。
+    """
+
     def __init__(
         self,
         *,
@@ -134,6 +150,22 @@ class CloudLLMService(LLMService):
                 the child's first sentence does not pay for the TLS handshake.
                 See :meth:`_warmup`.
         """
+        kwargs.setdefault(
+            "settings",
+            self.Settings(
+                model="talkybuddy-cloud",  # 僅供 log/metrics 辨識；實際 model 由 cloud_llm 決定
+                system_instruction=None,
+                temperature=None,
+                max_tokens=None,
+                top_p=None,
+                top_k=None,
+                frequency_penalty=None,
+                presence_penalty=None,
+                seed=None,
+                filter_incomplete_user_turns=False,
+                user_turn_completion_config=None,
+            ),
+        )
         super().__init__(**kwargs)
         if cloud is None:
             # lazy import：`server.cloud_llm` 會拉進 boto3 解析路徑，import 期
