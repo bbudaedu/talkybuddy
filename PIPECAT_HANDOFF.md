@@ -321,14 +321,143 @@ logind 搶佔問題。
 已做：逐句推（TTS 不必等整段合成完）、回覆上限 40→25 字。
 
 **還躺著沒拿的 2 秒**：aplay 緩衝死區。交接文件說 keepalive 就是為了讓緩衝
-可以調小而做的，但「未驗證」。緩衝設定在 `live_client.py:75`
-（`TALKYBUDDY_EDGE_PLAYBACK_BUFFER_US`，預設 2000000）與 `audio_io` 的
-`--buffer-time`，**兩個地方要一起改**。調小的失敗樣子是聲音斷斷續續，
-比慢更糟，所以要在有時間驗證時才動。
+可以調小而做的，但「未驗證」。
+
+> **2026-08-01 更正**：上一版寫「`live_client.py:75` 與 `audio_io` 的
+> `--buffer-time` **兩個地方要一起改**」，那**只對 local-client 那條路成立**。
+> pipecat 這條路**只有一個旋鈕**：`alsa_transport.py:204` 是向
+> `live_client.build_aplay_argv` 借 argv 的，而 `PlaybackGate` 的 `buffer_delay`
+> 也預設跟著同一個 `_PLAYBACK_BUFFER_US` 走（`live_client.py:172`）。
+> 也就是說這 2.6 秒是**純設定實驗、不必改程式**：
+>
+> ```
+> TALKYBUDDY_EDGE_PLAYBACK_BUFFER_US=2000000   # 2.0s，aplay 緩衝＝閘門假設的延遲
+> TALKYBUDDY_EDGE_PLAYBACK_TAIL_S=0.6          # 0.6s，吃喇叭殘響
+> ```
+>
+> 兩個都寫進 `/root/pipecat-lab/.env` 就會生效（service 有 `EnvironmentFile`）。
+> 而且**現在量得到了**：`PlaybackGateFilter` 每次重開閘門會印
+> 「關了 X.Xs，靜音 N 幀」，調完直接看那個數字，不必再靠推理。
+
+調小的失敗樣子是聲音斷斷續續，比慢更糟，所以要在有時間驗證時才動。
 
 **不要換 TTS 模型**：板子上只有一個中文聲音（`zh_CN-huayan-medium`），而且
 播放時間是真實時間、換模型砍不掉。雲端 TTS 會讓音訊也變成網路依賴——斷網
 橋段就從「變樸素」變成「變啞巴」，直接砸掉最大權重那 25%。
+
+---
+
+## 三之四、2026-08-01 下午：按鍵觸發完成，並挖出兩個「靜默變啞」
+
+### 🔴 按鍵觸發：已完成並真機驗證
+
+`edge/runtime/pipecat_adapters/press_to_talk.py`，環境變數 `TALKYBUDDY_PIPECAT_PTT=1`
+opt-in（板子的 `/root/pipecat-lab/.env` 已加）。板子實測完整一輪：
+
+```
+按一下按鍵開始錄音...（讀 /dev/input/event1，鍵碼 116）
+👂 聽成：可以跟我練習英文嗎？
+按一下按鍵開始錄音...          ← disarm 後自動重新等按鍵，迴圈閉合
+🗣 玩偶說：太棒了，我們一起練習動物英文。跟我說一遍：I see a dog.
+```
+
+**上一版建議的接法行不通，別照抄。** 原文說「擺在 `transport.input()` 之後、
+`PlaybackGateFilter` 之前，收到 `UserStoppedSpeakingFrame` 就 disarm」——但
+`vad` 是**獨立的 `VADProcessor`**（`probe_live_conversation.py:391-392`），
+那個 frame 由它往**下游**推，擺在它前面的 processor 永遠看不到。
+
+改成 `PlaybackGateFilter`/`PlaybackGateSink` 那個已驗證過的形狀，兩個節點共享一個
+state：`PressToTalkFilter`（VAD 前封嘴）+ `PressToTalkDisarmer`（VAD 後收訊號）。
+
+失效方向刻意選「開」：按鍵讀不到就永久 armed，退回 VAD 連續聽。玩偶變吵救得回來，
+玩偶全聾救不回來。
+
+### 🔴🔴 兩個「service active 但玩偶啞了」——比 PTT 本身更該先看
+
+**這是決賽最貴的失敗模式**：監控說一切正常，而玩偶不會講話，症狀跟按鍵故障、
+麥克風被佔用一模一樣。
+
+**(1) pipecat 的閒置逾時會砍掉 pipeline。** `PipelineWorker` 預設
+`idle_timeout_secs=300` + `cancel_on_idle_timeout=True`，而它判斷「活著」只看
+`(BotSpeakingFrame, UserSpeakingFrame)`——**沒人講話就算閒置**。板子實測，
+17:18:00 啟動、17:23:00 準時被砍。
+
+→ 修法：`IDLE_TIMEOUT_SECS = None`（`probe_live_conversation.py`）。
+真機驗證：17:28:54 啟動、17:34:00 仍活著，`Idle timeout` 警告 0 行。
+
+**這不是 PTT 帶來的。** PTT 只是讓它必然發生。VAD 連續聽的版本在安靜房間裡
+一樣會死——**現場架好玩偶等上台的那幾分鐘正好踩中**。
+
+**(2) pipeline 死了行程卻不退出，`Restart=always` 因此救不到。**
+原本是 `asyncio.gather(runner.run(worker), stop_after())`，而服務模式的
+`stop_after()` 是 `while True: await asyncio.sleep(3600)`——runner 死了，gather
+還在等那個睡一小時的協程。
+
+→ 修法：抽出 `serve_pipeline()`，服務模式直接 `await runner.run(worker)`。
+它一回來，`main()` 就收尾退出，systemd 約 7 秒重啟一次。**對任何死法都成立**，
+不只閒置逾時。
+
+### ⚠️ 地雷：不要把 `run(worker)` 換成官方建議的 `add_workers()`
+
+pipecat 1.6.0 把 `WorkerRunner.run(worker)` 標成 deprecated，建議改用
+`add_workers(worker)` + `run()`。**不要改**——1.5.0 與 1.6.0 實測語意相反：
+
+| 寫法 | worker 死掉時 |
+|---|---|
+| `run(worker)` | runner 跟著結束 → 行程退出 → systemd 重啟。**會自癒** |
+| `add_workers()+run()` | runner **繼續跑** → 行程不退出 → 退回上面那個 (2) |
+
+改過去會把自癒能力整個拿掉。只把那一行警告消音即可
+（`silence_runner_deprecation()`）。用
+`test_add_workers_would_break_self_healing` 釘住；哪天它變紅代表 pipecat
+修好了語意差異，那時才可以改。
+
+### 診斷 log 現在真的看得到了（之前加了等於沒加）
+
+`probe_live_conversation.py` 收尾原本是 `logger.add(sys.stderr, level="WARNING")`，
+所以任何 `logger.info` 診斷在 journal 裡**一行都不會出現**。那行 WARNING 有正當
+理由（pipecat 每個 frame 都有 DEBUG，全開會蓋掉對話），所以改成兩個互斥 filter 的
+sink：**我們自己的 `edge.runtime.pipecat_adapters.*` 開到 INFO，其餘維持 WARNING**
+（`configure_logging()`）。
+
+現在每輪會看到：
+
+```
+🔘 按鍵觸發，開始聽
+PlaybackGate 關閉上行（玩偶在講話）
+PlaybackGate 開啟上行（關了 2.6s，靜音 130 幀）      ← 死區的實測值
+⚠️ PlaybackGate 已關閉上行 12.3s（超過 10s）……      ← 卡住時才出現
+```
+
+**那個「關了 X.Xs」就是調 aplay 緩衝時要盯的數字**，不必再靠推理。
+而「換句子之後卡住」若再發生，最後那行警告會直接指認是不是這個閘門。
+
+### ⚠️ 未解：SSH ad-hoc 模式下按 power 鍵曾造成重開機
+
+一次觀察，機制不明，**但操作上要避開**：
+
+- **服務模式下按 power 鍵完全正常**（local-client 與 pipecat 都實測過多次）
+- 但用 `ssh root@… python -c "…"` 這種 ad-hoc 方式跑等待按鍵的程式時，按下去
+  板子直接重開（16:52 那次）
+- `systemd-logind` 執行中的設定確認是 `HandlePowerKey=ignore`（`busctl` 查的
+  執行中屬性，不是設定檔），所以**不是 logind 幹的**
+- `key_probe.py` 的 docstring 早就寫著「⚠️ 不要按 KEY_POWER，可能觸發關機」，
+  與記憶裡「power 鍵短按已驗證可用」是兩筆互相矛盾的紀錄——現在知道**兩者都對**，
+  差別在跑法
+
+**操作規則：驗證按鍵一律用服務模式（`switch_doll.sh`），不要用 SSH ad-hoc。**
+
+### ⚠️ 板子的 journal 是 volatile，跨開機查不到東西
+
+`/etc/systemd/journald.conf.d/10-journald-default-volatile.conf` 設了
+`Storage=volatile`——journal 只在 RAM。上面那次重開機**查不到原因**就是因為它。
+決賽前若還有時間，改成 `Storage=persistent` 會讓任何現場事故都可事後追查。
+
+### 還沒做的
+
+- **aplay 緩衝那 2 秒**：現在有實測數字可看了（見上），但還沒動。純設定實驗，
+  見三之三結尾那段更正。
+- `server/app.py::_store_live_turn` 的三個欄位名仍是錯的（三之二末尾）。
 
 ---
 
