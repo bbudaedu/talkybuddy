@@ -383,6 +383,85 @@ def _article_for(word: str) -> str:
     return "an" if w[:1] in "aeiou" else "a"
 
 
+# ---------------------------------------------------------------------------
+# 教材提煉 agent 用：驗證並合併老師上傳教材提煉出的詞條（子專案 F）
+# ---------------------------------------------------------------------------
+
+_MATERIAL_CATS = {"food", "school", "animal", "family", "action", "color"}
+_MATERIAL_ENTRY_KEYS = ("en", "zh", "cat", "np", "sent")
+
+
+def _article_is_consistent(np: str) -> bool:
+    """只驗證 a/an 這條有明確規則的冠詞；其餘開頭（some/my/the…）不強制檢查。"""
+    parts = np.split()
+    if len(parts) < 2:
+        return False
+    article = parts[0].lower()
+    if article not in ("a", "an"):
+        return True
+    return _article_for(parts[1]) == article
+
+
+def _is_valid_material_entry(entry, existing_en: set[str], existing_sent: set[str]) -> bool:
+    """單一教材詞條的合法性檢查：欄位齊全、分類合法、en/sent 不重複、冠詞一致。"""
+    if not isinstance(entry, dict):
+        return False
+    for key in _MATERIAL_ENTRY_KEYS:
+        if not (isinstance(entry.get(key), str) and entry[key].strip()):
+            return False
+    if entry["cat"] not in _MATERIAL_CATS:
+        return False
+    # 若 zh 已在 VOCAB，這是更新既有詞條，允許（冪等）；
+    # 若 zh 未在 VOCAB 但 en 已被其他詞條使用，拒絕。
+    if entry["zh"] not in VOCAB and entry["en"].lower() in existing_en:
+        return False
+    if entry["sent"] in existing_sent:
+        return False
+    if not _article_is_consistent(entry["np"]):
+        return False
+    return True
+
+
+def register_material_vocab(entries: list[dict]) -> tuple[list[dict], int]:
+    """驗證教材 agent 提議的詞條，通過的原地合併進 VOCAB。
+
+    回傳 ``(accepted_entries, rejected_count)``。任一詞條不合法只丟該條，
+    不中斷整批；``accepted_entries`` 是 ``[{"zh", "en", "cat", "np", "sent"}]``，
+    且已確實合併進 ``VOCAB``。
+
+    合併用 ``VOCAB[zh] = {...}`` 原地寫入同一個 dict 物件——
+    homework.py／games.py／profile.py 都是 ``from server.scaffold import VOCAB``
+    拿到同一個參照，原地 mutate 後這些模組不必改就看得到新詞。
+
+    任何輸入（None、非 dict、缺欄位）都不拋例外，直接計入 rejected。
+    """
+    accepted: list[dict] = []
+    rejected = 0
+    existing_en = {v["en"].lower() for v in VOCAB.values()}
+    existing_sent = {v["sent"] for v in VOCAB.values()}
+    for entry in entries or []:
+        zh = entry.get("zh") if isinstance(entry, dict) else None
+        # 若 zh 已存在，先移除其舊 en/sent，以便冪等更新
+        if zh in VOCAB:
+            old_en = VOCAB[zh]["en"].lower()
+            old_sent = VOCAB[zh]["sent"]
+            if old_en in existing_en:
+                existing_en.discard(old_en)
+            if old_sent in existing_sent:
+                existing_sent.discard(old_sent)
+        if not _is_valid_material_entry(entry, existing_en, existing_sent):
+            rejected += 1
+            continue
+        zh = entry["zh"]
+        clean = {"en": entry["en"], "cat": entry["cat"],
+                  "np": entry["np"], "sent": entry["sent"]}
+        VOCAB[zh] = clean
+        existing_en.add(entry["en"].lower())
+        existing_sent.add(entry["sent"])
+        accepted.append({"zh": zh, **clean})
+    return accepted, rejected
+
+
 def _pluralize(word: str) -> str:
     """簡單英文複數規則。"""
     if re.search(r"(s|x|z|ch|sh)$", word):
