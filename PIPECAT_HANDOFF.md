@@ -453,11 +453,70 @@ PlaybackGate 開啟上行（關了 2.6s，靜音 130 幀）      ← 死區的�
 `Storage=volatile`——journal 只在 RAM。上面那次重開機**查不到原因**就是因為它。
 決賽前若還有時間，改成 `Storage=persistent` 會讓任何現場事故都可事後追查。
 
+### 🔴 按下去沒有提示音 → 人以為玩偶壞了（已修）
+
+真人測試回報「我按了 沒反應」。**PTT 完全正常**，log 裡使用者自己講出了原因：
+
+```
+🔘 按鍵觸發，開始聽
+👂 聽成：要按按鍵才開始說，我都不知道。
+```
+
+按下去玩偶沒有任何回應，人會以為它壞了——而「按了沒反應」的樣子跟玩偶真的
+壞掉分不出來。決賽現場小孩一定會犯一模一樣的錯。
+
+**用嗶聲不用「我有在聽」**：玩偶只要講話，`PlaybackGate` 就得關上行（否則它把
+自己的話收回去），成本是每輪多 3.4 秒（0.8s 語音 + 2.0s 緩衝 + 0.6s tail），
+而一輪才 15 秒。純音不會被 SenseVoice 收成字、也不易觸發 Silero VAD（它是
+**語音**偵測器），所以不必關閘門。這是使用者裁定的取捨。
+
+880Hz / 150ms / 淡入淡出（方波邊緣是寬頻「喀」聲，反而可能觸發 VAD）。直接寫進
+`transport.output().write_audio_frame()`，不往 pipeline 推 `TTSAudioRawFrame`
+——後者會讓 `PlaybackGateSink` 關閘 2.6 秒，正好把要聽的時間吃掉。
+
+板子實測（100 秒 3 次嗶聲）：VAD 觸發 0、ASR 收字 0、閘門關閉 0、underrun 0，
+且 aplay 讀入的位元組與嗶聲精準對應（每次正好 6614 bytes = 22050×0.15×2）。
+
+### 🔴 keepalive 從來沒有被部署過（已修）
+
+板子上的 `edge/runtime/pipecat_adapters/alsa_transport.py` 比 HEAD **少 42 行**
+——整個 keepalive 功能不在上面。`AlsaTransportParams()` 連 `keepalive_enabled`
+這個屬性都沒有，而 `start()` 裡有 `if self._params.keepalive_enabled:`。
+
+證據：aplay 的 `rchar` 在沒有播放時是 **0 bytes/s**（keepalive 若運作應約
+44100）。部署 HEAD 之後變成穩定 43218 bytes/s。
+
+這是記憶 `project-edge-deploy` 的「推檔≠生效」又一次。**下次改 pipecat adapter
+之後，先比對板子與 HEAD 再下結論**——15 個 adapter 裡只有這一個是舊的，很難
+用眼睛看出來。
+
+### 🟡 aplay 緩衝：2.0s → 0.5s（已量、已套用）
+
+交接文件說「keepalive 就是為了讓緩衝可以調小而做的，但未驗證」。現在量出來了
+（`buffer_probe.py`，模擬逐句推 TTS：4 句 × 1.5s，中間 1.2s 合成空檔）：
+
+| 緩衝 | 無 keepalive | 有 keepalive |
+|---|---|---|
+| 2,000,000 µs（原設定） | 0 underrun | 0 underrun |
+| 1,000,000 µs | 0 underrun | 0 underrun |
+| **500,000 µs** | ❌ underrun | **0 underrun** |
+| 300,000 µs | ❌ underrun | 0 underrun |
+
+**underrun 是「聲音斷斷續續」的客觀訊號**，所以不必靠耳朵也判得出來。
+
+取 500,000 µs（不取最激進的 300k，留餘裕）：死區 2.6s → **1.1s**，而且孩子
+按下去到聽見嗶聲從 2.0s 縮到 0.5s。設在 `/root/pipecat-lab/.env` 的
+`TALKYBUDDY_EDGE_PLAYBACK_BUFFER_US`，備份在 `.env.bak-buffer`。
+
+⚠️ **這個值依賴 keepalive**。上表顯示沒有 keepalive 時 500k 會 underrun，
+所以若哪天 `alsa_transport.py` 又退回舊版，聲音會變斷斷續續。
+
 ### 還沒做的
 
-- **aplay 緩衝那 2 秒**：現在有實測數字可看了（見上），但還沒動。純設定實驗，
-  見三之三結尾那段更正。
 - `server/app.py::_store_live_turn` 的三個欄位名仍是錯的（三之二末尾）。
+- **嗶聲沒有人耳驗證過**（我測得到位元組與 underrun，聽不到音量與音色）。
+  第一件事就是按一下確認聽得到、而且不刺耳。
+- **降到 0.5s 緩衝之後沒有人耳驗證過**。underrun 是 0，但請實際聽一輪。
 
 ---
 
