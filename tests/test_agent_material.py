@@ -335,3 +335,45 @@ def test_agentcore_branch_calls_invoke_with_truthy_actor_id(monkeypatch):
     assert captured["actor_id"], "actor_id 必須是真值，不能是 None 或空字串"
     assert captured["actor_id"] != "None"
     _assert_valid_schema(result, expected_source="cloud")
+
+
+def test_agentcore_session_id_differs_per_text(monkeypatch):
+    """不同教材文字 → 不同 session_id，避免所有老師/所有次上傳共用同一個
+    Harness session（一旦設定 AGENTCORE_MEMORY_ARN 就是無上限成長、彼此
+    污染的共用對話歷史）。actor_id 已是固定的非個人化 sentinel，
+    session_id 就必須由呼叫本身的輸入推導，兩者不能同時是常數。
+    """
+    import json
+    from server.agents import material
+    from server import agent_backends, agentcore
+
+    captured_session_ids: list[str] = []
+
+    def fake_invoke(cfg, user_message, *, actor_id=None, session_id=None, timeout_s=None):
+        captured_session_ids.append(session_id)
+        return json.dumps({
+            "topic": "教材",
+            "entries": [],
+            "source": "cloud",
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        agent_backends, "resolve",
+        lambda role: ({"region": "us-west-2", "harness_arn": "arn:material"}, None),
+    )
+    monkeypatch.setattr(agentcore, "invoke", fake_invoke)
+
+    material.extract_vocab("今天我們去動物園看獅子。", allow_cloud=True)
+    material.extract_vocab("今天我們去海邊看魚。", allow_cloud=True)
+
+    assert len(captured_session_ids) == 2
+    assert all(captured_session_ids), "session_id 不得是 None 或空字串"
+    assert captured_session_ids[0] != captured_session_ids[1], \
+        f"不同教材文字應產生不同 session_id，得到相同值：{captured_session_ids}"
+
+    # 決定性：同一份教材重複送，session_id 應相同（可重現，不是隨機的）
+    captured_session_ids.clear()
+    material.extract_vocab("今天我們去動物園看獅子。", allow_cloud=True)
+    material.extract_vocab("今天我們去動物園看獅子。", allow_cloud=True)
+    assert captured_session_ids[0] == captured_session_ids[1], \
+        "同一份教材文字重複送，session_id 應相同（決定性）"

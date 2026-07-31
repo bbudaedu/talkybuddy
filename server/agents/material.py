@@ -27,6 +27,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -208,7 +209,16 @@ def _extract_vocab(text: str, *, allow_cloud: bool) -> dict:
                 raw_text = agentcore.invoke(
                     ac_cfg, user_prompt,
                     actor_id=_MATERIAL_ACTOR_ID,
-                    session_id="material-upload",
+                    # 由教材文字本身推導，不可用固定字串：actor_id 已是固定的
+                    # 非個人化 sentinel，若 session_id 也固定，
+                    # _normalize_session_id 會把兩者雜湊成同一個
+                    # runtimeSessionId——系統上所有老師、所有次上傳全部落在
+                    # 同一個 Harness session。一旦設定 AGENTCORE_MEMORY_ARN，
+                    # 等於所有教材上傳共用一份無上限成長的對話歷史：
+                    # 不相關老師的內容互相污染，且隨時間拖垮品質。
+                    # 用文字雜湊：同一份教材重複送落在同一個 session
+                    # （決定性、可重現），不同教材、不同老師不會撞在一起。
+                    session_id=f"material-{hashlib.sha256(text.encode('utf-8')).hexdigest()[:12]}",
                 )
             except Exception:
                 _log.exception("extract_vocab AgentCore 失敗，改試 Bedrock Converse")
