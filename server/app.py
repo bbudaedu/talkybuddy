@@ -96,6 +96,22 @@ def _prewarm_engines() -> None:
         pass
 
 
+def _replay_materials() -> None:
+    """啟動時把先前上傳的教材詞重新合併進 scaffold.VOCAB。
+
+    scaffold.VOCAB 是記憶體內的全域字典，process 重啟就清空；教材是
+    老師上傳的東西，裝置重啟後不該消失，所以每次啟動都從 DB 重放一次。
+    任何失敗只記 log，不擋啟動——沒有教材詞不影響核心對話迴圈。
+    """
+    try:
+        for m in store.list_materials():
+            entries = m.get("entries") or []
+            if entries:
+                scaffold.register_material_vocab(entries)
+    except Exception:
+        logger.exception("教材 replay 失敗，本次啟動的自訂詞彙可能不完整")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """啟動：安全檢查 + 建表 + 首次種子資料；引擎預熱走 daemon thread 不擋啟動。
@@ -106,6 +122,7 @@ async def lifespan(app: FastAPI):
     auth.assert_secret_is_safe()
     store.init_db()
     store.seed_demo()
+    _replay_materials()
     threading.Thread(target=_prewarm_engines, daemon=True).start()
     yield
 
@@ -329,6 +346,13 @@ class NetworkModeBody(BaseModel):
     mode: str
 
 
+class MaterialBody(BaseModel):
+    """POST /api/material 的 body。"""
+
+    title: str
+    text: str
+
+
 @app.post("/api/login")
 async def api_login(body: LoginBody):
     ident = auth.authenticate(body.email, body.password)
@@ -413,6 +437,38 @@ def identity_from_header(authorization: str | None) -> dict:
         return auth.verify_token(authorization[len("Bearer "):])
     except auth.InvalidToken:
         raise HTTPException(status_code=401, detail="token 無效或過期")
+
+
+@app.post("/api/material")
+async def api_material(body: MaterialBody,
+                       authorization: str | None = Header(default=None)):
+    """老師上傳教材文字，經 agent 提煉後合併進 scaffold.VOCAB（子專案 F）。
+
+    tutor 角色專用：這是老師端動作，會改變全域詞庫，跟 /api/network_mode
+    （不限角色）不同級。
+    """
+    claims = identity_from_header(authorization)
+    if claims["role"] != "tutor":
+        raise HTTPException(status_code=403, detail="只有 tutor 角色能上傳教材")
+
+    from server.agents import material as material_agent
+
+    result = material_agent.extract_vocab(
+        body.text, allow_cloud=(pipeline.network_mode == "cloud"),
+    )
+    try:
+        store.add_material({
+            "title": body.title,
+            "text": body.text,
+            "topic": result["topic"],
+            "entries": result["entries"],
+            "accepted_count": result["accepted_count"],
+            "rejected_count": result["rejected_count"],
+            "source": result["source"],
+        })
+    except Exception:
+        logger.exception("教材上傳持久化失敗，本次合併已生效但重啟後會遺失")
+    return result
 
 
 def _resolve_student(claims: dict, student_query: str | None) -> str:
