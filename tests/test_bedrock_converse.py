@@ -136,16 +136,23 @@ def test_chat_default_is_haiku_and_diag_default_is_sonnet(_clean_env):
     )
 
 
-def test_default_region_is_taipei(_clean_env):
-    """預設 region 必須是台北。
+def test_default_region_follows_the_competition_rules(_clean_env):
+    """預設 region 必須是規範指定的兩個之一。
 
-    2026-07-26 同帳號同時間跨 region 實測，只有 `ap-east-2` 的 Bedrock 配額
-    非零（Sonnet 5 = 6,000,000 TPM），東京與 Oregon 皆為 0.0；台北同時也是
-    離決賽現場最近的 region，對對話路徑 1.5s 預算是實質好處。
+    **2026-07-31 由 ap-east-2（台北）改為 us-west-2。**
+    「黑客松競賽環境規範與限制_20260722.pdf」一般性規範第 6 條：
+
+        參賽隊伍應以 us-east-1 與 us-west-2 兩個區域作為部署的指定主要區域。
+
+    先前釘台北是依據 2026-07-26 在**團隊自有帳號**上的配額實測（只有台北
+    非零）。那份實測對主辦方帳號作廢——配額是帳號獨立的，而且規範已指定區域。
+
+    代價要記著：台北 → us-west-2 跨太平洋，RTT 通常 150–250ms，而對話路徑
+    只有 1.5s 預算。8/1 拿到帳號後**必須重新量端到端延遲再決定逾時值**。
     """
     _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
-    assert bedrock_converse.DEFAULT_REGION == "ap-east-2"
-    assert bedrock_converse.resolve_config()["region"] == "ap-east-2"
+    assert bedrock_converse.DEFAULT_REGION in ("us-west-2", "us-east-1")
+    assert bedrock_converse.resolve_config()["region"] in ("us-west-2", "us-east-1")
 
 
 def test_both_role_defaults_are_global_profiles(_clean_env):

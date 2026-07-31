@@ -17,15 +17,23 @@ from __future__ import annotations
 
 import os
 
-# 預設 region：ap-east-2（台北）。兩個獨立理由指向同一個選擇：
-#   1. 配額——2026-07-26 同帳號同時間跨 region 實測，只有台北的 Bedrock
-#      on-demand 配額非零（Sonnet 5 = 6,000,000 TPM），東京與 us-west-2
-#      皆為 0.0。細節見 deploy/aws/STATUS.md。
-#   2. 延遲——台北是離決賽現場最近的 region，對話路徑只有 1.5s 預算
-#      （cloud_llm._TIMEOUT_S），省下的 RTT 是實質的。
-# 換 region 前務必用 list_models() 重新確認該地可用的 profile 前綴，
-# 不同 region 提供的前綴不同（見 _ROLE_MODELS 的註記）。
-DEFAULT_REGION = "ap-east-2"
+# 預設 region：us-west-2。
+#
+# **2026-07-31 由 ap-east-2（台北）改過來，理由是規範不是效能。**
+# 「黑客松競賽環境規範與限制_20260722.pdf」一般性規範第 6 條：
+#
+#     參賽隊伍應以 us-east-1 與 us-west-2 兩個區域作為部署的指定主要區域。
+#
+# 先前選台北是根據 2026-07-26 在**團隊自有帳號**上的跨 region 配額實測
+# （只有台北非零，us-west-2 = 0.0，見 deploy/aws/STATUS.md）。那份實測對
+# **主辦方帳號一律作廢**——不同帳號的配額是獨立的，而且規範已經指定了區域。
+#
+# 代價要誠實記著：台北 → us-west-2 是跨太平洋，RTT 通常 150–250ms，而對話
+# 路徑只有 1.5s 預算（cloud_llm._TIMEOUT_S）。**8/1 拿到帳號後必須重新量一次
+# 端到端延遲再決定逾時值**，不要沿用台北時代的數字。
+#
+# 換 region 時 model profile 前綴要一起重新查證（見下方 `global.` 那段註解）。
+DEFAULT_REGION = os.environ.get("BEDROCK_DEFAULT_REGION", "us-west-2")
 
 # 預設 model：cross-region inference profile ID。**上線前務必以本檔的
 # list_models() 對實際帳號查證**——各帳號/region 可用的 profile 不同，
@@ -186,6 +194,12 @@ def converse_chat(
     Returns:
         產生的文字。
     """
+    # 競賽規範：Bedrock 請求須控制在每秒 1 個以下（server/bedrock_throttle.py）。
+    # 節流放在這裡是因為這是全專案唯一的收斂點——cloud_llm、diagnose、
+    # 三個 agent 都經過 converse()，各自加節流只會各自為政。
+    from server import bedrock_throttle
+
+    bedrock_throttle.acquire()
     client = _build_client(cfg["region"], timeout_s)
     payload = client.converse(
         modelId=cfg["model_id"],
