@@ -88,14 +88,14 @@ def test_wrong_article_is_rejected():
 
 def test_non_a_an_article_is_not_strictly_checked():
     """np 開頭是 some/my/the 等非 a/an 時不做嚴格檢查（沒有明確規則可比對）。"""
-    entries = [{"en": "juice", "zh": "果汁", "cat": "food",
-                "np": "some juice", "sent": "I want to drink some juice."}]
+    entries = [{"en": "lemonade", "zh": "檸檬水", "cat": "food",
+                "np": "some lemonade", "sent": "I want to drink some lemonade."}]
 
     accepted, rejected = scaffold.register_material_vocab(entries)
 
     assert rejected == 0
     assert len(accepted) == 1
-    assert "果汁" in scaffold.VOCAB
+    assert "檸檬水" in scaffold.VOCAB
 
 
 def test_one_bad_entry_does_not_block_the_rest_of_the_batch():
@@ -137,3 +137,49 @@ def test_non_dict_entry_is_rejected_without_raising():
 
     assert len(accepted) == 1
     assert rejected == 3
+
+
+def test_existing_zh_with_different_en_is_rejected():
+    """既有 zh 且 en 屬於他者 → 拒絕（會造成 en 重複）。
+
+    "獅子" 已有 en="lion"，若嘗試改為 en="tiger"（屬於 "老虎"），
+    會違反 en 唯一性不變式。
+    """
+    original = dict(scaffold.VOCAB["獅子"])
+    entries = [{"zh": "獅子", "en": "tiger", "cat": "animal",
+                "np": "a tiger", "sent": "I see a tiger."}]
+
+    accepted, rejected = scaffold.register_material_vocab(entries)
+
+    assert accepted == []
+    assert rejected == 1
+    assert scaffold.VOCAB["獅子"] == original  # 未被覆寫
+
+
+def test_curriculum_entry_not_silently_overwritten():
+    """教科書詞條不應被教師上傳的詞條無聲覆寫（兩個 en 不同）。
+
+    確認既有教科書詞條的 zh 若遭重新提交（但 en 改變），
+    會因 en 重複而被拒，教科書詞條保持不變。
+    """
+    original_apple = dict(scaffold.VOCAB["蘋果"])  # {"en": "apple", ...}
+    original_banana = dict(scaffold.VOCAB["香蕉"])  # {"en": "banana", ...}
+
+    # 嘗試用 "banana" 的 en 覆寫 "蘋果"（失敗）
+    entries = [{"zh": "蘋果", "en": "banana", "cat": "food",
+                "np": "a banana", "sent": "This is a test sentence."}]
+
+    accepted, rejected = scaffold.register_material_vocab(entries)
+
+    # 應拒絕，因 "banana" 已被 "香蕉" 佔用
+    assert accepted == []
+    assert rejected == 1
+
+    # 驗證兩個詞條都保持原狀
+    assert scaffold.VOCAB["蘋果"] == original_apple
+    assert scaffold.VOCAB["香蕉"] == original_banana
+
+    # 確認沒有重複 en
+    en_list = [v["en"] for v in scaffold.VOCAB.values()]
+    assert en_list.count("apple") == 1
+    assert en_list.count("banana") == 1

@@ -411,9 +411,7 @@ def _is_valid_material_entry(entry, existing_en: set[str], existing_sent: set[st
             return False
     if entry["cat"] not in _MATERIAL_CATS:
         return False
-    # 若 zh 已在 VOCAB，這是更新既有詞條，允許（冪等）；
-    # 若 zh 未在 VOCAB 但 en 已被其他詞條使用，拒絕。
-    if entry["zh"] not in VOCAB and entry["en"].lower() in existing_en:
+    if entry["en"].lower() in existing_en:
         return False
     if entry["sent"] in existing_sent:
         return False
@@ -440,15 +438,6 @@ def register_material_vocab(entries: list[dict]) -> tuple[list[dict], int]:
     existing_en = {v["en"].lower() for v in VOCAB.values()}
     existing_sent = {v["sent"] for v in VOCAB.values()}
     for entry in entries or []:
-        zh = entry.get("zh") if isinstance(entry, dict) else None
-        # 若 zh 已存在，先移除其舊 en/sent，以便冪等更新
-        if zh in VOCAB:
-            old_en = VOCAB[zh]["en"].lower()
-            old_sent = VOCAB[zh]["sent"]
-            if old_en in existing_en:
-                existing_en.discard(old_en)
-            if old_sent in existing_sent:
-                existing_sent.discard(old_sent)
         if not _is_valid_material_entry(entry, existing_en, existing_sent):
             rejected += 1
             continue
