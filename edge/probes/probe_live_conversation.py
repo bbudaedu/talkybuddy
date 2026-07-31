@@ -172,7 +172,30 @@ def _pids(name: str) -> list[str]:
     return [p for p in r.stdout.split() if p]
 
 
-def _build_llm():
+def _todays_lesson():
+    """從既有的 SQLite 取本場教材；任何失敗回 None，退回寫死的預設。
+
+    `server/lesson.py::build_lesson` 依最新診斷 + 學生 profile 從
+    `scaffold.VOCAB` 挑主題與目標句，並給出本輪教學策略（directive）。
+    這條 probe 過去寫死 `I want an apple.`——那是 2026-07-31 真人實測
+    「四輪回覆幾乎一模一樣」的原因之一。
+
+    一場只取一次：診斷資料不會在對話中途變，每輪重讀只是白花 I/O。
+    """
+    try:
+        from server import lesson as lesson_mod, store
+
+        # init_db 是冪等的（CREATE TABLE IF NOT EXISTS）。少了這行，全新的
+        # lab 目錄第一次跑會拿到 `no such table: diagnoses` 而靜默退回寫死的
+        # 目標句——症狀是「教材功能好像沒接上」，很難聯想到是資料庫沒建表。
+        store.init_db()
+        return lesson_mod.build_lesson(store.list_diagnoses(), store.get_profile())
+    except Exception:
+        logger.warning("取不到今日教材，改用寫死的預設目標句（對話仍可進行）")
+        return None
+
+
+def _build_llm(lesson=None):
     """組出這一跑要用的大腦，回 `(service, cloud_or_None, 一句話說明)`。
 
     雲端關閉時回傳與過去完全相同的 `OpenAILLMService`——那條路徑已經真人
@@ -201,10 +224,24 @@ def _build_llm():
     # warmup=False：這裡改由 main() 在印出「開始了」**之前**明確暖機。
     # service 內建的暖機發生在 pipeline 啟動時，而本 probe 是先印提示、
     # 才啟動 pipeline——孩子看到提示就開口，第一輪會排在還沒飛完的暖機後面。
+    target = (lesson.target_sentence if lesson else None) or TARGET_SENTENCE
+    directive = lesson.directive if lesson else None
+    topic = lesson.topic if lesson else None
+
+    # 雲端走「即時陪聊」契約：教練企鵝 prompt、看得到對話歷史、不強制帶讀。
+    # 那份 prompt 明寫「孩子如果問你別的，一定要先回應他…絕對不可以假裝沒聽到
+    # 孩子的話」，正是回合式契約下四輪回覆一模一樣的解藥。`server/app.py` 的
+    # /ws/live 一直是這樣跑的——這裡是接上既有契約，不是新發明。
+    def _live_system() -> str:
+        from server import scaffold
+
+        return scaffold.build_live_system_prompt(target, directive, topic)
+
     service = CloudLLMService(
         cloud=cloud,
         fallback=edge.generate_from_prompt,
-        target_provider=lambda: TARGET_SENTENCE,
+        target_provider=lambda: target,
+        system_provider=_live_system,
         warmup=False,
     )
     return service, cloud, f"雲端 {cloud.configured_backend()}（失敗當輪降級回 llama-server）"
@@ -237,7 +274,11 @@ async def main() -> int:
     )
     vad = VADProcessor(vad_analyzer=SileroVADAnalyzer())
     stt = SenseVoiceSTTService(sample_rate=STT_RATE)
-    llm, cloud, brain_desc = _build_llm()
+    lesson = _todays_lesson()
+    llm, cloud, brain_desc = _build_llm(lesson)
+    # 教材決定目標句；取不到就用寫死的預設（對話仍可進行）。
+    target_sentence = (lesson.target_sentence if lesson else None) or TARGET_SENTENCE
+    lesson_directive = lesson.directive if lesson else None
     tts = EdgeVitsTTSService(engine=tts_engine)
     narrator = Narrator("out")
     narrator_in = Narrator("in")
@@ -264,16 +305,22 @@ async def main() -> int:
                 vad,
                 stt,
                 narrator_in,        # 探針要在 agg.user() 之前，否則看不到逐字稿
-                StatelessContextProcessor(context=context),
+                # 無狀態只留給 edge：llama-server --ctx-size 512 塞不下歷史
+                # （實測 516→579→642 tokens 就爆）。雲端 context 遠大於此，
+                # 留著它玩偶就永遠不記得上一輪——那正是要修的單調問題。
+                *([] if cloud is not None else
+                  [StatelessContextProcessor(context=context)]),
                 # 走雲端才遮個資：edge 是本機推論，孩子的話沒有離開玩偶，
                 # 遮了只會讓 llama-server 看到 [名字] 而降低回覆品質。
                 LessonPromptInjector(
-                    target=TARGET_SENTENCE, deidentify=cloud is not None
+                    target=target_sentence,
+                    directive=lesson_directive,
+                    deidentify=cloud is not None,
                 ),
                 agg.user(),
                 llm,
                 SafetyGateProcessor(),
-                ReadalongGuardProcessor(target=TARGET_SENTENCE),
+                ReadalongGuardProcessor(target=target_sentence),
                 narrator_llm,
                 tts,
                 PlaybackGateSink(gate),     # 記錄下行時長給 gate
@@ -309,7 +356,8 @@ async def main() -> int:
     print("=" * 62)
     print(f"🟢 開始了，請對著玩偶說話（{seconds:.0f} 秒後自動結束，Ctrl-C 可提前停）")
     print(f"   大腦　　　　：{brain_desc}")
-    print(f"   今天的目標句：{TARGET_SENTENCE}")
+    print(f"   今天的主題　：{(lesson.topic if lesson else '(預設)')}")
+    print(f"   今天的目標句：{target_sentence}")
     print("   建議說：我想要蘋果")
     print("=" * 62)
 

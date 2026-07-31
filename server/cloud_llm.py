@@ -190,9 +190,57 @@ class CloudLLM:
         Returns:
             通過護欄的回覆文字；失敗、逾時或護欄命中時回 None。
         """
+        return self.generate_chat(
+            [{"role": "user", "content": user_prompt}],
+            system=_SYSTEM_PROMPT,
+            target=target,
+        )
+
+    def generate_chat(
+        self,
+        messages: list[dict],
+        *,
+        system: str,
+        target: str | None,
+        enforce_readalong: bool = True,
+    ) -> str | None:
+        """多輪對話；可換 system prompt、可關帶讀強制。任何失敗回 None。
+
+        為 pipecat 的即時陪聊路徑開的。與 :meth:`generate_from_prompt` 的差別
+        只有三點，但那三點正是「玩偶講話很單調」的原因：
+
+        1. **看得到對話歷史** —— 前者只送一則 user 訊息，玩偶因此不記得上一輪。
+           雲端 context 遠大於 llama-server 的 512，這個限制在雲端不存在。
+        2. **system prompt 可換** —— 前者寫死 ``_SYSTEM_PROMPT``（60 字、每輪
+           硬帶讀），那是回合式鷹架給小模型的契約。即時陪聊要用
+           ``scaffold.build_live_system_prompt``（教練企鵝），那份 prompt 明寫
+           「孩子如果問你別的，一定要先回應他…絕對不可以假裝沒聽到孩子的話」。
+        3. **帶讀強制可關** —— ``ensure_readalong`` 會在事後把回覆補成
+           「…跟我說一遍：<目標句>」。回合式契約要它，即時陪聊不要：孩子問
+           問題時玩偶應該能只回答。``server/app.py`` 的 ``/ws/live`` 路徑
+           一直都不套這一層，這裡是讓 pipecat 接上同一套契約，不是新發明。
+
+        **放寬的只有帶讀格式**。安全護欄（``passes_guardrail``）與簡轉繁
+        （``to_traditional``）照跑，不因為契約不同而放行。
+
+        Args:
+            messages: ``[{"role": "user"|"assistant"|"system", "content": str}, ...]``。
+                ``system`` 角色會被各 provider 濾掉，請用 ``system`` 參數傳。
+            system: 這一場要用的 system prompt。
+            target: 本輪目標英文句，供帶讀護欄補句用。
+            enforce_readalong: 是否強制回覆恰含一句帶讀。預設 True 以維持
+                既有呼叫端行為不變。
+
+        Returns:
+            通過護欄的回覆文字；失敗、逾時或護欄命中時回 None。
+        """
         t0 = time.monotonic()
         backend = "none"
         try:
+            if not any(m.get("role") != "system" for m in messages):
+                # 沒有任何非 system 訊息 = 沒有這一輪，別送空的上雲燒配額。
+                self._record(False, "none", "沒有可送出的對話訊息")
+                return None
             # role="chat"：取為 _TIMEOUT_S（1.5s）挑的快模型。若取到診斷用的
             # 大模型，這條路徑會穩定逾時而永遠降級回 edge。
             bedrock_cfg = bedrock_converse.resolve_config(role="chat")
@@ -209,9 +257,9 @@ class CloudLLM:
             if gemini_cfg is not None:
                 # timeout 傳 _TIMEOUT_S 而非讓 gemini_llm 用它自己的 12s 預設
                 # ——理由與下面 Bedrock 那段完全相同。
-                text = gemini_llm.generate_text(
-                    _SYSTEM_PROMPT,
-                    user_prompt,
+                text = gemini_llm.generate_chat(
+                    system,
+                    messages,
                     cfg=gemini_cfg,
                     max_tokens=_MAX_TOKENS,
                     timeout_s=_TIMEOUT_S,
@@ -220,9 +268,9 @@ class CloudLLM:
                 # 原生 Bedrock Converse。timeout 刻意傳 _TIMEOUT_S 而非讓
                 # bedrock_converse 用它自己的 12s 預設——斷網橋段（D-03）
                 # 的「恢復 <1-2 秒」全靠這個上界，用錯就直接破功。
-                text = bedrock_converse.converse_text(
-                    _SYSTEM_PROMPT,
-                    user_prompt,
+                text = bedrock_converse.converse_chat(
+                    system,
+                    messages,
                     cfg=bedrock_cfg,
                     max_tokens=_MAX_TOKENS,
                     timeout_s=_TIMEOUT_S,
@@ -232,8 +280,12 @@ class CloudLLM:
                     {
                         "model": cfg["model"],
                         "max_tokens": _MAX_TOKENS,
-                        "system": _SYSTEM_PROMPT,
-                        "messages": [{"role": "user", "content": user_prompt}],
+                        "system": system,
+                        "messages": [
+                            {"role": m.get("role"), "content": m.get("content")}
+                            for m in messages
+                            if m.get("role") != "system" and m.get("content")
+                        ],
                     }
                 ).encode("utf-8")
                 req = urllib.request.Request(
@@ -257,6 +309,9 @@ class CloudLLM:
             # 先繁化（與 edge 同序）再跑帶讀護欄
             text = guardrails.to_traditional(text)
             self._record(True, backend, "ok", int((time.monotonic() - t0) * 1000))
+            if not enforce_readalong:
+                # 即時陪聊契約：孩子問問題時玩偶要能只回答，不是每輪硬補帶讀。
+                return text
             # 帶讀恰好一句：漏句要補、格式跑掉要修、不得重複（與 edge 共用）
             return guardrails.ensure_readalong(text, target)
         except Exception as exc:

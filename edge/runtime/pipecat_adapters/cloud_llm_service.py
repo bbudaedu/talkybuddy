@@ -131,6 +131,7 @@ class CloudLLMService(LLMService):
         fallback: GenerateFromPrompt | None = None,
         policy: FailoverPolicy | None = None,
         target_provider: TargetProvider | None = None,
+        system_provider: Callable[[], str] | None = None,
         warmup: bool = True,
         **kwargs,
     ):
@@ -146,6 +147,11 @@ class CloudLLMService(LLMService):
                 :class:`FailoverPolicy`.
             target_provider: Returns the current target sentence. Should read
                 from the same lesson source as ``LessonPromptInjector``.
+            system_provider: Returns the system prompt for the live-chat
+                contract. Pass ``scaffold.build_live_system_prompt(...)`` to
+                switch the cloud path from the rigid turn-based scaffold to the
+                coach persona. Omit to keep the previous single-turn behaviour
+                exactly. See :meth:`_generate`.
             warmup: Make one throwaway cloud call when the pipeline starts, so
                 the child's first sentence does not pay for the TLS handshake.
                 See :meth:`_warmup`.
@@ -177,6 +183,7 @@ class CloudLLMService(LLMService):
         self._fallback = fallback
         self._policy = policy or FailoverPolicy()
         self._target_provider = target_provider
+        self._system_provider = system_provider
         self._warmup = warmup
 
     @property
@@ -246,12 +253,36 @@ class CloudLLMService(LLMService):
             logger.exception("target_provider 失敗，本輪不做帶讀補句")
             return None
 
-    async def _generate(self, prompt: str, target: str | None) -> str | None:
+    def _call_cloud(self, prompt: str, target: str | None, messages: list) -> str | None:
+        """依有沒有 `system_provider` 決定走哪一種契約（同步，跑在工作執行緒裡）。
+
+        **回合式（預設）**：單輪、內建 60 字 system prompt、事後強制補帶讀。
+        給 512 ctx 的小模型用的契約，也是 edge 降級那顆吃的東西。
+
+        **即時陪聊（給了 system_provider）**：多輪、教練 prompt、不強制帶讀。
+        2026-07-31 真人實測，回合式契約下玩偶四輪回覆幾乎一模一樣——孩子問
+        「可以跟我練習說英文嗎？」它還是回「跟我說一遍：I want an apple.」。
+        `scaffold.build_live_system_prompt` 那份 prompt 明寫「孩子如果問你別的，
+        一定要先回應他…絕對不可以假裝沒聽到孩子的話」，而 `server/app.py` 的
+        `/ws/live` 一直是這樣跑的。這裡是讓 pipecat 接上同一套既有契約。
+        """
+        if self._system_provider is None:
+            return self._cloud.generate_from_prompt(prompt, target=target)
+        return self._cloud.generate_chat(
+            messages,
+            system=self._system_provider(),
+            target=target,
+            enforce_readalong=False,
+        )
+
+    async def _generate(
+        self, prompt: str, target: str | None, messages: list | None = None
+    ) -> str | None:
         """跑完一輪：先照 policy 決定要不要試雲端，失敗就當輪降級。"""
         if self._policy.should_try_primary():
             try:
                 text = await asyncio.to_thread(
-                    self._cloud.generate_from_prompt, prompt, target=target
+                    self._call_cloud, prompt, target, messages or []
                 )
             except Exception:
                 # CloudLLM 自己不拋（任何失敗都回 None），但這個參數是注入的，
@@ -297,7 +328,9 @@ class CloudLLMService(LLMService):
         await self.start_processing_metrics()
         await self.start_ttfb_metrics()
         try:
-            text = await self._generate(prompt, self._current_target())
+            text = await self._generate(
+                prompt, self._current_target(), list(frame.context.messages)
+            )
             await self.stop_ttfb_metrics()
             if text:
                 await self._push_llm_text(text)

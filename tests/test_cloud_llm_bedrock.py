@@ -63,6 +63,10 @@ def test_available_false_with_neither_backend(_clean_env):
 
 # ---------------------------------------------------------------------------
 # generate() — Bedrock 分支
+#
+# 攔截點是 converse_chat 而不是 converse_text：cloud_llm 自 2026-07-31 起
+# 一律走多輪進入點（converse_text 只是它的單輪包裝）。攔錯層的話
+# monkeypatch 會失效而真的打到 AWS——這個檔案就是這樣被抓到的。
 # ---------------------------------------------------------------------------
 
 def test_generate_uses_bedrock_when_selected(_clean_env, monkeypatch):
@@ -70,11 +74,11 @@ def test_generate_uses_bedrock_when_selected(_clean_env, monkeypatch):
     _forbid_urlopen(monkeypatch)
     captured = {}
 
-    def _fake(system, user, *, cfg, **kwargs):
-        captured.update(system=system, user=user, cfg=cfg, kwargs=kwargs)
+    def _fake(system, messages, *, cfg, **kwargs):
+        captured.update(system=system, messages=messages, cfg=cfg, kwargs=kwargs)
         return "好棒！跟我說一遍：I like apples."
 
-    monkeypatch.setattr(bedrock_converse, "converse_text", _fake)
+    monkeypatch.setattr(bedrock_converse, "converse_chat", _fake)
 
     out = CloudLLM().generate("我喜歡蘋果", _Sc())
 
@@ -89,11 +93,11 @@ def test_bedrock_call_uses_cloud_llm_timeout_not_bedrock_default(
     _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
     captured = {}
 
-    def _fake(system, user, *, cfg, **kwargs):
+    def _fake(system, messages, *, cfg, **kwargs):
         captured.update(kwargs)
         return "好棒！跟我說一遍：I like apples."
 
-    monkeypatch.setattr(bedrock_converse, "converse_text", _fake)
+    monkeypatch.setattr(bedrock_converse, "converse_chat", _fake)
     CloudLLM().generate("我喜歡蘋果", _Sc())
 
     assert captured["timeout_s"] == cloud_llm_mod._TIMEOUT_S
@@ -111,11 +115,11 @@ def test_bedrock_call_uses_chat_model_not_diag_model(_clean_env, monkeypatch):
     _clean_env.setenv("BEDROCK_MODEL_ID_DIAG", "us.anthropic.slow-diag-v1:0")
     captured = {}
 
-    def _fake(system, user, *, cfg, **kwargs):
+    def _fake(system, messages, *, cfg, **kwargs):
         captured["cfg"] = cfg
         return "好棒！跟我說一遍：I like apples."
 
-    monkeypatch.setattr(bedrock_converse, "converse_text", _fake)
+    monkeypatch.setattr(bedrock_converse, "converse_chat", _fake)
     CloudLLM().generate("我喜歡蘋果", _Sc())
 
     assert captured["cfg"]["model_id"] == "us.anthropic.fast-chat-v1:0"
@@ -127,11 +131,11 @@ def test_bedrock_chat_default_model_differs_from_diag_default(_clean_env, monkey
     _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
     captured = {}
 
-    def _fake(system, user, *, cfg, **kwargs):
+    def _fake(system, messages, *, cfg, **kwargs):
         captured["cfg"] = cfg
         return "好棒！跟我說一遍：I like apples."
 
-    monkeypatch.setattr(bedrock_converse, "converse_text", _fake)
+    monkeypatch.setattr(bedrock_converse, "converse_chat", _fake)
     CloudLLM().generate("我喜歡蘋果", _Sc())
 
     assert captured["cfg"]["model_id"] == bedrock_converse.DEFAULT_CHAT_MODEL_ID
@@ -142,7 +146,7 @@ def test_bedrock_failure_returns_none_not_raise(_clean_env, monkeypatch):
     _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
     monkeypatch.setattr(
         bedrock_converse,
-        "converse_text",
+        "converse_chat",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("bedrock 掛了")),
     )
     assert CloudLLM().generate("我喜歡蘋果", _Sc()) is None
@@ -151,7 +155,7 @@ def test_bedrock_failure_returns_none_not_raise(_clean_env, monkeypatch):
 def test_bedrock_output_still_passes_guardrail(_clean_env, monkeypatch):
     """輸出後置護欄不得因換後端而失效：不安全內容 → None（降級回 edge/scaffold）。"""
     _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
-    monkeypatch.setattr(bedrock_converse, "converse_text", lambda *a, **k: "安全回覆")
+    monkeypatch.setattr(bedrock_converse, "converse_chat", lambda *a, **k: "安全回覆")
     monkeypatch.setattr(cloud_llm_mod.guardrails, "passes_guardrail", lambda t: False)
     assert CloudLLM().generate("我喜歡蘋果", _Sc()) is None
 
@@ -160,11 +164,11 @@ def test_bedrock_prompt_is_deidentified(_clean_env, monkeypatch):
     _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
     captured = {}
 
-    def _fake(system, user, *, cfg, **kwargs):
-        captured["user"] = user
+    def _fake(system, messages, *, cfg, **kwargs):
+        captured["user"] = messages[-1]["content"]
         return "好棒！跟我說一遍：I like apples."
 
-    monkeypatch.setattr(bedrock_converse, "converse_text", _fake)
+    monkeypatch.setattr(bedrock_converse, "converse_chat", _fake)
     CloudLLM().generate("我的電話是 0912345678", _Sc())
     assert "0912345678" not in captured["user"]
 
@@ -172,7 +176,7 @@ def test_bedrock_prompt_is_deidentified(_clean_env, monkeypatch):
 def test_bedrock_missing_target_sentence_is_appended(_clean_env, monkeypatch):
     """帶讀不可漏句：目標英文句一定要在回覆中（與 relay 分支行為一致）。"""
     _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
-    monkeypatch.setattr(bedrock_converse, "converse_text", lambda *a, **k: "你好棒！")
+    monkeypatch.setattr(bedrock_converse, "converse_chat", lambda *a, **k: "你好棒！")
     out = CloudLLM().generate("我喜歡蘋果", _Sc())
     assert "I like apples." in out
 
@@ -187,7 +191,7 @@ def test_relay_path_unchanged_when_provider_unset(_clean_env, monkeypatch):
     def _spy(*a, **k):
         raise AssertionError("provider 未切到 bedrock 時不得呼叫 Bedrock")
 
-    monkeypatch.setattr(bedrock_converse, "converse_text", _spy)
+    monkeypatch.setattr(bedrock_converse, "converse_chat", _spy)
 
     class _R:
         def __enter__(self):
@@ -215,7 +219,7 @@ def test_bedrock_takes_priority_over_relay(_clean_env, monkeypatch):
     _clean_env.setenv("ANTHROPIC_API_KEY", "sk-x")
     _forbid_urlopen(monkeypatch)
     monkeypatch.setattr(
-        bedrock_converse, "converse_text",
+        bedrock_converse, "converse_chat",
         lambda *a, **k: "來自 Bedrock：跟我說一遍：I like apples.",
     )
     assert "Bedrock" in CloudLLM().generate("我喜歡蘋果", _Sc())

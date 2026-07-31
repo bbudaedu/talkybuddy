@@ -46,7 +46,9 @@ def _use_bedrock(monkeypatch, text_or_exc):
             raise text_or_exc
         return text_or_exc
 
-    monkeypatch.setattr(bedrock_converse, "converse_text", _converse)
+    # 攔 converse_chat 而非 converse_text：cloud_llm 自 2026-07-31 起一律走
+    # 多輪進入點。攔錯層 monkeypatch 會失效而真的打到 AWS。
+    monkeypatch.setattr(bedrock_converse, "converse_chat", _converse)
 
 
 # ---------------------------------------------------------------------------

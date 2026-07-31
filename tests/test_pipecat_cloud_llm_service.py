@@ -229,3 +229,82 @@ async def test_warmup_failure_does_not_break_startup():
     down = await _run(svc)
 
     assert _texts(down) == ["罐頭回覆"], "暖機炸掉之後這一輪也該正常降級"
+
+
+# --- 即時陪聊契約：多輪 + 教練 prompt + 不強制帶讀 --------------------------
+
+
+class _FakeChatCloud:
+    """假 CloudLLM，錄下 generate_chat 收到的東西。"""
+
+    def __init__(self, reply="當然好呀！我們一起練。"):
+        self.reply = reply
+        self.chat_calls: list[dict] = []
+        self.prompt_calls: list = []
+
+    def generate_chat(self, messages, *, system, target, enforce_readalong=True):
+        self.chat_calls.append({
+            "messages": list(messages), "system": system,
+            "target": target, "enforce_readalong": enforce_readalong,
+        })
+        return self.reply
+
+    def generate_from_prompt(self, user_prompt, *, target):
+        self.prompt_calls.append((user_prompt, target))
+        return self.reply
+
+
+@pytest.mark.asyncio
+async def test_live_mode_sends_history_and_coach_prompt():
+    """給了 system_provider 就走即時陪聊：多輪、教練 prompt、不強制帶讀。"""
+    cloud = _FakeChatCloud()
+    svc = CloudLLMService(
+        cloud=cloud,
+        target_provider=lambda: TARGET,
+        system_provider=lambda: "你是教練企鵝",
+        warmup=False,
+    )
+
+    await _run(svc)
+
+    assert cloud.prompt_calls == [], "即時陪聊不該再走單輪進入點"
+    assert len(cloud.chat_calls) == 1
+    call = cloud.chat_calls[0]
+    assert call["system"] == "你是教練企鵝"
+    assert call["enforce_readalong"] is False, "即時陪聊不強制帶讀"
+    assert call["target"] == TARGET, "目標句仍要傳（護欄之外還有別的用途）"
+    # context 的 system 與 user 都要在，玩偶才記得上下文
+    roles = [m.get("role") for m in call["messages"]]
+    assert "user" in roles
+
+
+@pytest.mark.asyncio
+async def test_without_system_provider_behaviour_is_unchanged():
+    """沒給就是原本的單輪回合式契約——既有 probe 零迴歸。"""
+    cloud = _FakeChatCloud()
+    svc = CloudLLMService(cloud=cloud, target_provider=lambda: TARGET, warmup=False)
+
+    await _run(svc)
+
+    assert cloud.chat_calls == []
+    assert cloud.prompt_calls == [(PROMPT, TARGET)]
+
+
+@pytest.mark.asyncio
+async def test_live_mode_still_falls_back_within_the_turn():
+    """換契約不可以把當輪降級弄丟。"""
+    class _DeadChat:
+        def generate_chat(self, messages, *, system, target, enforce_readalong=True):
+            return None
+
+    svc = CloudLLMService(
+        cloud=_DeadChat(),
+        fallback=lambda p, *, target: "沒關係！跟我說一遍：I want an apple.",
+        target_provider=lambda: TARGET,
+        system_provider=lambda: "你是教練企鵝",
+        warmup=False,
+    )
+
+    down = await _run(svc)
+
+    assert _texts(down) == ["沒關係！跟我說一遍：I want an apple."]

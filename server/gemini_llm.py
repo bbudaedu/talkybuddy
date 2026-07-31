@@ -143,6 +143,82 @@ def _extract_text(payload: dict) -> str:
     return "".join(texts)
 
 
+def _to_contents(messages: list[dict]) -> list[dict]:
+    """把通用的 ``{"role","content"}`` 訊息串轉成 Gemini 的 ``contents``。
+
+    兩個 Gemini 專屬的規矩，錯了會被 400 拒絕：
+
+    1. **助理角色叫 ``model``，不是 ``assistant``**
+    2. ``system`` 訊息不能混在 ``contents`` 裡，要放 ``systemInstruction``
+       ——所以這裡直接濾掉，由呼叫端負責傳 system
+
+    content 可能是字串或多段格式（list of parts），後者只取 text 段落。
+    """
+    out: list[dict] = []
+    for m in messages:
+        role = m.get("role")
+        if role == "system":
+            continue
+        content = m.get("content")
+        if isinstance(content, list):
+            text = "".join(
+                p["text"] for p in content
+                if isinstance(p, dict) and isinstance(p.get("text"), str)
+            )
+        else:
+            text = content if isinstance(content, str) else ""
+        if not text:
+            continue
+        out.append({
+            "role": "model" if role == "assistant" else "user",
+            "parts": [{"text": text}],
+        })
+    return out
+
+
+def generate_chat(
+    system: str,
+    messages: list[dict],
+    *,
+    cfg: dict,
+    max_tokens: int = 1024,
+    temperature: float = 0.7,
+    timeout_s: float = DEFAULT_TIMEOUT_S,
+) -> str:
+    """多輪版的 :func:`generate_text`；``messages`` 為通用角色訊息串。
+
+    Args:
+        system: system instruction。
+        messages: ``[{"role": "user"|"assistant"|"system", "content": str}, ...]``。
+            ``system`` 角色會被濾掉（Gemini 要求放 ``systemInstruction``）。
+        cfg: :func:`resolve_config` 的輸出。
+        max_tokens: 產生上限。
+        temperature: 隨機性。
+        timeout_s: 呼叫逾時（秒）。
+
+    Returns:
+        產生的文字。
+
+    Raises:
+        GeminiResponseError: 回應格式不符預期或被截斷。
+    """
+    url = f"{cfg['base_url']}/models/{cfg['model']}:generateContent"
+    body = json.dumps(
+        {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": _to_contents(messages),
+            "generationConfig": {
+                "maxOutputTokens": max_tokens,
+                "temperature": temperature,
+            },
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers=cfg["headers"], method="POST")
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    return _extract_text(payload)
+
+
 def generate_text(
     system: str,
     user: str,
@@ -168,21 +244,14 @@ def generate_text(
     Raises:
         GeminiResponseError: 回應格式不符預期。
     """
-    url = f"{cfg['base_url']}/models/{cfg['model']}:generateContent"
-    body = json.dumps(
-        {
-            "systemInstruction": {"parts": [{"text": system}]},
-            "contents": [{"role": "user", "parts": [{"text": user}]}],
-            "generationConfig": {
-                "maxOutputTokens": max_tokens,
-                "temperature": temperature,
-            },
-        }
-    ).encode("utf-8")
-    req = urllib.request.Request(url, data=body, headers=cfg["headers"], method="POST")
-    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-        payload = json.loads(resp.read().decode("utf-8"))
-    return _extract_text(payload)
+    return generate_chat(
+        system,
+        [{"role": "user", "content": user}],
+        cfg=cfg,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        timeout_s=timeout_s,
+    )
 
 
 def list_models(cfg: dict | None = None) -> list[str]:
