@@ -38,11 +38,35 @@ import urllib.request
 
 DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
-# 預設 model：最快、最便宜的穩定 flash-lite。對話路徑的預算只有
-# `cloud_llm._TIMEOUT_S`（預設 1.5s），選大模型會穩定逾時而永遠降級回 edge。
-# 可由 GEMINI_MODEL 覆蓋；model 清單會變，**上線前用 list_models() 對實際
-# 金鑰查證**，不要相信寫死的字串。
-DEFAULT_MODEL = "gemini-3.5-flash-lite"
+# 預設 model。可由 GEMINI_MODEL 覆蓋；model 清單會變，**換金鑰或換環境時用
+# list_models() 對實際金鑰查證**，不要相信寫死的字串。
+#
+# 選 gemini-3.1-flash-lite 不是憑感覺，是 2026-07-31 走完整條
+# CloudLLM.generate_from_prompt（含護欄）實測、每顆 3 次的結果：
+#
+# | model                    | 中位   | 最慢   | thinking | 結果 |
+# |--------------------------|--------|--------|----------|------|
+# | gemini-2.5-flash-lite    |  706ms |  805ms | 無       | ✅   |
+# | gemini-3.1-flash-lite    |  801ms |  803ms | 無       | ✅ ← 選這顆
+# | gemini-3.5-flash-lite    | 1003ms | 1399ms | 無       | ⚠️ 曾用掉 93% 預算
+# | gemini-3.5-flash         | 1195ms |      — | **有**   | ❌ 回覆被截斷
+# | gemini-3-flash-preview   | 1893ms |      — | **有**   | ❌ 回覆被截斷
+# | gemini-2.5-flash         | 1497ms |      — | **有**   | ❌ 回覆被截斷
+# | gemini-flash-latest      | 1800ms |      — | **有**   | ❌ 回覆被截斷
+#
+# 兩個判準：
+#
+# 1. **不可以 thinking**。thinking token 算在 maxOutputTokens 裡，
+#    cloud_llm 的 160 預算會被吃光（見 _extract_text 的 MAX_TOKENS 檢查）。
+# 2. **最慢的一次要離 1.5s 有距離**。對話路徑的上界是
+#    `cloud_llm._TIMEOUT_S`，貼著跑就會不定時降級回 edge。
+#    3.5-flash-lite 是這裡唯一被淘汰的 lite——它有一次跑到 1399ms。
+#
+# ⚠️ 不要用 `thinkingConfig: {thinkingBudget: 0}` 去救那些會 thinking 的
+# 模型。它對 gemini-3.5-flash 有效，但**對 gemini-3.5-flash-lite、
+# gemini-flash-lite-latest、gemini-flash-latest 會直接回 HTTP 400**
+# （2026-07-31 實測），無條件加上去反而會把可用的模型弄壞。
+DEFAULT_MODEL = "gemini-3.1-flash-lite"
 
 DEFAULT_TIMEOUT_S = 12.0
 
@@ -96,6 +120,26 @@ def _extract_text(payload: dict) -> str:
     texts = [p["text"] for p in parts if isinstance(p, dict) and isinstance(p.get("text"), str)]
     if not texts:
         raise GeminiResponseError("Gemini 回應無任何 text part")
+    # 截斷的回覆不是合格的回覆。這條看似小心過頭，其實是這個模組最重要的一行：
+    #
+    # 2026-07-31 實測，Gemini 3.x 的**非 lite** 模型會做內部 thinking，而
+    # thinking token 算在 maxOutputTokens 裡。cloud_llm 的 160 token 預算被
+    # thinking 吃掉 153，只剩 3 個給回覆——gemini-3.5-flash 回的是「你太棒」。
+    #
+    # 真正危險的是它**會被下游蓋掉**：guardrails.ensure_readalong 補上帶讀句
+    # 之後變成「你太棒 跟我說一遍：I want an apple.」，看起來完全合格，任何
+    # 格式檢查都測不出來，而孩子聽到的是玩偶講話講到一半。
+    #
+    # 攔在這裡，它就變成一次誠實的失敗：CloudLLM 記進 status_detail()、
+    # CloudLLMService 當輪降級回 edge，孩子聽到的是完整的（比較笨的）回覆。
+    finish = candidates[0].get("finishReason")
+    if finish == "MAX_TOKENS":
+        raise GeminiResponseError(
+            f"Gemini 回覆被截斷（finishReason=MAX_TOKENS，只拿到 {''.join(texts)!r}）。"
+            "最常見的原因是這顆 model 會做 thinking，而 thinking token 算在 "
+            "maxOutputTokens 裡。請把 GEMINI_MODEL 換成 flash-lite 系列"
+            "（實測 gemini-3.1-flash-lite / gemini-2.5-flash-lite 不 thinking）。"
+        )
     return "".join(texts)
 
 
