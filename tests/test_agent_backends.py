@@ -119,9 +119,9 @@ def test_agents_use_this_module_rather_than_resolving_it_themselves():
     import ast
     import pathlib
 
-    from server.agents import homework, orchestrator, report
+    from server.agents import homework, material, orchestrator, report
 
-    for mod in (homework, orchestrator, report):
+    for mod in (homework, orchestrator, report, material):
         src = pathlib.Path(mod.__file__).read_text(encoding="utf-8")
         # 比對**程式碼**而非原始文字：註解裡會提到舊寫法（那是刻意留的說明），
         # 直接 grep 原始碼會咬到自己的註解。ast.unparse 會把註解拿掉。

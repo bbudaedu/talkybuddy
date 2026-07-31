@@ -25,14 +25,14 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from server import agentcore, bedrock_converse
-from server.agents import homework, orchestrator, report
+from server import agentcore, bedrock_converse, scaffold
+from server.agents import homework, material, orchestrator, report
 
 _ENV = [
     "TALKYBUDDY_AGENT_BACKEND", "TALKYBUDDY_CLOUD_PROVIDER",
     "AGENTCORE_REGION", "AGENTCORE_MEMORY_ARN",
     "AGENTCORE_HARNESS_ORCHESTRATOR", "AGENTCORE_HARNESS_HOMEWORK",
-    "AGENTCORE_HARNESS_REPORT",
+    "AGENTCORE_HARNESS_REPORT", "AGENTCORE_HARNESS_MATERIAL",
 ]
 
 
@@ -76,6 +76,23 @@ _ORCH_JSON = json.dumps({
     "actions": ["homework"], "reason": "來自 Bedrock Converse 的決策。",
     "priority": "high",
 }, ensure_ascii=False)
+
+_MATERIAL_JSON = json.dumps({
+    "topic": "動物園教材（來自 Bedrock Converse）",
+    "entries": [{"en": "koala", "zh": "無尾熊", "cat": "animal",
+                 "np": "a koala", "sent": "I see a koala at the zoo today."}],
+    "source": "cloud",
+}, ensure_ascii=False)
+
+
+@pytest.fixture
+def _restore_vocab():
+    """material.extract_vocab 的雲端路徑會呼叫 register_material_vocab，原地
+    mutate 全域 VOCAB——用完要還原，避免污染同檔案其他測試或其他測試檔案。"""
+    snapshot = {zh: dict(v) for zh, v in scaffold.VOCAB.items()}
+    yield
+    scaffold.VOCAB.clear()
+    scaffold.VOCAB.update(snapshot)
 
 
 def _enable_both(mp, harness_env: str) -> None:
@@ -142,6 +159,28 @@ def test_orchestrator_agentcore_failure_falls_back_to_bedrock(_clean_env, monkey
     assert out["reason"] == "來自 Bedrock Converse 的決策。"
 
 
+def test_material_agentcore_failure_falls_back_to_bedrock(
+    _clean_env, monkeypatch, _restore_vocab
+):
+    """material 的訊號跟其他三個 agent 完全不同（extract_vocab(text,
+    allow_cloud=...) 而不是 (profile, diagnosis, ...)），但降級鏈契約一致：
+    AgentCore 失敗要落到 Bedrock，不是直接摔到規則式。"""
+    _enable_both(_clean_env, "AGENTCORE_HARNESS_MATERIAL")
+    monkeypatch.setattr(agentcore, "invoke", _boom)
+    called: list[str] = []
+    monkeypatch.setattr(
+        bedrock_converse, "converse_text",
+        lambda *a, **k: (called.append("converse"), _MATERIAL_JSON)[1],
+    )
+
+    out = material.extract_vocab("今天去動物園看了一隻無尾熊。", allow_cloud=True)
+
+    assert called == ["converse"], "AgentCore 失敗後必須改打 Bedrock Converse"
+    assert out["source"] == "cloud"
+    assert out["accepted_count"] == 1
+    assert "無尾熊" in scaffold.VOCAB, "驗證通過的詞條應已合併進 VOCAB"
+
+
 # ---------------------------------------------------------------------------
 # 兩層都失敗 → 規則式保底（原本的保證不能因為多一層而消失）
 # ---------------------------------------------------------------------------
@@ -198,6 +237,23 @@ def test_agentcore_success_does_not_also_call_bedrock(_clean_env, monkeypatch):
 
     assert out["focus"] == "文法（來自 AgentCore）"
     assert out["source"] == "cloud"
+
+
+def test_material_agentcore_success_does_not_also_call_bedrock(
+    _clean_env, monkeypatch, _restore_vocab
+):
+    """material 一樣受這條規則約束：AgentCore 成功就收工，不多打 Bedrock。"""
+    _enable_both(_clean_env, "AGENTCORE_HARNESS_MATERIAL")
+    monkeypatch.setattr(agentcore, "invoke", lambda *a, **k: _MATERIAL_JSON)
+    monkeypatch.setattr(
+        bedrock_converse, "converse_text",
+        lambda *a, **k: pytest.fail("AgentCore 已成功，不得再打 Bedrock"),
+    )
+
+    out = material.extract_vocab("今天去動物園看了一隻無尾熊。", allow_cloud=True)
+
+    assert out["source"] == "cloud"
+    assert out["accepted_count"] == 1
 
 
 # ---------------------------------------------------------------------------
