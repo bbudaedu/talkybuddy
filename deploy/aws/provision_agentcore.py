@@ -6,7 +6,7 @@
 ------------------
 現有的 Memory 與三個 Harness 是 2026-07-26 用 CLI 手動建的，ARN 長這樣：
 
-    arn:aws:bedrock-agentcore:ap-southeast-1:**641079926753**:harness/...
+    arn:aws:bedrock-agentcore:ap-southeast-1:**<AWS_ACCOUNT_ID>**:harness/...
 
 **帳號綁定**。決賽當天若用主辦方提供的 AWS 資源，這些 ARN 全部失效，
 必須在現場重建 IAM role + Memory + 3 個 Harness——而那條路徑從來沒有人

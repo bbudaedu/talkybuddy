@@ -98,7 +98,12 @@ def _prewarm_engines() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """啟動：建表 + 首次種子資料；引擎預熱走 daemon thread 不擋啟動。"""
+    """啟動：安全檢查 + 建表 + 首次種子資料；引擎預熱走 daemon thread 不擋啟動。
+
+    安全檢查放在**最前面且會拋例外**：對外開放卻用公開在 GitHub 上的預設
+    JWT secret，等於門沒鎖（見 ``auth.assert_secret_is_safe``）。
+    """
+    auth.assert_secret_is_safe()
     store.init_db()
     store.seed_demo()
     threading.Thread(target=_prewarm_engines, daemon=True).start()

@@ -94,8 +94,7 @@ coverage/
 .cache/
 tmp/
 
-# Kiro IDE 自動生成的本機工具設定（LSP 等），非專案產出
-.kiro/settings/
+# 註：競賽規範要求 /.kiro 及其子資料夾不得 gitignore（展示 specs/hooks/steering）
 
 # NP8 Converter 專用 Python 3.11 環境（mtk_converter 需 3.11，專案主環境為 3.12）
 .venv-np8/

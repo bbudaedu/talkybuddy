@@ -522,4 +522,4 @@ Expected: 新測試 PASS；既有已知環境雜訊（`server/streaming` 缺 WAV
 
 ## 備註
 - 本計畫不 commit 前一 session 已在工作樹的未提交變更（`server/app.py` COOP/COEP、`server/scaffold.py` 放慢 prompt、`tests/test_cross_origin_isolation.py`）；那些屬另一線，各自處理。**注意 Task 3/4/5 會再改 `app.py`/`scaffold.py`，commit 前用 `git add` 精準只加本計畫相關 hunk**（必要時 `git add -p`）。
-- 🔴 安全：外露 IAM key `AKIAZKQ2XL7Q6MQTTIMY` 仍待撤（與本線無關，另處理）。
+- 🔴 安全：外露 IAM key `AKIA****（已撤銷）` 仍待撤（與本線無關，另處理）。

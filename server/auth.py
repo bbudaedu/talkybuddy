@@ -14,8 +14,43 @@ import time
 
 from server import store
 
-SECRET: str = os.environ.get("TALKYBUDDY_JWT_SECRET", "dev-only-secret-change-me")
+_DEV_SECRET = "dev-only-secret-change-me"
+SECRET: str = os.environ.get("TALKYBUDDY_JWT_SECRET", _DEV_SECRET)
 _PBKDF2_ROUNDS = 100_000
+
+# 對外開放時綁的位址。0.0.0.0 / :: 代表「任何人都連得到」。
+_PUBLIC_BINDS = ("0.0.0.0", "::", "")
+
+
+def _is_publicly_bound() -> bool:
+    """這個行程有沒有對外開放。讀 uvicorn 慣用的 HOST 環境變數。"""
+    host = os.environ.get("TALKYBUDDY_HOST", os.environ.get("HOST", "127.0.0.1"))
+    return host.strip() in _PUBLIC_BINDS
+
+
+def assert_secret_is_safe() -> None:
+    """對外開放卻還用預設 secret → 直接拒絕啟動。
+
+    **為什麼要擋而不是印警告。** ``_DEV_SECRET`` 這個值在 2026-07-22 就隨
+    ``origin/master`` 公開在 GitHub 上了。任何人 clone 這個 repo，就能對任何
+    沒設 ``TALKYBUDDY_JWT_SECRET`` 的對外部署簽出合法 token，直接讀到教師
+    儀表板與孩子的互動紀錄——那是兒童學習資料。
+
+    決賽要交一個公開的 Live Demo 網址，而「部署時記得設環境變數」是一件
+    在會場、趕死線、體力耗盡時最容易漏掉的事。所以把漏掉的代價從
+    **資料外洩** 換成 **啟動失敗**：後者五秒鐘就會被發現。
+
+    本機開發（綁 127.0.0.1）不受影響，維持零設定即可跑。
+    """
+    if SECRET != _DEV_SECRET or not _is_publicly_bound():
+        return
+    raise RuntimeError(
+        "拒絕啟動：對外開放（HOST=0.0.0.0）卻仍在使用公開在 GitHub 上的預設 "
+        "JWT secret。任何人都能偽造 token 讀取學生資料。\n"
+        "修法：export TALKYBUDDY_JWT_SECRET=\"$(python3 -c "
+        "'import secrets;print(secrets.token_urlsafe(32))')\"\n"
+        "（僅綁 127.0.0.1 的本機開發不受此限制）"
+    )
 
 
 class InvalidToken(Exception):

@@ -23,7 +23,7 @@ AWS console 按台北的 AgentCore 會直接跳到雪梨。
 
 | 類型 | 名稱 | ARN / ID | 狀態 |
 |---|---|---|---|
-| IAM Role | `TalkyBuddyAgentCoreExecution` | `arn:aws:iam::641079926753:role/TalkyBuddyAgentCoreExecution` | ✅ |
+| IAM Role | `TalkyBuddyAgentCoreExecution` | `arn:aws:iam::<AWS_ACCOUNT_ID>:role/TalkyBuddyAgentCoreExecution` | ✅ |
 | Memory | `TalkyBuddyStudentMemory` | `...:memory/TalkyBuddyStudentMemory-sO0KeDB7kP` | ACTIVE |
 | Harness | `TalkyBuddyOrchestrator` | `...:harness/TalkyBuddyOrchestrator-Iq4xJkd3Ln` | READY |
 | Harness | `TalkyBuddyHomework` | `...:harness/TalkyBuddyHomework-jTJ4Czs45L` | READY |
@@ -44,10 +44,10 @@ Memory 策略兩種（比照 workshop Lab 2）：
 ```bash
 export TALKYBUDDY_AGENT_BACKEND=agentcore
 export AGENTCORE_REGION=ap-southeast-1
-export AGENTCORE_MEMORY_ARN=arn:aws:bedrock-agentcore:ap-southeast-1:641079926753:memory/TalkyBuddyStudentMemory-sO0KeDB7kP
-export AGENTCORE_HARNESS_ORCHESTRATOR=arn:aws:bedrock-agentcore:ap-southeast-1:641079926753:harness/TalkyBuddyOrchestrator-Iq4xJkd3Ln
-export AGENTCORE_HARNESS_HOMEWORK=arn:aws:bedrock-agentcore:ap-southeast-1:641079926753:harness/TalkyBuddyHomework-jTJ4Czs45L
-export AGENTCORE_HARNESS_REPORT=arn:aws:bedrock-agentcore:ap-southeast-1:641079926753:harness/TalkyBuddyReport-KjXfIJOS75
+export AGENTCORE_MEMORY_ARN=arn:aws:bedrock-agentcore:ap-southeast-1:<AWS_ACCOUNT_ID>:memory/TalkyBuddyStudentMemory-sO0KeDB7kP
+export AGENTCORE_HARNESS_ORCHESTRATOR=arn:aws:bedrock-agentcore:ap-southeast-1:<AWS_ACCOUNT_ID>:harness/TalkyBuddyOrchestrator-Iq4xJkd3Ln
+export AGENTCORE_HARNESS_HOMEWORK=arn:aws:bedrock-agentcore:ap-southeast-1:<AWS_ACCOUNT_ID>:harness/TalkyBuddyHomework-jTJ4Czs45L
+export AGENTCORE_HARNESS_REPORT=arn:aws:bedrock-agentcore:ap-southeast-1:<AWS_ACCOUNT_ID>:harness/TalkyBuddyReport-KjXfIJOS75
 ```
 
 未設 `TALKYBUDDY_AGENT_BACKEND=agentcore` 時，既有 in-process 路徑行為完全不變。

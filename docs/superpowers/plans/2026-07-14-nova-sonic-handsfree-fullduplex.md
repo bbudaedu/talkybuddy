@@ -640,7 +640,7 @@ git commit -m "chore(live): 移除 hands-free spike 日誌 + 補 hands-free e2e 
 
 ## 收尾提醒（非任務）
 
-- 🔴 **安全**：真機驗完必到 AWS console 刪除/輪替外露 IAM key `AKIAZKQ2XL7Q6MQTTIMY`（AKIA 永久）。
+- 🔴 **安全**：真機驗完必到 AWS console 刪除/輪替外露 IAM key `AKIA****（已撤銷）`（AKIA 永久）。
 - 更新交接記憶 `talkybuddy-nova-sonic-live.md`：hands-free 完成狀態、spike findings、下一步。
 - push / PR 與否待用戶決定。
 

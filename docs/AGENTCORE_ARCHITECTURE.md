@@ -225,7 +225,7 @@ flowchart LR
 **目前一階段都動不了**。~~
 
 > **2026-07-29 更新：帳號已通過驗證，這個阻擋解除了。**
-> `aws sts get-caller-identity` 正常回應（帳號 `641079926753`），
+> `aws sts get-caller-identity` 正常回應（帳號 `<AWS_ACCOUNT_ID>`），
 > `ap-southeast-1` 有 25 個 Bedrock 模型可用，
 > AgentCore Memory 資源 `TalkyBuddyStudentMemory-sO0KeDB7kP` 狀態為 **ACTIVE**
 > （已配 `SUMMARIZATION` + `SEMANTIC` 兩個策略）。
