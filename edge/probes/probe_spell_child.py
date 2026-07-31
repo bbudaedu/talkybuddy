@@ -53,6 +53,22 @@ WORDS = ("dog", "cat", "book", "apple", "banana")
 
 ROUNDS = 3
 
+# 少於這個樣本數就不下結論。孩子鬧脾氣只做了三次，中位數照樣算得出來，
+# 而且印出來跟做滿 15 次的中位數長得一模一樣——那正是 probe_mic_gain
+# 被咬過的坑：**從壞數據算出來的建議值比不給建議更糟**，它看起來一樣權威，
+# 但會讓人把門檻調到錯的地方，之後也沒人回頭懷疑這個數字。
+MIN_SAMPLES = 8
+
+
+def _order_for_round(rnd: int):
+    """第 ``rnd`` 輪的出題順序：偶數輪正序、奇數輪反序。
+
+    抗混淆的核心，所以獨立成函式讓測試釘得住（見模組 docstring）。
+    孩子的熟練度會隨時間漂移，固定順序測會讓「第幾個唸的」混進
+    「這個詞好不好認」裡。
+    """
+    return WORDS if rnd % 2 == 0 else tuple(reversed(WORDS))
+
 # 錄音長度：基礎秒數 + 每個字母的秒數。孩子拼字母比唸單字慢得多。
 _BASE_SECONDS = 2.5
 _SECONDS_PER_LETTER = 0.7
@@ -142,6 +158,12 @@ def _report(results: dict[str, list[float]]) -> None:
         mark = "  ← 現行" if abs(th - spelling.PASS_THRESHOLD) < 1e-9 else ""
         print(f"  {th:<8}{f'{hit}/{len(flat)}':<16}{baseline[th]}{mark}")
 
+    if len(flat) < MIN_SAMPLES:
+        print(f"\n⚠ 只有 {len(flat)} 個樣本（要 {MIN_SAMPLES} 個才下結論）。")
+        print("  上面的數字照樣算得出來，而且長得跟做滿的一樣權威——但它不是。")
+        print("  請把這一輪重跑完，不要拿這張表去調 PASS_THRESHOLD。")
+        return
+
     print("\n怎麼讀這張表：")
     print("  現行門檻的過關率 ≥ 8 成 → 不用動，直接上")
     print("  落在 5–8 成         → 把 PASS_THRESHOLD 降到 0.5 再跑一次")
@@ -168,9 +190,7 @@ def main() -> int:
     results: dict[str, list[float]] = {w: [] for w in WORDS}
     try:
         for rnd in range(ROUNDS):
-            # 每輪反轉詞序：孩子的熟練度會隨時間漂移，固定順序會讓
-            # 「第幾個唸的」混進「這個詞好不好認」裡（見模組 docstring）。
-            order = WORDS if rnd % 2 == 0 else tuple(reversed(WORDS))
+            order = _order_for_round(rnd)
             print(f"\n{'=' * 62}\n第 {rnd + 1} 輪 / 共 {ROUNDS} 輪")
             for word in order:
                 try:
