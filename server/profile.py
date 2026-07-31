@@ -23,10 +23,14 @@ from server import diagnose, scaffold
 # 由 scaffold.VOCAB 反查：英文詞 → {zh, cat}
 # ---------------------------------------------------------------------------
 
-_EN_INFO: dict[str, dict] = {
-    v["en"].lower(): {"en": v["en"], "zh": zh, "cat": v["cat"]}
-    for zh, v in scaffold.VOCAB.items()
-}
+def _en_info() -> dict[str, dict]:
+    """英文詞（小寫）→ 詞條反查表。每次呼叫依當下 scaffold.VOCAB 重算，
+    確保教材 agent 合併進來的新詞（見 scaffold.register_material_vocab）
+    也會被學生 profile 的興趣/掌握度統計看到。"""
+    return {
+        v["en"].lower(): {"en": v["en"], "zh": zh, "cat": v["cat"]}
+        for zh, v in scaffold.VOCAB.items()
+    }
 
 # 分類 → 中文標籤（固定對照，§3.1）
 _CAT_LABEL: dict[str, str] = {
@@ -109,6 +113,8 @@ def build_profile(
     en_word_counts: list[int] = []
     en_ratios: list[float] = []
 
+    en_info = _en_info()
+
     for it in inters:
         text = it.get("student_text", "") or ""
         reply = it.get("ai_response_text", "") or ""
@@ -121,7 +127,7 @@ def build_profile(
             cat_counter[cat] = cat_counter.get(cat, 0) + 1
         tokens = _en_tokens(text)
         for token in tokens:
-            info = _EN_INFO.get(token)
+            info = en_info.get(token)
             if info:
                 cat_counter[info["cat"]] = cat_counter.get(info["cat"], 0) + 1
 
@@ -129,7 +135,7 @@ def build_profile(
         corrected = diagnose._has_article_correction(reply)
         good = conf >= 0.8 and not corrected
         for token in set(tokens):
-            info = _EN_INFO.get(token)
+            info = en_info.get(token)
             if not info:
                 continue
             st = vocab_stat.setdefault(

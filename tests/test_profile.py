@@ -104,3 +104,33 @@ def test_source_seq_and_interaction_count():
     prof = profile.build_profile(inters, [])
     assert prof["source_seq"] == 9
     assert prof["interaction_count"] == 3
+
+
+def test_build_profile_picks_up_materially_registered_vocab():
+    """教材 agent 合併進 VOCAB 的新詞，profile 的興趣分類要看得到（不是 import 時的舊快照）。"""
+    from server import profile, scaffold
+
+    snapshot = {zh: dict(v) for zh, v in scaffold.VOCAB.items()}
+    try:
+        scaffold.VOCAB["無尾熊"] = {
+            "en": "koala", "cat": "animal", "np": "a koala", "sent": "I see a koala."
+        }
+        interactions = [
+            {"student_text": "I see a koala.", "ai_response_text": "Great job!",
+             "asr_confidence": 0.9, "seq": 1},
+        ]
+        result = profile.build_profile(interactions, [])
+
+        # interests 是一個 list[dict]，每個 dict 有 topic/label/hits
+        # 找出 animal 分類的 hits
+        animal_hits = next(
+            (entry["hits"] for entry in result["interests"] if entry["topic"] == "animal"),
+            0
+        )
+        assert animal_hits >= 1, (
+            "新合併的 koala 詞應被計入 animal 分類的興趣統計，"
+            "若 _EN_INFO 仍是 import 時的舊快照就會漏算"
+        )
+    finally:
+        scaffold.VOCAB.clear()
+        scaffold.VOCAB.update(snapshot)
