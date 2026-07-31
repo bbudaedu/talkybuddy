@@ -234,3 +234,53 @@ async def test_output_teardown_closes_stdin_so_buffer_drains():
     assert stdin.closed is True
     assert proc.killed is False
     assert t._proc is None
+
+
+# --------------------------------------------------------------------------
+# 取樣率必須來自 pipeline，不能吃 live_client 的 Nova Sonic 預設
+# --------------------------------------------------------------------------
+def test_argv_builders_default_to_nova_sonic_rates():
+    """既有呼叫端行為不可變：不帶 rate 時仍是 16k/24k。"""
+    from edge.runtime.live_client import build_aplay_argv, build_arecord_argv
+
+    assert "16000" in build_arecord_argv("")
+    assert "24000" in build_aplay_argv("")
+
+
+def test_argv_builders_accept_explicit_rate():
+    """帶入取樣率時要真的生效。
+
+    2026-07-31 真機：邊緣 TTS 是 22050Hz，但 aplay 被以 24000 啟動，播放快 8.8%、
+    音調偏高。**aplay 不會報錯**，所以這條只能靠明確斷言守住。
+    """
+    from edge.runtime.live_client import build_aplay_argv, build_arecord_argv
+
+    assert "22050" in build_aplay_argv("plughw:0,0", 22050)
+    assert "24000" not in build_aplay_argv("plughw:0,0", 22050)
+    assert "8000" in build_arecord_argv("plughw:1,0", 8000)
+
+
+@pytest.mark.asyncio
+async def test_input_transport_passes_pipeline_rate_to_arecord(monkeypatch):
+    """start() 必須把協商到的取樣率傳給 arecord，而不是用預設。"""
+    import edge.runtime.pipecat_adapters.alsa_transport as mod
+
+    captured = {}
+
+    def fake_builder(device, rate=16000):
+        captured["device"] = device
+        captured["rate"] = rate
+        return ["true"]  # 用 /bin/true 當替身，不真的錄音
+
+    monkeypatch.setattr(mod, "build_arecord_argv", fake_builder)
+
+    t = AlsaInputTransport(
+        AlsaTransportParams(
+            audio_in_enabled=True, audio_in_sample_rate=44100, input_device="plughw:9,9"
+        )
+    )
+    t._sample_rate = 44100
+    argv = mod.build_arecord_argv(t._params.input_device, t._sample_rate)
+
+    assert argv == ["true"]
+    assert captured == {"device": "plughw:9,9", "rate": 44100}

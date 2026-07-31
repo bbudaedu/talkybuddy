@@ -677,15 +677,81 @@ CPU 16% │ RSS 925MB
 | `to_traditional` | ✅ `OpenCCProcessor`（委派 guardrails） |
 | `ensure_readalong` | ✅ `ReadalongGuardProcessor`（串流限制已記錄） |
 
+---
+
+# 第十二輪 — 真機碰麥克風，抓到一個只有真機才會現形的 bug
+
+使用者授權後，測了最後一個沒在真機跑過的元件 `alsa_transport`。
+
+## ✅ 麥克風：讀得到、也還得回去
+
+```
+✅ 前置檢查：沒有 arecord 在跑
+Recording raw data '-' : Signed 16 bit Little Endian, Rate 16000 Hz, Mono
+收到 frame：143 │ 音訊 91520 bytes（預期 96000，95%）│ 取樣率 {16000}
+首個 frame：開始後 146 ms
+✅ 音訊持續流入
+✅ 後置檢查：arecord 已終止，麥克風已釋放
+```
+
+`Aborted by signal Terminated` 正是 teardown 送 SIGTERM 的證據。
+probe 自己做前後檢查（執行前有 arecord 就中止不介入、執行後殘留就強制收掉），
+因為**沒還回麥克風的症狀跟按鍵故障、麥克風壞掉一模一樣**。
+
+順帶更正一個先前的疏漏：`talkybuddy-local-client` 其實是 **active** 的
+（前幾輪只檢查了 live-client 與 server），它按鍵時會用同一支麥克風。
+
+## 🔴 aplay 取樣率寫死 — 只有真機會現形
+
+輸出測試第一次跑就抓到：
+
+```
+Playing raw data 'stdin' : Rate 24000 Hz   ← aplay 用 24000
+音訊長度：0.95s（41984 bytes @22050Hz）      ← 但音訊是 22050
+```
+
+`build_aplay_argv` **寫死 `DOWNLINK_RATE = 24000`**（Nova Sonic 的下行取樣率），
+而邊緣 TTS 輸出 22050Hz。播放會**快 8.8%、音調偏高**——正是 `live_client`
+docstring 開頭警告的「兩個取樣率混用會變怪腔怪調」，只是這次踩到的是我們自己。
+
+**`aplay` 不會因為取樣率對不上而報錯**，argv 也「組得成功」，所以單元測試
+完全看不出來。這是真機測試的價值最具體的一次體現。
+
+修法：`build_arecord_argv` / `build_aplay_argv` 加上可選 `rate` 參數
+（**預設仍是 16k/24k，既有呼叫端行為不變**），transport 一律傳入
+`StartFrame` 協商出來的 `self._sample_rate`。修後重測：`Rate 22050 Hz` ✅
+
+## ✅ 輸出：玩偶真的出聲
+
+```
+播放裝置：plughw:0,0（3.5mm Lineout）
+音訊長度：0.95s │ 寫入成功／失敗：10 / 0
+✅ 音訊全部寫入 aplay，且行程已正常結束
+```
+
+累計 **76 測試全綠**（1 skipped：主機未裝 opencc，該項在板子通過）。
+
+---
+
+## 全部元件都在真機驗證過了
+
+| 元件 | 真機狀態 |
+|---|---|
+| `alsa_transport`（in／out） | ✅ 本輪 |
+| VAD（官方 Silero） | ✅ 1.90ms/窗 |
+| `sensevoice_stt` | ✅ 147ms，分段正確 |
+| `edge_tts` | ✅ 即時率 0.25x |
+| LLM（官方 OpenAI service） | ✅ 端到端 |
+| 四道教學／安全護欄 | ✅ 端到端未誤傷 |
+
 ## 仍未驗證
 
-1. **真麥克風** — 板子上**沒有任何 arecord 在跑**（live-client inactive），
-   麥克風是空的，技術上可以測 `alsa_transport`；那是唯一沒在真機跑過的元件，
-   **需要明確授權才動**
-2. **`fallback_text` 該接 scaffold** — 目前是預設字串，接線時要帶入
+1. **`fallback_text` 該接 scaffold** — 目前是預設字串，接線時要帶入
    `scaffold.reply_text` 才跟現行降級行為一致
-3. **VAD params 未設** — pipeline 警告 `stop_secs (0.0s) differs from
+2. **VAD params 未設** — pipeline 警告 `stop_secs (0.0s) differs from
    recommended default (0.2s)`，接真實 transport 時要設
+3. **真人對著麥克風講話的完整一輪** — 目前輸入音訊都是 TTS 合成的，
+   沒有真人語音、沒有環境噪音、沒有 AEC 問題（喇叭與麥克風同在玩偶內）
 
 ## 還沒有答案的問題
 

@@ -5,15 +5,19 @@
 
 ## 沿用而非重寫 ALSA 參數
 
-上下行的 argv 一律向 `live_client` 借，不在這裡另寫一份：
+上下行的 argv 一律向 `live_client` 借（`build_arecord_argv` / `build_aplay_argv`），
+不在這裡另寫一份。那裡的 `--buffer-time` 是 2026-07-30 的實機教訓（預設緩衝
+吸收不了下行抖動，聽感就是斷斷續續）；兩邊都必須 `-t raw`，因為 WAV header
+只在檔案開頭出現一次，串流送出去會讓對端把 header bytes 當成音訊取樣。
 
-- `build_arecord_argv`：16k mono S16_LE raw → stdout
-- `build_aplay_argv`：stdin → 24k mono S16_LE raw，且帶 `--buffer-time 2000000`
+## 取樣率一定要用 pipeline 協商的值
 
-那個 `--buffer-time` 是 2026-07-30 的實機教訓（預設緩衝吸收不了下行抖動，
-聽感就是斷斷續續）。**上行 16k、下行 24k 是兩個不同的取樣率，混用會變怪腔怪調**；
-兩邊都必須 `-t raw`，因為 WAV header 只在檔案開頭出現一次，串流送出去會讓對端
-把 header bytes 當成音訊取樣。這些結論都已寫在 `live_client` 的 docstring 裡。
+`live_client` 的預設是 Nova Sonic 的 16k/24k，**但這裡不能吃那個預設**。
+2026-07-31 真機實測：邊緣 TTS 輸出 22050Hz，而 aplay 被以 24000 啟動，
+播放速度快 8.8%、音調偏高。**aplay 不會因為取樣率對不上而報錯**——
+單元測試也看不出來（argv 組得「成功」），只有真的聽到怪腔怪調才會發現。
+
+所以 `start()` 一律把 `self._sample_rate`（來自 `StartFrame` 協商）傳進 argv builder。
 
 ## stderr 一律不吞
 
@@ -89,7 +93,9 @@ class AlsaInputTransport(BaseInputTransport):
 
         self._sample_rate = self._params.audio_in_sample_rate or frame.audio_in_sample_rate
 
-        argv = build_arecord_argv(self._params.input_device)
+        # 取樣率一律用 pipeline 協商的值，不吃 live_client 的預設——
+        # 餵錯取樣率 arecord 不會報錯，只會讓音調與速度跑掉。
+        argv = build_arecord_argv(self._params.input_device, self._sample_rate)
         logger.debug(f"AlsaInputTransport 啟動：{' '.join(argv)}")
         self._proc = await asyncio.create_subprocess_exec(
             *argv,
@@ -188,7 +194,9 @@ class AlsaOutputTransport(BaseOutputTransport):
 
         self._sample_rate = self._params.audio_out_sample_rate or frame.audio_out_sample_rate
 
-        argv = build_aplay_argv(self._params.output_device)
+        # 同上：2026-07-31 真機實測，寫死 24000 播 22050Hz 的 TTS 音訊，
+        # 速度會快 8.8%、音調偏高，而 aplay 一句警告都不會給。
+        argv = build_aplay_argv(self._params.output_device, self._sample_rate)
         logger.debug(f"AlsaOutputTransport 啟動：{' '.join(argv)}")
         self._proc = await asyncio.create_subprocess_exec(
             *argv,
