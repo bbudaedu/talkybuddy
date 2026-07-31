@@ -49,7 +49,7 @@ agent 提煉後轉化成跟孩子互動的聊天任務或遊戲主題，且要�
 | `games.py` 三個小遊戲 | 開局時即時讀 `scaffold.VOCAB`，`cat` 只要落在既有 6 類就自動可玩 |
 | `homework._pick_vocab_entries` | 每次呼叫都重新 `VOCAB.items()`，非快取 |
 | `srs.due_words` | 以詞字串為鍵，跟詞庫來源無關 |
-| `profile.py` 興趣/錯點分類 | 依賴 `_EN_INFO` 反查表——**這是唯一例外**，見 §5 |
+| `profile.py` 興趣/錯點分類 | 依賴 `_EN_INFO` 反查表——曾是需要處理的一個例外，見 §5（**事後更正**：它並非唯一例外，見 §5 結尾的更正說明） |
 
 代價：全域可變狀態。教材驗證邏輯若有 bug，影響面是全部學生／全部遊戲，
 不是單一教材。§6 的驗證器把這個風險收斂成「寧可少收詞，不可收壞詞」。
@@ -111,6 +111,29 @@ def _en_info() -> dict[str, dict]:
 ```
 
 呼叫端把 `_EN_INFO` 改成 `_en_info()`。這是本次唯一一處必須修改的既有檔案。
+
+> **事後更正（整個分支完成後的跨檔案 review 抓到）：** 上面「`profile._EN_INFO`
+> 是唯一例外」的說法是錯的。整個分支合起來看，`scaffold.py` 內部自己也有
+> 兩份同樣是 import 時算好、教材合併後不會自動跟上的快取：
+>
+> - `scaffold._ZH_KEYS_BY_LEN`——`_find_zh_vocab`／`_substitute_zh` 用它找
+>   中文詞庫詞的索引，同樣是模組層級算一次。教材合併若沒有跟著重建它，
+>   新詞的中文鍵會被舊索引裡排更前面的既有詞子字串搶先卡位（例如「無尾熊」
+>   被「熊」搶走），連 `_find_zh_vocab` 本身、`games._detect_vocab`、
+>   `profile.build_profile` 的興趣統計、`material._rule_based_extract`
+>   都會受影響——不是只有 `profile._EN_INFO` 這一份。
+> - `guardrails._safe_en_words`——`@lru_cache(maxsize=1)` 過的白名單，供
+>   `deidentify()` 判斷一個 Title-case 英文詞是不是安全的課綱詞。伺服器
+>   跑過一次雲端去識別化就會暖機，之後不會再讀 `scaffold.VOCAB`，新合併
+>   的詞（如「Koala」）會被誤判成人名遮罩掉，送進雲端的教材文字就壞了。
+>
+> 正確的修法是 `register_material_vocab` 合併成功後，除了本節講的
+> `profile._en_info()` 惰性重算之外，還要**原地**重建
+> `_ZH_KEYS_BY_LEN`（用 `_ZH_KEYS_BY_LEN[:] = sorted(...)`，不能重新賦值，
+> 否則已經拿到舊物件參照的呼叫端看不到更新）並呼叫
+> `guardrails._safe_en_words.cache_clear()`。三者都是「VOCAB 之外還留著一份
+> import 時算好、不會自動跟上教材合併的衍生狀態」，`profile.py` 只是其中
+> 最早被寫下來的一個，不是唯一一個。
 
 ## 6. 驗證與合併 — `scaffold.register_material_vocab`（新）
 
