@@ -158,6 +158,33 @@ async def test_waiting_for_the_key_does_not_freeze_the_event_loop():
 
 
 @pytest.mark.asyncio
+async def test_broken_key_device_does_not_spawn_threads_forever():
+    """放棄之後不能一直重開等待執行緒。
+
+    `_ensure_waiter()` 每個音訊 frame 都會呼叫（50 次/秒）。等待迴圈在例外路徑
+    `return` 之後執行緒就死了，若不記住「已經放棄」，下一個 frame 又會開一條新的
+    → 立刻再拋 → 再死。實際後果是**每秒 50 條執行緒 + 50 行含 traceback 的
+    WARNING**，而板子的 journal 是 `Storage=volatile`（存在 RAM，只有 1.7GB）。
+    """
+    calls: list[int] = []
+
+    def broken():
+        calls.append(1)
+        raise OSError("/dev/input/event1: No such device")
+
+    gate = PressToTalkGate(now=lambda: 1000.0)
+    filt = PressToTalkFilter(gate, trigger=broken)
+
+    await _run(filt, [_mic()])
+    await asyncio.sleep(0.1)
+    await _run(filt, [_mic()] * 20)      # 一秒份的音訊
+    await asyncio.sleep(0.1)
+    await _run(filt, [_mic()] * 20)
+
+    assert len(calls) == 1, f"放棄後又重試了 {len(calls)} 次，等於每個 frame 開一條執行緒"
+
+
+@pytest.mark.asyncio
 async def test_arms_when_the_key_device_is_broken():
     """按鍵讀不到就 armed——玩偶變吵可以救，玩偶全聾在決賽現場救不回來。"""
     clock = [1000.0]

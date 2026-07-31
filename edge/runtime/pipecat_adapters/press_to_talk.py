@@ -194,6 +194,7 @@ class PressToTalkFilter(FrameProcessor):
         self._trigger = trigger or audio_io.wait_for_trigger
         self._cue = cue
         self._thread: threading.Thread | None = None
+        self._gave_up = False
         self._muted_frames = 0
         self._was_armed: bool | None = None
 
@@ -207,6 +208,15 @@ class PressToTalkFilter(FrameProcessor):
         return self._muted_frames
 
     def _ensure_waiter(self) -> None:
+        """確保等待按鍵的執行緒活著。每個音訊 frame 都會呼叫（50 次/秒）。
+
+        **`_gave_up` 不可省。** 等待迴圈在讀不到按鍵時會結束（見 `_wait_loop`），
+        少了這個旗標，下一個 frame 就會再開一條、再拋、再死——每秒 50 條執行緒
+        與 50 行含 traceback 的 WARNING。板子的 journal 是 `Storage=volatile`
+        （存在 RAM，只有 1.7GB 可用），現場撞到就是 log 洗爆加 CPU 燒光。
+        """
+        if self._gave_up:
+            return
         if self._thread is not None and self._thread.is_alive():
             return
         self._thread = threading.Thread(
@@ -226,6 +236,8 @@ class PressToTalkFilter(FrameProcessor):
                     "⚠️ 按鍵讀不到，press-to-talk 退回 VAD 連續聽（會收環境噪音）",
                     exc_info=True,
                 )
+                # 記住已經放棄，否則 _ensure_waiter 會每個 frame 重開一條執行緒。
+                self._gave_up = True
                 self._gate.arm_permanently()
                 return
             logger.info("🔘 按鍵觸發，開始聽")
