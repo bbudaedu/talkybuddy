@@ -31,9 +31,32 @@
     PYTHONPATH=/root/pipecat-lab ./.venv/bin/python probe_live_conversation.py [秒數]
 
 預設 60 秒，Ctrl-C 可提前結束。
+
+## 換成雲端大腦
+
+    TALKYBUDDY_PIPECAT_CLOUD=1 \
+    TALKYBUDDY_CLOUD_PROVIDER=bedrock BEDROCK_REGION=<region> \
+    PYTHONPATH=/root/pipecat-lab ./.venv/bin/python probe_live_conversation.py
+
+（或用 Anthropic 相容端點：`ANTHROPIC_API_KEY` ＋可選 `ANTHROPIC_BASE_URL`／
+`ANTHROPIC_MODEL`。先用 `probe_cloud_llm_service.py` 確認那條路通了再跑這支，
+那支不佔麥克風、失敗成本低得多。）
+
+三件事刻意這樣設計：
+
+1. **預設不變**。沒設 `TALKYBUDDY_PIPECAT_CLOUD` 就是原本那條真人驗證過的
+   edge 路徑，一行都沒動。
+2. **設了但憑證不全會直接報錯退出**，不會靜默跑成 edge。「以為在跑雲端、
+   其實沒有」是這個專案被咬過三次的坑（見 `server/cloud_llm.py` 的 docstring）。
+3. **雲端失敗是當輪降級**，不換 pipeline 節點、不轉移麥克風所有權——最壞的
+   結果是這一輪回答比較笨，不是玩偶不會講話。
+
+結束時會印 `雲端實際走的`，那是**證據**（真的成功過才不是 `none`），
+不是設定讀數。現場要佐證「大腦在雲端」就看那一行。
 """
 
 import asyncio
+import os
 import subprocess
 import sys
 import time
@@ -65,6 +88,7 @@ from pipecat.turns.user_mute.always_user_mute_strategy import AlwaysUserMuteStra
 
 from edge.runtime.live_client import PlaybackGate
 from edge.runtime.pipecat_adapters.alsa_transport import AlsaTransport, AlsaTransportParams
+from edge.runtime.pipecat_adapters.cloud_llm_service import CloudLLMService
 from edge.runtime.pipecat_adapters.edge_tts import EdgeVitsTTSService
 from edge.runtime.pipecat_adapters.lesson_prompt import LessonPromptInjector
 from edge.runtime.pipecat_adapters.opencc_processor import OpenCCProcessor
@@ -83,6 +107,12 @@ STT_RATE = 16000
 TTS_RATE = 22050
 LLAMA_BASE_URL = "http://127.0.0.1:8080/v1"
 TARGET_SENTENCE = "I want an apple."
+
+# 走雲端大腦要**明確打開**，預設仍是已經真人驗證過的純 edge 路徑。
+# 刻意不做「偵測到憑證就自動切」：這條 probe 是用來判斷玩偶行為的，
+# 大腦悄悄換人會讓所有觀察失去意義。設了但憑證不全時直接報錯退出，
+# 不靜默跑成 edge——「以為在跑雲端、其實沒有」正是這個專案被咬過三次的坑。
+CLOUD_ENV = "TALKYBUDDY_PIPECAT_CLOUD"
 
 try:
     from server.llm import EdgeLLM
@@ -142,6 +172,40 @@ def _pids(name: str) -> list[str]:
     return [p for p in r.stdout.split() if p]
 
 
+def _build_llm():
+    """組出這一跑要用的大腦，回 `(service, cloud_or_None, 一句話說明)`。
+
+    雲端關閉時回傳與過去完全相同的 `OpenAILLMService`——那條路徑已經真人
+    驗證過 5 輪，不該因為加了雲端而動到。
+    """
+    if (os.environ.get(CLOUD_ENV) or "").strip() not in ("1", "true", "yes"):
+        return (
+            OpenAILLMService(model="qwen", api_key="none", base_url=LLAMA_BASE_URL),
+            None,
+            "本機 llama-server（edge）",
+        )
+
+    from server.cloud_llm import CloudLLM
+    from server.llm import EdgeLLM as _EdgeLLM
+
+    cloud = CloudLLM()
+    if not cloud.available():
+        raise SystemExit(
+            f"❌ 設了 {CLOUD_ENV} 但沒有可用的雲端設定：\n"
+            f"   {cloud.status_detail()}\n"
+            "   寧可現在就停，也不要靜默跑成 edge 卻以為在跑雲端。"
+        )
+    # fallback 用 EdgeLLM 而不是上面那顆 OpenAILLMService：當輪降級發生在
+    # service 內部，換不了 pipeline 上的節點，所以要一個同形狀的可呼叫物件。
+    edge = _EdgeLLM()
+    service = CloudLLMService(
+        cloud=cloud,
+        fallback=edge.generate_from_prompt,
+        target_provider=lambda: TARGET_SENTENCE,
+    )
+    return service, cloud, f"雲端 {cloud.configured_backend()}（失敗當輪降級回 llama-server）"
+
+
 async def main() -> int:
     seconds = float(sys.argv[1]) if len(sys.argv) > 1 else 60.0
 
@@ -169,7 +233,7 @@ async def main() -> int:
     )
     vad = VADProcessor(vad_analyzer=SileroVADAnalyzer())
     stt = SenseVoiceSTTService(sample_rate=STT_RATE)
-    llm = OpenAILLMService(model="qwen", api_key="none", base_url=LLAMA_BASE_URL)
+    llm, cloud, brain_desc = _build_llm()
     tts = EdgeVitsTTSService(engine=tts_engine)
     narrator = Narrator("out")
     narrator_in = Narrator("in")
@@ -197,7 +261,11 @@ async def main() -> int:
                 stt,
                 narrator_in,        # 探針要在 agg.user() 之前，否則看不到逐字稿
                 StatelessContextProcessor(context=context),
-                LessonPromptInjector(target=TARGET_SENTENCE),
+                # 走雲端才遮個資：edge 是本機推論，孩子的話沒有離開玩偶，
+                # 遮了只會讓 llama-server 看到 [名字] 而降低回覆品質。
+                LessonPromptInjector(
+                    target=TARGET_SENTENCE, deidentify=cloud is not None
+                ),
                 agg.user(),
                 llm,
                 SafetyGateProcessor(),
@@ -216,6 +284,7 @@ async def main() -> int:
 
     print("=" * 62)
     print(f"🟢 開始了，請對著玩偶說話（{seconds:.0f} 秒後自動結束，Ctrl-C 可提前停）")
+    print(f"   大腦　　　　：{brain_desc}")
     print(f"   今天的目標句：{TARGET_SENTENCE}")
     print("   建議說：我想要蘋果")
     print("=" * 62)
@@ -244,6 +313,13 @@ async def main() -> int:
     print(f"玩偶回覆　　　　：{' | '.join(narrator_llm.said) or '(無)'}")
     print(f"輸出音訊 chunk　：{narrator.audio_chunks}")
     print(f"疑似自我打斷次數：{narrator.self_interrupts + narrator_in.self_interrupts}")
+    if cloud is not None:
+        # 報**證據**不是報設定：verified_backend() 只在真的成功過才不是 "none"。
+        # 這一行就是現場「大腦在雲端」那句話的憑據。
+        print(f"雲端實際走的　　：{cloud.verified_backend()}")
+        print(f"雲端狀態　　　　：{cloud.status_detail()}")
+        print(f"路由　　　　　　：{llm.policy.route.value}"
+              f"（degraded={llm.policy.degraded}）")
     mic_left, spk_left = _pids("arecord"), _pids("aplay")
     if mic_left or spk_left:
         print(f"❌ 裝置未釋放：arecord={mic_left} aplay={spk_left}")
