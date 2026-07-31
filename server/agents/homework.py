@@ -495,7 +495,10 @@ def _generate_homework(profile, diagnosis, *, allow_cloud: bool) -> dict:
         # 先看有沒有啟用 AgentCore。resolve_config 只讀環境變數不觸網，
         # 放在去識別化之前是為了在「兩個後端都沒設定」時儘早走規則式。
         ac_cfg = agentcore.resolve_config("homework")
-        cfg = None if ac_cfg else bedrock_converse.resolve_config(role="diag")
+        # 兩個後端**都要**解析。先前寫成 `None if ac_cfg else ...`，AgentCore
+        # 設定一存在就把 Bedrock 設成 None，Harness 一失敗直接摔到規則式——
+        # 撥了開關反而比不撥更差。第二層必須先備好，降級才有地方可降。
+        cfg = bedrock_converse.resolve_config(role="diag")
         if ac_cfg is None and cfg is None:
             # 兩個雲端後端都沒設定 → 直接走規則式
             return _rule_based_homework(profile, diagnosis)
@@ -510,15 +513,25 @@ def _generate_homework(profile, diagnosis, *, allow_cloud: bool) -> dict:
 
         user_prompt = _build_user_prompt(profile_safe, diag_safe, dim)
 
+        raw_text = None
         if ac_cfg is not None:
             # AgentCore：system prompt 在 Harness 建立時就宣告好了，這裡只送訊息。
             # actor_id 是 Memory 的分群鍵，漏傳會讓所有孩子共用同一份長期記憶。
-            raw_text = agentcore.invoke(
-                ac_cfg, user_prompt,
-                actor_id=(profile or {}).get("student_id"),
-                session_id=f"hw-{diagnosis.get('date') or 'na'}",
-            )
-        else:
+            try:
+                raw_text = agentcore.invoke(
+                    ac_cfg, user_prompt,
+                    actor_id=(profile or {}).get("student_id"),
+                    session_id=f"hw-{diagnosis.get('date') or 'na'}",
+                )
+            except Exception:
+                # 只降一級：還有 Bedrock 可打就打 Bedrock，不要一路摔到規則式。
+                _log.exception("generate_homework AgentCore 失敗，改試 Bedrock Converse")
+                raw_text = None
+
+        if raw_text is None:
+            if cfg is None:
+                # 第二層沒設定，鏈到底了
+                return _rule_based_homework(profile, diagnosis)
             raw_text = bedrock_converse.converse_text(
                 _SYSTEM_PROMPT,
                 user_prompt,

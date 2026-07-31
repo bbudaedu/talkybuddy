@@ -567,7 +567,9 @@ def _decide_next_actions(profile, diagnosis, history, turn_count, *, allow_cloud
     # 雲端路徑。後端優先序：AgentCore Harness → Bedrock Converse → 規則式。
     try:
         ac_cfg = agentcore.resolve_config("orchestrator")
-        cfg = None if ac_cfg else bedrock_converse.resolve_config(role="diag")
+        # 兩個後端**都要**解析；理由見 homework.py 同一處註解（AgentCore 一設定
+        # 就把 Bedrock 設成 None，等於讓第二層消失）。
+        cfg = bedrock_converse.resolve_config(role="diag")
         if ac_cfg is None and cfg is None:
             # 兩個雲端後端都沒設定 → 直接走規則式
             return _rule_based_decision(profile, diagnosis, history, turn_count)
@@ -579,15 +581,25 @@ def _decide_next_actions(profile, diagnosis, history, turn_count, *, allow_cloud
 
         user_prompt = _build_user_prompt(profile_safe, diag_safe, history_safe, turn_count)
 
+        raw_text = None
         if ac_cfg is not None:
             # AgentCore：system prompt 在 Harness 建立時已宣告，這裡只送訊息。
             # session_id 用回合數綁定，同一個教學循環的多次呼叫落在同一 session。
-            raw_text = agentcore.invoke(
-                ac_cfg, user_prompt,
-                actor_id=(profile or {}).get("student_id"),
-                session_id=f"orch-turn-{turn_count}",
-            )
-        else:
+            try:
+                raw_text = agentcore.invoke(
+                    ac_cfg, user_prompt,
+                    actor_id=(profile or {}).get("student_id"),
+                    session_id=f"orch-turn-{turn_count}",
+                )
+            except Exception:
+                # 只降一級：還有 Bedrock 可打就打 Bedrock，不要一路摔到規則式。
+                _log.exception("decide_next_actions AgentCore 失敗，改試 Bedrock Converse")
+                raw_text = None
+
+        if raw_text is None:
+            if cfg is None:
+                # 第二層沒設定，鏈到底了
+                return _rule_based_decision(profile, diagnosis, history, turn_count)
             raw_text = bedrock_converse.converse_text(
                 _SYSTEM_PROMPT,
                 user_prompt,

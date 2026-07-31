@@ -744,7 +744,9 @@ def _generate_report(profile, diagnoses, *, allow_cloud: bool) -> dict:
     # 雲端路徑。後端優先序：AgentCore Harness → Bedrock Converse → 規則式。
     try:
         ac_cfg = agentcore.resolve_config("report")
-        cfg = None if ac_cfg else bedrock_converse.resolve_config(role="diag")
+        # 兩個後端**都要**解析；理由見 homework.py 同一處註解（AgentCore 一設定
+        # 就把 Bedrock 設成 None，等於讓第二層消失）。
+        cfg = bedrock_converse.resolve_config(role="diag")
         if ac_cfg is None and cfg is None:
             # 兩個雲端後端都沒設定 → 直接走規則式
             return _rule_based_report(profile, diagnoses)
@@ -757,14 +759,24 @@ def _generate_report(profile, diagnoses, *, allow_cloud: bool) -> dict:
         period = _period_desc(diagnoses)
         user_prompt = _build_user_prompt(profile_safe, diags_safe, period)
 
+        raw_text = None
         if ac_cfg is not None:
             # AgentCore：system prompt 在 Harness 建立時已宣告，這裡只送訊息。
-            raw_text = agentcore.invoke(
-                ac_cfg, user_prompt,
-                actor_id=(profile or {}).get("student_id"),
-                session_id=f"rpt-{(diagnoses or [{}])[-1].get('date') or 'na'}",
-            )
-        else:
+            try:
+                raw_text = agentcore.invoke(
+                    ac_cfg, user_prompt,
+                    actor_id=(profile or {}).get("student_id"),
+                    session_id=f"rpt-{(diagnoses or [{}])[-1].get('date') or 'na'}",
+                )
+            except Exception:
+                # 只降一級：還有 Bedrock 可打就打 Bedrock，不要一路摔到規則式。
+                _log.exception("generate_report AgentCore 失敗，改試 Bedrock Converse")
+                raw_text = None
+
+        if raw_text is None:
+            if cfg is None:
+                # 第二層沒設定，鏈到底了
+                return _rule_based_report(profile, diagnoses)
             raw_text = bedrock_converse.converse_text(
                 _SYSTEM_PROMPT,
                 user_prompt,
