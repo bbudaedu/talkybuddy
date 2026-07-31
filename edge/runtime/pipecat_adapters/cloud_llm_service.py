@@ -115,6 +115,7 @@ class CloudLLMService(LLMService):
         fallback: GenerateFromPrompt | None = None,
         policy: FailoverPolicy | None = None,
         target_provider: TargetProvider | None = None,
+        warmup: bool = True,
         **kwargs,
     ):
         """Initialize the cloud LLM service.
@@ -129,6 +130,9 @@ class CloudLLMService(LLMService):
                 :class:`FailoverPolicy`.
             target_provider: Returns the current target sentence. Should read
                 from the same lesson source as ``LessonPromptInjector``.
+            warmup: Make one throwaway cloud call when the pipeline starts, so
+                the child's first sentence does not pay for the TLS handshake.
+                See :meth:`_warmup`.
         """
         super().__init__(**kwargs)
         if cloud is None:
@@ -141,6 +145,7 @@ class CloudLLMService(LLMService):
         self._fallback = fallback
         self._policy = policy or FailoverPolicy()
         self._target_provider = target_provider
+        self._warmup = warmup
 
     @property
     def policy(self) -> FailoverPolicy:
@@ -160,6 +165,45 @@ class CloudLLMService(LLMService):
         """
         return True
 
+    async def start(self, frame):
+        """Start the service, optionally warming the cloud connection first.
+
+        Args:
+            frame: The StartFrame that opened the pipeline.
+        """
+        await super().start(frame)
+        if self._warmup:
+            await self._warmup_call()
+
+    async def _warmup_call(self) -> None:
+        """打一次丟棄的雲端呼叫，把冷啟動成本挪到 pipeline 啟動時。
+
+        2026-07-31 板子實測（Gemini 直連，連續 10 輪）：
+
+            第 1 輪 1121ms ← TLS handshake
+            第 2-10 輪 799-962ms，中位 827ms
+
+        同一支探針更早一次量到第一輪 **1599ms，超過 `CLOUD_LLM_TIMEOUT_S` 的
+        1.5s 上界**。也就是說穩態明明只用掉一半預算，卻會在孩子講的**第一句
+        話**上逾時、降級成本機的笨回覆——而第一印象正是決賽現場最貴的那一輪。
+
+        與 `probe_live_conversation` 對 TTS 做 `synth([("zh", "暖機")])` 是
+        同一個處置，不是新發明。
+
+        暖機的結果**刻意不進 policy、也不推進 pipeline**：
+        - 不進 policy：暖機失敗多半是「還沒連上」而不是「雲端壞了」，
+          拿它去累積失敗次數會讓玩偶一開機就誤判成降級。
+        - 不推 frame：那句回覆會被 TTS 唸出來。
+        """
+        try:
+            await asyncio.to_thread(
+                self._cloud.generate_from_prompt, "暖機", target=None
+            )
+            logger.debug("雲端暖機完成")
+        except Exception:
+            # 起不來的雲端不該讓玩偶起不來。真正的判斷留給第一輪。
+            logger.warning("雲端暖機失敗（不影響啟動，第一輪會照常嘗試並降級）")
+
     def _current_target(self) -> str | None:
         """取本輪目標句；provider 壞掉不可以讓對話中斷。"""
         if self._target_provider is None:
@@ -173,14 +217,22 @@ class CloudLLMService(LLMService):
     async def _generate(self, prompt: str, target: str | None) -> str | None:
         """跑完一輪：先照 policy 決定要不要試雲端，失敗就當輪降級。"""
         if self._policy.should_try_primary():
-            text = await asyncio.to_thread(
-                self._cloud.generate_from_prompt, prompt, target=target
-            )
+            try:
+                text = await asyncio.to_thread(
+                    self._cloud.generate_from_prompt, prompt, target=target
+                )
+            except Exception:
+                # CloudLLM 自己不拋（任何失敗都回 None），但這個參數是注入的，
+                # 別家的實作可能會拋。**拋出來一樣是「雲端這輪失敗」**，不可以
+                # 讓它一路炸到 process_frame 而跳過當輪降級——那樣孩子就聽到
+                # 沉默了，正好是這整個設計要避免的事。
+                logger.exception("雲端呼叫拋出例外，視同本輪失敗")
+                text = None
             if text:
                 self._policy.record_success()
                 return text
-            # CloudLLM 任何失敗都回 None（它自己不拋），所以這裡看到 None
-            # 就是「雲端這輪沒給出可用回覆」——原因它已經記在 status_detail()。
+            # None ＝「雲端這輪沒給出可用回覆」；原因 CloudLLM 已經記在
+            # status_detail()（逾時、護欄命中、回覆被截斷…）。
             self._policy.record_failure()
             logger.warning(
                 "雲端這一輪沒有回覆，改用本機降級（route={}）", self._policy.route.value

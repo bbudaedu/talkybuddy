@@ -77,7 +77,8 @@ async def test_cloud_reply_is_pushed_downstream():
 async def test_prompt_is_passed_through_untouched():
     """上游已經組好 prompt，這一層不可以再組一次。"""
     cloud = _FakeCloud(["好棒！跟我說一遍：I want an apple."])
-    svc = CloudLLMService(cloud=cloud, target_provider=lambda: TARGET)
+    # warmup=False：這條量的是「一輪送出去的 prompt」，暖機會多一次呼叫。
+    svc = CloudLLMService(cloud=cloud, target_provider=lambda: TARGET, warmup=False)
 
     await _run(svc)
 
@@ -111,6 +112,7 @@ async def test_degrades_after_threshold_and_stops_calling_cloud():
         fallback=lambda p, *, target: "罐頭回覆",
         policy=policy,
         target_provider=lambda: TARGET,
+        warmup=False,
     )
 
     await _run(svc, n=4)
@@ -132,6 +134,7 @@ async def test_recovers_when_cloud_comes_back():
         fallback=lambda p, *, target: "罐頭回覆",
         policy=policy,
         target_provider=lambda: TARGET,
+        warmup=False,
     )
 
     await _run(svc, n=2)
@@ -159,7 +162,7 @@ async def test_no_fallback_configured_pushes_nothing_but_does_not_crash():
 @pytest.mark.asyncio
 async def test_other_frames_pass_through():
     cloud = _FakeCloud(["好"])
-    svc = CloudLLMService(cloud=cloud, target_provider=lambda: TARGET)
+    svc = CloudLLMService(cloud=cloud, target_provider=lambda: TARGET, warmup=False)
 
     down, _ = await run_test(
         svc, frames_to_send=[TextFrame("別的 frame")], expected_down_frames=None
@@ -170,3 +173,59 @@ async def test_other_frames_pass_through():
         for f in down
     )
     assert cloud.calls == []
+
+
+# --- 暖機：孩子的第一句話不該是冷的 -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_warmup_runs_before_the_first_real_turn():
+    """pipeline 啟動時先打一次雲端，把 TLS handshake 的成本吃掉。
+
+    2026-07-31 板子實測（Gemini 直連，10 輪）：第 1 輪 1121ms，第 2-10 輪
+    799-962ms，中位 827ms。同一支探針更早一次量到第一輪 1599ms —— **超過
+    CLOUD_LLM_TIMEOUT_S 的 1.5s 上界**。
+
+    穩態明明很充裕，卻會在孩子講的**第一句話**上降級成笨回覆，而第一印象正是
+    決賽現場最貴的那一輪。這與 probe_live_conversation 對 TTS 做
+    `synth([("zh", "暖機")])` 是同一個道理，照做。
+    """
+    cloud = _FakeCloud(["暖機回覆", "很好！跟我說一遍：I want an apple."])
+    svc = CloudLLMService(cloud=cloud, target_provider=lambda: TARGET)
+
+    down = await _run(svc)
+
+    assert len(cloud.calls) == 2, "沒有暖機（或暖機打了不只一次）"
+    assert cloud.calls[0][0] != PROMPT, "暖機不該送真正的教學 prompt"
+    # 暖機的回覆絕不可以流進 pipeline —— 孩子會聽到它
+    assert _texts(down) == ["很好！跟我說一遍：I want an apple."]
+
+
+@pytest.mark.asyncio
+async def test_warmup_can_be_turned_off():
+    cloud = _FakeCloud(["很好！跟我說一遍：I want an apple."])
+    svc = CloudLLMService(cloud=cloud, target_provider=lambda: TARGET, warmup=False)
+
+    await _run(svc)
+
+    assert len(cloud.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_warmup_failure_does_not_break_startup():
+    """雲端不可達時，暖機失敗不可以讓 pipeline 起不來。"""
+    class _Dead:
+        calls: list = []
+
+        def generate_from_prompt(self, user_prompt, *, target):
+            raise RuntimeError("網路不通")
+
+    svc = CloudLLMService(
+        cloud=_Dead(),
+        fallback=lambda p, *, target: "罐頭回覆",
+        target_provider=lambda: TARGET,
+    )
+
+    down = await _run(svc)
+
+    assert _texts(down) == ["罐頭回覆"], "暖機炸掉之後這一輪也該正常降級"

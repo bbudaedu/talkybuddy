@@ -198,8 +198,19 @@ async def main() -> int:
         return 2
 
     # --- 第一段：雲端真的通嗎 ---
+    # 明確先暖機再量，而不是用 service 內建的 warmup=True。兩個理由：
+    #   1. 冷啟動成本本身就是要看的數字，印出來比藏起來有用
+    #   2. 內建暖機是背景進行的，而本探針在 pipeline 啟動後 0.5s 就餵第一句，
+    #      第一輪會排在還沒飛完的暖機後面 —— 量到的是兩者相加（板子實測
+    #      1926ms），看起來像雲端很慢，其實是探針自己造成的假象
+    t0 = time.monotonic()
+    cloud.generate_from_prompt("暖機", target=None)
+    print(f"\n冷啟動（暖機呼叫本身）：{int((time.monotonic() - t0) * 1000)}ms")
+
     collector = Collector()
-    service = CloudLLMService(cloud=cloud, target_provider=lambda: TARGET)
+    service = CloudLLMService(
+        cloud=cloud, target_provider=lambda: TARGET, warmup=False
+    )
     await _run_turns(service, collector, UTTERANCES)
 
     print("\n" + "-" * 66)
