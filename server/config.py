@@ -1,5 +1,6 @@
 """全域設定（依 CONTRACTS.md 逐字定義，路徑皆以 talkybuddy 根目錄為基準）。"""
 
+import os
 from pathlib import Path
 
 # talkybuddy 根目錄（server/ 的上一層）
@@ -7,7 +8,15 @@ BASE_DIR: Path = Path(__file__).resolve().parent.parent
 
 MODELS_DIR: Path = BASE_DIR / "models"
 DATA_DIR: Path = BASE_DIR / "data"
-DB_PATH: Path = DATA_DIR / "talkybuddy.db"
+# DB_PATH 可用 TALKYBUDDY_DB_PATH 覆寫。
+#
+# 需要它的原因很具體：pipecat 那條路跑在 /root/pipecat-lab/（獨立目錄、獨立
+# server/ 複本），於是它預設會寫進**自己的** data/talkybuddy.db，而教師儀表板
+# 讀的是決賽路徑那一份。2026-08-01 發現：用 pipecat 對話之後，鏡頭 4 的儀表板
+# 上看不到剛才那段互動——兩個不同的資料庫。
+#
+# 覆寫這個變數就能讓兩條路徑共用同一份記憶與同一份儀表板資料。
+DB_PATH: Path = Path(os.environ.get("TALKYBUDDY_DB_PATH") or (DATA_DIR / "talkybuddy.db"))
 
 # 模型檔路徑
 LLM_GGUF: Path = MODELS_DIR / "qwen2.5-1.5b-instruct-q4_k_m.gguf"

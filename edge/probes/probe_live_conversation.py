@@ -320,7 +320,10 @@ def _build_llm(lesson=None, progress=None):
 
 
 async def main() -> int:
+    # 秒數 0（或負數）＝一直跑到被停止。服務化需要這個：systemd 管的東西
+    # 不該自己結束，否則 Restart=always 會讓它每 N 秒重載一次模型。
     seconds = float(sys.argv[1]) if len(sys.argv) > 1 else 60.0
+    forever = seconds <= 0
 
     busy = _pids("arecord")
     if busy:
@@ -453,7 +456,9 @@ async def main() -> int:
         print(f"雲端暖機：{_ms}ms（{_verdict}）")
 
     print("=" * 62)
-    print(f"🟢 開始了，請對著玩偶說話（{seconds:.0f} 秒後自動結束，Ctrl-C 可提前停）")
+    print("🟢 開始了，請對著玩偶說話（"
+          + ("一直跑到被停止" if forever else f"{seconds:.0f} 秒後自動結束")
+          + "，Ctrl-C 可提前停）")
     print(f"   大腦　　　　：{brain_desc}")
     print(f"   今天的主題　：{(lesson.topic if lesson else '(預設)')}")
     print(f"   今天的目標句：{target_sentence}")
@@ -461,6 +466,14 @@ async def main() -> int:
     print("=" * 62)
 
     async def stop_after():
+        if forever:
+            # 服務模式：不自己結束，等 systemd／Ctrl-C 來收。
+            try:
+                while True:
+                    await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                pass
+            return
         try:
             await asyncio.sleep(seconds)
         except asyncio.CancelledError:

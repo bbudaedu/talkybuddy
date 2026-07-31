@@ -1,0 +1,44 @@
+[Unit]
+# pipecat 單一行程玩偶：ASR / LLM / TTS 全在同一個 process，麥克風所有權不轉移。
+#
+# 與 local-client 的差別（決定要跑哪一個時看這裡）：
+#   local-client  瘦客戶端 → WebSocket → talkybuddy-server（腦在 server）
+#                 按 power 鍵觸發（press-to-talk），對噪音免疫
+#   本服務        單一行程全部自己做，VAD 連續偵測
+#                 雲端失敗當輪降級回 llama-server，麥克風不轉移
+#
+# Conflicts 三個 client 互斥：它們搶同一支麥克風，而「麥克風被佔用」的症狀
+# 跟「麥克風壞掉」一模一樣（commit 38aa261）。
+#
+# ⚠️ Conflicts 只停不啟。停掉這個之後玩偶是啞的，要自己 start 另一個——
+# 這是 project-edge-deploy 記過的坑，別用 stop 當作「切回去」。
+Description=TalkyBuddy pipecat doll (single-process, cloud brain with edge fallback)
+Documentation=file:///root/pipecat-lab/PIPECAT_HANDOFF.md
+After=sound.target
+Conflicts=talkybuddy-local-client.service talkybuddy-live-client.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/pipecat-lab
+# 雲端金鑰放 lab 自己的 .env（不碰決賽路徑的 /root/talkybuddy/.env）。
+# 檔案不存在時 `-` 前綴讓 systemd 略過，服務仍會起來、走純 edge。
+EnvironmentFile=-/root/pipecat-lab/.env
+Environment=PYTHONPATH=/root/pipecat-lab
+Environment=PYTHONUNBUFFERED=1
+# 有 .env 就走雲端；沒有就報錯退出而不是靜默跑成 edge（見 probe 的 CLOUD_ENV）。
+Environment=TALKYBUDDY_PIPECAT_CLOUD=1
+# 與決賽路徑共用同一份資料庫，教師儀表板才看得到 pipecat 的對話（鏡頭 4）。
+# 少了這行，pipecat 會寫進 /root/pipecat-lab/data/ 而儀表板讀 /root/talkybuddy/data/。
+Environment=TALKYBUDDY_DB_PATH=/root/talkybuddy/data/talkybuddy.db
+Environment=TALKYBUDDY_EDGE_ALSA_DEVICE=plughw:1,0
+Environment=TALKYBUDDY_EDGE_ALSA_PLAYBACK=plughw:0,0
+# 秒數 0 = 一直跑到被停止（服務不該自己結束，否則 Restart 會不斷重載模型）。
+ExecStart=/root/pipecat-lab/.venv/bin/python -u probe_live_conversation.py 0
+# 收尾一律確保麥克風還回去，不依賴 Python 的 finally 有沒有跑到。
+ExecStopPost=-/usr/bin/pkill -9 -x arecord
+ExecStopPost=-/usr/bin/pkill -9 -x aplay
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
