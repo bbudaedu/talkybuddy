@@ -1,12 +1,28 @@
 # 說說學伴 × Amazon Bedrock AgentCore — 架構重新設計
 
-**日期**：2026-07-26（2026-07-29 更正 region／測試數／決賽日期）　**狀態**：設計，尚未實作　**決賽**：2026-08-01
+**日期**：2026-07-26（2026-07-29 更正 region／測試數／決賽日期；2026-08-01 更正狀態行與 region）　**決賽**：2026-08-01
+
+**狀態：客戶端已接線、契約已對齊真實 API，但從未在任何 AWS 帳號實際
+provision 或 invoke 過。**
+
+這一行的每個字都要能被指著問。拆開講：
+
+| 講什麼 | 憑據 |
+|---|---|
+| 客戶端已接線 | `server/agentcore.py`；三個 agent 的降級鏈第一層 |
+| 契約已對齊真實 API | `InvokeHarness` 回 EventStream（不是 dict）已修正，並用本機 botocore service model 離線釘住欄位名稱（`tests/test_agentcore_client.py`）。**2026-08-01 之前這裡解的是 Converse 的形狀，對真實 API 一次都沒成功過** |
+| 佈建腳本可用 | `deploy/aws/provision_agentcore.py --dry-run` exit 0，形狀全過；`arn` 欄位與官方執行角色權限已修正並有測試 |
+| **未驗證的部分** | 沒有跑過 `--apply`，沒有真的建立過 Harness，沒有收過一次真實的 InvokeHarness 回應。上述全部是離線推導 + service model 比對的結果 |
+
+不要把這份文件讀成「AgentCore 已經在跑」。它現在的正確讀法是：
+**該接的線都接了、該對的契約都對了，剩下的只有帶著憑證按下 `--apply`。**
 
 ---
 
 ## 1. 先講清楚現況
 
-**目前的三個 agent 完全沒有用到 AgentCore。**
+**目前的三個 agent 在預設設定下完全沒有用到 AgentCore**（`TALKYBUDDY_AGENT_BACKEND`
+未設為 `agentcore` 時，`resolve_config()` 回 None，走 Bedrock Converse）。
 
 | 元件 | 現況 |
 |---|---|
@@ -60,7 +76,7 @@ flowchart TB
         DEID["去識別化<br/>deidentify"]
     end
 
-    subgraph CLOUD["☁️ AgentCore（ap-southeast-1 新加坡）"]
+    subgraph CLOUD["☁️ AgentCore（us-west-2 Oregon）"]
         subgraph RT["AgentCore Runtime"]
             ORCH["編排 agent<br/>決策判斷"]
             TUTOR["導師 agent<br/>四維診斷"]
@@ -109,10 +125,16 @@ flowchart TB
 **唯讀一句話**：kill-switch 左邊全部在裝置上、斷網照跑；右邊全部是 AgentCore，
 斷網時整塊消失但不影響孩子繼續對話。
 
-> **region 註記（2026-07-29 更正）**：本圖原標「ap-east-2 台北」是錯的。
-> `ap-east-2` **沒有 AgentCore**，endpoint 不存在。同時具備 AgentCore 與滿額 Bedrock
-> 配額的 region 只有新加坡／雪梨／法蘭克福，已採用**新加坡 `ap-southeast-1`**（約 50ms）。
-> 實際 ARN 見 `deploy/aws/AGENTCORE_RESOURCES.md`。
+> **region 註記（2026-08-01 再更正）**：現行值是 **`us-west-2`（Oregon）**。
+> 競賽環境規範第 6 條指定該 region，而官方 region 表（devguide/agentcore-regions）
+> 列 AgentCore harness 與 Memory 在 US West (Oregon) 皆可用——規範與可用性沒有衝突。
+>
+> 歷史：本圖原標「ap-east-2 台北」是錯的（`ap-east-2` 沒有 AgentCore，endpoint
+> 不存在）；2026-07-29 改成新加坡 `ap-southeast-1`，理由是「離台灣最近的可用
+> region」。那個理由在規範指定 region 之後就不成立了。
+>
+> `deploy/aws/AGENTCORE_RESOURCES.md` 記的是 2026-07-26 在**自有帳號**手建的
+> 新加坡 ARN，**帳號綁定、現已失效**，不要照抄。
 
 ---
 
@@ -230,6 +252,13 @@ flowchart LR
 > AgentCore Memory 資源 `TalkyBuddyStudentMemory-sO0KeDB7kP` 狀態為 **ACTIVE**
 > （已配 `SUMMARIZATION` + `SEMANTIC` 兩個策略）。
 > 上面那句「一階段都動不了」若不劃掉，會讓人以為整條 AgentCore 路徑是封死的。
+
+> **2026-08-01 更正：上面那段講的是「自有帳號」，那組憑證現已失效。**
+> 本機實測 `aws sts get-caller-identity` → `InvalidClientTokenId`。
+> 那個新加坡的 Memory 資源與 25 個模型都是**自有帳號**的狀態，不是決賽帳號的。
+> 決賽走主辦提供的 AWS 環境，一切要重新用
+> `deploy/aws/provision_agentcore.py --apply` 在 `us-west-2` 建起來。
+> **在拿到主辦憑證並實際跑過之前，AgentCore 的可用性是 0，不是「已驗證」。**
 
 ---
 
