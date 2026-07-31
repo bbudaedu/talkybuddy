@@ -36,7 +36,9 @@ from server import agent_backends, agentcore, bedrock_converse, guardrails, scaf
 
 _log = logging.getLogger(__name__)
 
-_MAX_ENTRIES = 8
+# 單一真相來源：scaffold.MATERIAL_MAX_ENTRIES（register_material_vocab 本身
+# 也用它做上限）。這裡不重複寫死 8，避免兩處常數各自改各自漂移。
+_MAX_ENTRIES = scaffold.MATERIAL_MAX_ENTRIES
 
 _CAT_ZH = {
     "food": "食物", "school": "學校", "animal": "動物",
@@ -201,7 +203,12 @@ def _extract_vocab(text: str, *, allow_cloud: bool) -> dict:
         if ac_cfg is None and cfg is None:
             return _rule_based_extract(text)
 
-        user_prompt = _build_user_prompt(text)
+        # 老師貼上的教材原文可能含學生姓名等個資，其他雲端出口
+        # （cloud_llm.py／diagnose.py／sync_client.py／agents/privacy.py）
+        # 送雲端前都先過 guardrails.deidentify，這裡補齊同樣的處理。
+        # 只用在建 prompt 這裡——雜湊 session_id、規則式 fallback 仍用原文，
+        # 不受影響。
+        user_prompt = _build_user_prompt(guardrails.deidentify(text))
 
         raw_text = None
         if ac_cfg is not None:

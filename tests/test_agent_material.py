@@ -299,6 +299,35 @@ def test_no_exception_on_extreme_inputs():
         _assert_valid_schema(result)
 
 
+def test_cloud_path_deidentifies_material_text_before_sending(monkeypatch):
+    """老師貼上的教材原文可能含學生姓名等個資。其他雲端出口
+    （cloud_llm.py／diagnose.py／sync_client.py／agents/privacy.py）送雲端前
+    都先過 ``guardrails.deidentify``；教材文字直接嵌進 prompt 送出的話，
+    Title-case 的人名會原封不動送到雲端。這裡驗證送進 ``converse_text``
+    的 prompt 裡，人名已經被遮罩掉。"""
+    from server.agents import material
+    from server import bedrock_converse
+
+    captured: dict = {}
+
+    def fake_converse_text(system_prompt, user_prompt, *, cfg, max_tokens, timeout_s):
+        captured["user_prompt"] = user_prompt
+        return "{}"  # 不合法 schema 也沒關係，這條測試只在意送出的 prompt 內容
+
+    monkeypatch.setattr(bedrock_converse, "resolve_config",
+                        lambda role=None: {"region": "ap-east-2", "model_id": "test-model"})
+    monkeypatch.setattr(bedrock_converse, "converse_text", fake_converse_text)
+
+    material.extract_vocab("今天教到 Amy 這個小朋友最喜歡的獅子。", allow_cloud=True)
+
+    assert "user_prompt" in captured, "應該有走到 Bedrock Converse 分支"
+    assert "Amy" not in captured["user_prompt"], (
+        f"教材文字裡的人名應先經 guardrails.deidentify 遮罩，"
+        f"卻原封不動送進了 prompt：{captured['user_prompt']!r}"
+    )
+    assert "[名字]" in captured["user_prompt"]
+
+
 def test_agentcore_branch_calls_invoke_with_truthy_actor_id(monkeypatch):
     """AgentCore 分支被走到時，actor_id 必須是真值（非 None／非空字串）。
 
