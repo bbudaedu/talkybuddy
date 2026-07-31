@@ -382,10 +382,61 @@ TTSAudioRawFrame 數量: 23
 
 累計 **46 測試全綠**。
 
+---
+
+# 第七輪 — 端到端跑通，而且**推翻了我自己講了六輪的結論**
+
+接上 llama-server（`127.0.0.1:8080`，qwen2.5-1.5b，ctx 512）跑完整一輪。
+刻意不接麥克風（live-client 可能持有），從 `TranscriptionFrame` 起頭。
+
+## ⚠️ 我一直說「pipecat 不會讓對話變流暢」——那只對了一半
+
+第一次用簡短 system prompt 量到 round_total 1948ms，我沒有拿它當結論，
+因為現行的 4685ms 用的是 288 字的真實教材 prompt。換上 `EdgeLLM._SYSTEM_PROMPT`
+重量四次：
+
+| | llm_first | llm_done | tts_first_audio | round_total |
+|---|---|---|---|---|
+| 1 | 2903 | 4881 | 3336 | 5405 |
+| 2 | 1054 | 3261 | 3381 | 3959 |
+| 3 | 1073 | 2706 | **1462** | 3129 |
+| 4 | 1171 | 2709 | **2328** | 3159 |
+
+**關鍵不是那些數字，是 `tts_first_audio` 早於 `llm_done`**（四次中兩次明顯如此）。
+那代表 pipecat 在 LLM 還在生成時，就把已完成的第一句送去合成播放了。
+
+現行架構做不到：它是「LLM 全部跑完（3859ms）→ 才開始 TTS（+1163ms）」
+≈ **5022ms 才出聲**。pipecat 的 first-audio 是 **1462–3381ms**。
+
+| 指標 | 現行 | pipecat |
+|---|---|---|
+| **first-audio**（孩子聽到第一個字） | 約 5022ms | **1462–3381ms** |
+| round_total（整段講完） | 4685–5025ms | 3129–5405ms（同量級） |
+
+**所以要拆成兩個指標講**：pipecat 不會讓 LLM 變快（仍是 2.7–3.3s），
+但它讓孩子**不必等 LLM 講完才聽到聲音**。對感知上的流暢度，first-audio 才是關鍵。
+
+⚠️ 樣本僅四次、變異大（round_total 3129–5405ms），量測方式也與現行的
+`probe_latency` 多輪中位數不完全可比。**時間數字當量級參考，不是定論**；
+但 `tts_first_audio < llm_done` 這個現象本身不受樣本數影響。
+
+## 編排開銷幾乎為零
+
+第一次短 prompt 那輪：llm_done 1489ms + TTS 458ms = 1947ms，
+而實測 round_total 1948ms。**pipecat 沒有引入可測量的額外開銷。**
+
+## 順帶記兩件事
+
+- llama-server 的 **ctx-size 只有 512**，而 `build_live_system_prompt`（S2S 用）
+  是 1170 字——那條 prompt 是給雲端 Nova Sonic 的，不是給 edge LLM 的。
+  edge LLM 用的是 `server/llm.py:51` 的 288 字版本。
+- llama-server 回的是**簡體**（「苹果」）。edge TTS 那條路徑沒有 OpenCC，
+  ASR 那條有。接線時要補。
+
 ## 仍未驗證
 
-1. **端到端 round_total**（需要接上 LLM 與 transport 跑完整一輪）
-2. **CPU 爭用**（各元件單獨都快，同時跑未測）
+1. **CPU 爭用**（各元件單獨都快，同時跑未測）
+2. **端到端數字的變異**（需要多輪取中位數才能與現行嚴格對比）
 3. **真麥克風** — 需要停 live-client 才能測，決賽前不做
 
 ## 還沒有答案的問題
