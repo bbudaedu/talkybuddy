@@ -156,8 +156,9 @@ def grade_interaction(interaction: dict) -> dict[str, bool]:
     good = conf >= 0.8 and not corrected
 
     hits: dict[str, bool] = {}
+    en_info = profile._en_info()
     for token in set(profile._en_tokens(text)):
-        info = profile._EN_INFO.get(token)
+        info = en_info.get(token)
         if info:
             hits[info["zh"]] = good
     return hits
