@@ -149,11 +149,30 @@ class EdgeLLM:
         提供。None 或空白 → 完全不注入，行為與現況一致。護欄：target 帶讀句
         仍由 scaffold 決定，directive 只影響稱讚語與延伸問句。
         """
+        target = getattr(scaffold, "target_sentence", None)
+        return self.generate_from_prompt(
+            build_user_prompt(student_text, target, directive), target=target
+        )
+
+    def generate_from_prompt(self, user_prompt: str, *, target: str | None) -> str | None:
+        """以**已組好的** user prompt 呼叫 llama-server；任何失敗回 None。
+
+        與 :meth:`server.cloud_llm.CloudLLM.generate_from_prompt` 對稱，理由也
+        相同：pipecat pipeline 上游的 ``LessonPromptInjector`` 已經組好 prompt
+        了，這一層再組一次會變成雙重包裝。
+
+        對稱**本身**就是需求，不只是整潔：雲端降級回 edge 時，兩顆 LLM 必須吃
+        得下同一個 prompt，否則降級的那一輪會送出格式不同的請求。
+
+        Args:
+            user_prompt: 已組好的完整 user message。
+            target: 本輪目標英文句，供帶讀護欄補句用；None 表示不檢查。
+
+        Returns:
+            通過護欄的回覆文字；失敗、逾時或護欄命中時回 None。
+        """
         start = time.monotonic()
         try:
-            target = getattr(scaffold, "target_sentence", None)
-
-            user_prompt = build_user_prompt(student_text, target, directive)
             # PR #7 在這裡對 create_chat_completion 加了一把鎖，因為 llama.cpp 的
             # 單一 context 被兩個執行緒同時呼叫會在 native 層 segfault。**這條路徑
             # 已經不需要那把鎖**：Phase 8 之後 EdgeLLM 改走 HTTP 打獨立的

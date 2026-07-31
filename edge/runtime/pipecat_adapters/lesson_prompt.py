@@ -44,6 +44,7 @@ from loguru import logger
 from pipecat.frames.frames import Frame, TranscriptionFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
+from server import guardrails
 from server.llm import build_user_prompt
 
 LessonProvider = Callable[[], tuple[str | None, str | None]]
@@ -59,6 +60,7 @@ class LessonPromptInjector(FrameProcessor):
         lesson_provider: LessonProvider | None = None,
         target: str | None = None,
         directive: str | None = None,
+        deidentify: bool = False,
         **kwargs,
     ):
         """Initialize the lesson prompt injector.
@@ -70,11 +72,16 @@ class LessonPromptInjector(FrameProcessor):
                 ``server.lesson.build_lesson``).
             target: Fixed target sentence, used when no provider is given.
             directive: Fixed teaching directive, used when no provider is given.
+            deidentify: Mask PII in the child's transcript before it goes into
+                the prompt. Turn this on whenever the LLM may be a cloud
+                service. Off by default so edge-only pipelines behave exactly
+                as before.
         """
         super().__init__(**kwargs)
         self._lesson_provider = lesson_provider
         self._target = target
         self._directive = directive
+        self._deidentify = deidentify
 
     def _current_lesson(self) -> tuple[str | None, str | None]:
         """取得本輪教材；provider 失敗時退回固定值，絕不讓對話中斷。"""
@@ -100,7 +107,13 @@ class LessonPromptInjector(FrameProcessor):
             student_text = frame.text
             target, directive = self._current_lesson()
             # 原文先留起來再覆寫，否則對話紀錄會存到整段 prompt。
+            # 存的是**遮罩前**的原文：紀錄要留孩子真正說的話。
             if frame.result is None:
                 frame.result = student_text
+            if self._deidentify:
+                # 只遮學生文字，而且是在組 prompt **之前**。組完再遮整段會把
+                # 目標句裡的專名一起遮掉（`My name is Tom.` → `My name is
+                # [名字]`），玩偶就帶讀錯了。
+                student_text = guardrails.deidentify(student_text)
             frame.text = build_user_prompt(student_text, target, directive)
         await self.push_frame(frame, direction)

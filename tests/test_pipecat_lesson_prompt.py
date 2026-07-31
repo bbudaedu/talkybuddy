@@ -119,3 +119,54 @@ async def test_other_frames_pass_through():
         if isinstance(f, TextFrame) and not isinstance(f, TranscriptionFrame)
     ]
     assert texts == ["這是別的 frame"]
+
+
+# --- 上雲前去識別化（TCLOUD：pipecat 走雲端時才打開） ---------------------
+
+
+@pytest.mark.asyncio
+async def test_deidentify_is_off_by_default():
+    """預設不去識別化——edge-only 的既有 probe 行為必須零迴歸。"""
+    proc = LessonPromptInjector(target="I want an apple.")
+    down = await _run(proc, [_frame("我是 Tom 電話 0912345678")])
+
+    out = [f for f in down if isinstance(f, TranscriptionFrame)][0]
+    assert "Tom" in out.text
+    assert "0912345678" in out.text
+
+
+@pytest.mark.asyncio
+async def test_deidentify_masks_student_text_when_enabled():
+    """打開後，學生講的專名與號碼要被遮掉才上雲。"""
+    proc = LessonPromptInjector(target="I want an apple.", deidentify=True)
+    down = await _run(proc, [_frame("我是 Tom 電話 0912345678")])
+
+    out = [f for f in down if isinstance(f, TranscriptionFrame)][0]
+    assert "Tom" not in out.text
+    assert "0912345678" not in out.text
+    assert "[名字]" in out.text and "[數字]" in out.text
+
+
+@pytest.mark.asyncio
+async def test_deidentify_never_touches_the_target_sentence():
+    """目標句裡的專名不可以被遮——遮了玩偶就帶讀錯。
+
+    這是把 deidentify 放在「組 prompt 之前、只套學生文字」而不是「組完再套
+    整段」的唯一理由，值得一條測試釘死。
+    """
+    proc = LessonPromptInjector(target="My name is Tom.", deidentify=True)
+    down = await _run(proc, [_frame("我是 Tom")])
+
+    out = [f for f in down if isinstance(f, TranscriptionFrame)][0]
+    assert "My name is Tom." in out.text, "目標句被遮掉了"
+    assert "學生剛剛說：「我是 [名字]」" in out.text, "學生文字沒被遮"
+
+
+@pytest.mark.asyncio
+async def test_deidentify_keeps_original_transcript_in_result():
+    """對話紀錄要存孩子真正說的話，不是遮罩後的版本。"""
+    proc = LessonPromptInjector(target="I want an apple.", deidentify=True)
+    down = await _run(proc, [_frame("我是 Tom")])
+
+    out = [f for f in down if isinstance(f, TranscriptionFrame)][0]
+    assert out.result == "我是 Tom"

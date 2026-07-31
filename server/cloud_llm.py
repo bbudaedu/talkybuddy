@@ -16,6 +16,7 @@ import urllib.error
 import urllib.request
 
 from server import anthropic_relay, bedrock_converse, guardrails
+from server.llm import build_user_prompt
 
 _log = logging.getLogger(__name__)
 
@@ -151,6 +152,38 @@ class CloudLLM:
 
         後端優先序：原生 Bedrock Converse → Anthropic 相容 relay。前者需
         ``TALKYBUDDY_CLOUD_PROVIDER=bedrock`` 才啟用，未切換時行為與過去完全一致。
+
+        本方法只負責「把原始學生文字變成 prompt」，實際呼叫交給
+        :meth:`generate_from_prompt`。拆開的理由見該方法的 docstring。
+        """
+        target = getattr(scaffold, "target_sentence", None)
+        # 去識別化**只能**套在學生文字上，不可套在整段 prompt 上：deidentify
+        # 會把詞庫外的 Title-case 專名遮成 [名字]，而目標句本身就常有專名
+        # （`My name is Tom.` → `My name is [名字]`），玩偶就會帶讀錯。
+        safe_text = guardrails.deidentify(student_text)  # 上雲前去識別化
+        # 模板向 server.llm 借，與 EdgeLLM、LessonPromptInjector 共用同一份。
+        # 這裡曾經有一份一字不差的複製品，兩邊各改一次就會悄悄漂移。
+        return self.generate_from_prompt(
+            build_user_prompt(safe_text, target, directive), target=target
+        )
+
+    def generate_from_prompt(self, user_prompt: str, *, target: str | None) -> str | None:
+        """以**已組好的** user prompt 呼叫雲端腦；任何失敗回 None。
+
+        為 pipecat pipeline 開的進入點。那條 pipeline 上游的
+        ``LessonPromptInjector`` 已經用同一份 ``build_user_prompt`` 把 prompt
+        組好了（它必須這麼做，因為 edge 那顆 LLM 也吃同一個 context），雲端這
+        一層**不可以再組一次**，否則會變成雙重包裝的 prompt。
+
+        ⚠️ 本方法**不做去識別化**——呼叫端必須已經對學生文字做過。理由同
+        :meth:`generate`：對整段 prompt 做會遮掉目標句裡的專名。
+
+        Args:
+            user_prompt: 已組好、已去識別化的完整 user message。
+            target: 本輪目標英文句，供帶讀護欄補句用；None 表示不檢查。
+
+        Returns:
+            通過護欄的回覆文字；失敗、逾時或護欄命中時回 None。
         """
         t0 = time.monotonic()
         backend = "none"
@@ -163,18 +196,6 @@ class CloudLLM:
                 self._record(False, "none", "未設定任何雲端後端")
                 return None
             backend = "bedrock" if bedrock_cfg is not None else "relay"
-            target = getattr(scaffold, "target_sentence", None)
-            safe_text = guardrails.deidentify(student_text)  # 上雲前去識別化
-            directive_block = (
-                f"\n{directive.strip()}\n" if directive and directive.strip() else ""
-            )
-            user_prompt = (
-                f"學生剛剛說：「{safe_text}」\n"
-                f"目標英文句：{target or ''}\n"
-                f"{directive_block}"
-                "請照規則回覆：先一句繁體中文稱讚鼓勵，"
-                "再用「跟我說一遍：<英文句>」帶讀目標英文句。"
-            )
             if bedrock_cfg is not None:
                 # 原生 Bedrock Converse。timeout 刻意傳 _TIMEOUT_S 而非讓
                 # bedrock_converse 用它自己的 12s 預設——斷網橋段（D-03）
