@@ -243,6 +243,95 @@ app.py 那邊決賽前不動，但**不要讓它繼續躺著**。
 
 ---
 
+## 三之三、下一個 session 從這裡開工（2026-08-01 決賽日）
+
+**使用者裁定**：「決賽兩條線都測、選優的上」，並且想把 pipecat 固化成主線、
+local-client 退成備援。
+
+### 已經可以切換了
+
+```bash
+# 板子上（unit 檔已推到 /root/pipecat-lab/，但**尚未安裝**）
+cp /root/pipecat-lab/talkybuddy-pipecat.service /etc/systemd/system/
+systemctl daemon-reload
+/root/pipecat-lab/switch_doll.sh pipecat    # 切過去
+/root/pipecat-lab/switch_doll.sh local      # 切回來
+/root/pipecat-lab/switch_doll.sh status     # 誰在跑
+```
+
+`switch_doll.sh` 保證切完一定有一個在跑。**不要直接用 `systemctl stop`**：
+`Conflicts=` 只停不啟，兩個都會 inactive、玩偶直接變啞，症狀跟按鍵故障
+一模一樣（記憶 `project-edge-deploy`）。
+
+### 🔴 最優先：按鍵觸發（pipecat 唯一還缺的關鍵功能）
+
+**為什麼是最優先**：local-client 是 press-to-talk（power 鍵），對環境噪音
+**天生免疫**；pipecat 是 VAD 連續聽。決賽會場很吵，交接文件第二節記著噪音
+誤觸真的發生過（「寶貝多米」被聽成「コび」）。
+
+**近場門檻那條備案走不通**，不要浪費時間試：記憶 `project-edge-s2s-tuning`
+記著這塊板子上 `TALKYBUDDY_EDGE_NEAR_FIELD_PEAK` **必須是 0，否則玩偶完全
+不回話**。預設 0.06 會讓它全聾。
+
+**現成的零件**：`edge/runtime/audio_io.py::wait_for_trigger()`（第 453 行）
+——阻塞直到按鍵，已在 local-client 實戰驗證，會自己處理 `KEY_POWER` 的
+logind 搶佔問題。
+
+**建議做法**（照 `PlaybackGateFilter` 的形狀，那個已經驗證過）：
+
+- 新增 `pipecat_adapters/press_to_talk.py`，一個 `PressToTalkFilter`
+- 擺在 `transport.input()` 之後、`PlaybackGateFilter` 之前
+- 未 armed 時把 `InputAudioRawFrame` 的內容換成靜音（不要丟棄 frame，
+  VAD 需要連續的時間軸）
+- 背景 task 用 `asyncio.to_thread(audio_io.wait_for_trigger)` 等按鍵 → armed
+- 收到 `UserStoppedSpeakingFrame` 或逾時（例如 15s）→ disarm，重新等按鍵
+- **`wait_for_trigger` 是阻塞的，一定要 to_thread**（`sensevoice_stt` 的
+  docstring 解釋過為什麼）
+- 用環境變數開關（例如 `TALKYBUDDY_PIPECAT_PTT=1`），預設關閉＝現行 VAD 行為
+
+### 🟡 未解：真人測試時「換句子之後卡住」
+
+2026-08-01 真人測試，第 2 輪玩偶換句子成功之後，**再講話就沒有反應**。
+
+已查證並**排除**的：
+- SQLite 寫入阻塞 event loop（實測 3-5ms，不是原因）
+- keepalive 餵到播放閘門（keepalive 直接寫 aplay stdin，不經過 pipeline）
+- 取樣率算錯（22050 正確，實測 36 字 = 254354 bytes = 5.77s）
+
+**已知事實**：log 裡輪 2 之後**一個 VAD 事件都沒有**，代表麥克風那條路被靜音
+了，但沒能證明是哪個閘門（`PlaybackGateFilter` 或 `AlwaysUserMuteStrategy`）。
+
+**最可能但未證實的解釋**：一輪 15 秒、玩偶講完後還有 2.6s 死區，而使用者
+看不到閘門何時重開，講太早就被吃掉。**下一步應該先加診斷**（把
+`PlaybackGateFilter.muted_frames` 與閘門開關轉換印進 log），再跑一次真人測試。
+
+### 🟡 一輪 15 秒，瓶頸不在雲端
+
+板子實測分解（2026-08-01）：
+
+| 環節 | 時間 |
+|---|---|
+| 孩子講話 + VAD 收尾 | ~3s |
+| ASR | 0.15s |
+| **雲端 LLM** | **0.85s（只佔 5%）** |
+| TTS 合成 | 3.12s（逐句推之後大部分被播放蓋掉） |
+| TTS 播放 | 5.77s（36 字） |
+| 閘門死區 | 2.6s |
+
+已做：逐句推（TTS 不必等整段合成完）、回覆上限 40→25 字。
+
+**還躺著沒拿的 2 秒**：aplay 緩衝死區。交接文件說 keepalive 就是為了讓緩衝
+可以調小而做的，但「未驗證」。緩衝設定在 `live_client.py:75`
+（`TALKYBUDDY_EDGE_PLAYBACK_BUFFER_US`，預設 2000000）與 `audio_io` 的
+`--buffer-time`，**兩個地方要一起改**。調小的失敗樣子是聲音斷斷續續，
+比慢更糟，所以要在有時間驗證時才動。
+
+**不要換 TTS 模型**：板子上只有一個中文聲音（`zh_CN-huayan-medium`），而且
+播放時間是真實時間、換模型砍不掉。雲端 TTS 會讓音訊也變成網路依賴——斷網
+橋段就從「變樸素」變成「變啞巴」，直接砸掉最大權重那 25%。
+
+---
+
 ## 四、這個 session 反覆出現的一個教訓
 
 **既有程式碼看起來簡陋，其實是踩過坑之後的正確解，我卻自己發明了更差的。**
