@@ -44,11 +44,18 @@ transport.input() → PlaybackGateFilter(gate) → VAD → STT → …
 
 from __future__ import annotations
 
+import time
+from typing import Callable
+
 from loguru import logger
 from pipecat.frames.frames import Frame, InputAudioRawFrame, TTSAudioRawFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from edge.runtime.live_client import PlaybackGate
+
+# 上行關超過這麼久就示警。玩偶最長的一段回覆約 6 秒，加緩衝與 tail 約 8.6 秒，
+# 所以 10 秒以上一定不正常——那正是 2026-08-01「換句子之後卡住」的樣子。
+DEFAULT_STUCK_WARN_S = 10.0
 
 
 class PlaybackGateSink(FrameProcessor):
@@ -79,16 +86,30 @@ class PlaybackGateSink(FrameProcessor):
 class PlaybackGateFilter(FrameProcessor):
     """玩偶講話期間把上行音訊換成靜音。放在 transport.input() 之後、VAD 之前。"""
 
-    def __init__(self, gate: PlaybackGate, **kwargs):
+    def __init__(
+        self,
+        gate: PlaybackGate,
+        *,
+        now: Callable[[], float] = time.monotonic,
+        stuck_warn_s: float = DEFAULT_STUCK_WARN_S,
+        **kwargs,
+    ):
         """Initialize the playback gate filter.
 
         Args:
             gate: Shared PlaybackGate instance, also held by the sink.
+            now: Injectable clock, for tests.
+            stuck_warn_s: Warn once when the uplink stays closed this long.
         """
         super().__init__(**kwargs)
         self._gate = gate
+        self._now = now
+        self._stuck_warn_s = stuck_warn_s
         self._muted_frames = 0
         self._was_open = True
+        self._closed_since: float | None = None
+        self._closed_at_frames = 0
+        self._warned_stuck = False
 
     @property
     def muted_frames(self) -> int:
@@ -98,6 +119,32 @@ class PlaybackGateFilter(FrameProcessor):
             Count of frames replaced with silence since start.
         """
         return self._muted_frames
+
+    def _log_transition(self, is_open: bool) -> None:
+        """關／開上行都留下可讀的紀錄，重開時附上「聾了多久、吃掉幾幀」。"""
+        if is_open:
+            deaf_s = 0.0 if self._closed_since is None else self._now() - self._closed_since
+            eaten = self._muted_frames - self._closed_at_frames
+            logger.info(f"PlaybackGate 開啟上行（關了 {deaf_s:.1f}s，靜音 {eaten} 幀）")
+            self._closed_since = None
+            self._warned_stuck = False
+        else:
+            self._closed_since = self._now()
+            self._closed_at_frames = self._muted_frames
+            logger.info("PlaybackGate 關閉上行（玩偶在講話）")
+
+    def _warn_if_stuck(self) -> None:
+        """關太久就示警一次。每幀都警告會把 log 洗爛，現場反而更查不到東西。"""
+        if self._warned_stuck or self._closed_since is None:
+            return
+        deaf_s = self._now() - self._closed_since
+        if deaf_s < self._stuck_warn_s:
+            return
+        self._warned_stuck = True
+        logger.warning(
+            f"⚠️ PlaybackGate 已關閉上行 {deaf_s:.1f}s（超過 {self._stuck_warn_s:.0f}s）"
+            "——玩偶現在聽不到孩子。若之後沒有『開啟上行』，卡住的就是這個閘門。"
+        )
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Replace uplink audio with silence while the bot is speaking.
@@ -110,10 +157,13 @@ class PlaybackGateFilter(FrameProcessor):
         if isinstance(frame, InputAudioRawFrame):
             is_open = self._gate.is_open()
             if is_open != self._was_open:
-                logger.debug(f"PlaybackGate {'開啟' if is_open else '關閉'}上行")
+                # INFO 而非 DEBUG：服務的 journalctl 看不到 DEBUG，而
+                # 2026-08-01 查「換句子之後卡住」缺的正是這兩行。
+                self._log_transition(is_open)
                 self._was_open = is_open
             if not is_open:
                 self._muted_frames += 1
+                self._warn_if_stuck()
                 # 送靜音而非丟棄：VAD 的狀態機需要連續音訊，挖洞會留下斷口。
                 frame = InputAudioRawFrame(
                     audio=b"\x00" * len(frame.audio),

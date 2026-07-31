@@ -181,6 +181,42 @@ except Exception:
     SYSTEM_PROMPT = "你是陪伴孩子學英文的玩偶。用一句話回答。"
 
 
+# 我們自己寫的 pipecat 節點。它們印的都是每輪一兩行、專為現場診斷而寫的訊息，
+# 所以開到 INFO；pipecat 內部維持 WARNING（每個 frame 都有 DEBUG，全開會把
+# 「👂 聽成 / 🗣 玩偶說」整個蓋掉，而現場有人在讀那份 log）。
+_DIAG_LOGGER_PREFIX = "edge.runtime.pipecat_adapters"
+
+
+def is_diagnostic_record(record) -> bool:
+    """這筆 log 是不是我們自己的診斷訊息。
+
+    Args:
+        record: loguru 的 record（只用到 `name`）。
+
+    Returns:
+        True 代表來自我們寫的 pipecat 節點。
+    """
+    return str(record["name"]).startswith(_DIAG_LOGGER_PREFIX)
+
+
+def configure_logging(sink=None) -> None:
+    """裝 log sink：自己的節點開到 INFO，其餘只留 WARNING。
+
+    **2026-08-01 板子實測**：原本只有一個 `level="WARNING"` 的 sink，於是
+    `PlaybackGate 開啟/關閉上行` 這些診斷在 journal 裡一行都沒有——加了等於沒加。
+
+    兩個 sink 的 filter 互斥，所以同一筆 WARNING 不會印兩次（現場看到重複訊息
+    會以為出了兩次事）。
+
+    Args:
+        sink: 輸出目的地，預設 stderr（測試會傳入可收集的 sink）。
+    """
+    target = sys.stderr if sink is None else sink
+    logger.remove()
+    logger.add(target, level="WARNING", filter=lambda r: not is_diagnostic_record(r))
+    logger.add(target, level="INFO", filter=is_diagnostic_record)
+
+
 async def serve_pipeline(runner, worker, seconds: float, forever: bool) -> None:
     """跑 pipeline，直到它自己結束（服務模式）或時間到（限時模式）。
 
@@ -614,6 +650,5 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    logger.remove()
-    logger.add(sys.stderr, level="WARNING")  # 只留警告，免得刷版蓋掉對話
+    configure_logging()
     sys.exit(asyncio.run(main()))
