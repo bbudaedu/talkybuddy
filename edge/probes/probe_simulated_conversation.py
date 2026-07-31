@@ -183,8 +183,10 @@ async def main() -> int:
         return 2
 
     # 教材與真人對話那條路一致
+    from server import store
+
     try:
-        from server import lesson as lesson_mod, store
+        from server import lesson as lesson_mod
 
         store.init_db()
         lesson = lesson_mod.build_lesson(store.list_diagnoses(), store.get_profile())
@@ -214,7 +216,7 @@ async def main() -> int:
     def _system() -> str:
         return scaffold.build_live_system_prompt(
             progress.current or target, directive, topic,
-            max_chars=LIVE_MAX_CHARS,
+            max_chars=LIVE_MAX_CHARS, child_brief=brief,
             # 刻意**不**傳 more_sentences：進度已經由 LessonProgress 決定，
             # 模型不需要知道接下來有哪些句子。2026-07-31 實測，把清單給它會
             # 讓它自己去點名別句（「試試看這句：I see a rabbit.」）而護欄再補
@@ -222,6 +224,18 @@ async def main() -> int:
             # 它每輪只拿到「現在該練哪一句」，其餘由狀態機負責。
         )
 
+    # 開場畫像：第一次見到這個孩子會是 None（不假裝認識他）。
+    try:
+        from server import child_brief as _cb
+
+        brief = _cb.build_child_brief(
+            store.get_profile(),
+            store.list_due_word_reviews(store.default_student_id()),
+            store.list_diagnoses(),
+        )
+    except Exception:
+        brief = None
+    print(f"  開場記憶：{'有（' + str(len(brief)) + ' 字）' if brief else '無（第一次見面）'}")
     system_prompt = _system()
     context = LLMContext(messages=[{"role": "system", "content": system_prompt}])
     agg = LLMContextAggregatorPair(context)
@@ -247,6 +261,9 @@ async def main() -> int:
             ReadalongGuardProcessor(
                 target_provider=lambda: progress.current or target,
                 allow_variation=True,
+            ),
+            TurnRecorderProcessor(
+                student_text_provider=lambda: progress.last_utterance
             ),
             collector,
             agg.assistant(),
@@ -288,6 +305,18 @@ async def main() -> int:
         await worker.queue_frames([EndFrame()])
 
     await asyncio.gather(runner.run(worker), converse())
+    # 記憶迴圈的最後一環：把這一場算進長期畫像，下一場玩偶就記得。
+    try:
+        from server import profile as _pm
+
+        prof = _pm.build_profile(store.list_interactions(limit=500),
+                                 store.list_diagnoses(), store.get_profile())
+        store.save_profile(prof)
+        print(f"\n畫像已更新：互動 {prof.get('interaction_count', 0)} 次｜"
+              f"正在學 {len(prof.get('learning_vocab') or [])} 字｜"
+              f"已熟 {len(prof.get('mastered_vocab') or [])} 字")
+    except Exception:
+        logger.exception("profile 重算失敗")
     return 0 if _report(collector.replies, child_lines, target) else 1
 
 

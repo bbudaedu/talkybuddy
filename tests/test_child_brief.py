@@ -77,3 +77,13 @@ def test_plain_string_items_are_tolerated():
 
 def test_bad_interaction_count_does_not_crash():
     assert build_child_brief({"interaction_count": "壞掉的值"}) is None
+
+
+def test_interests_prefer_the_chinese_label():
+    """玩偶會把它唸出來——「他喜歡聊 animal」在台灣國小的對話裡很突兀。"""
+    out = build_child_brief({
+        "interaction_count": 5,
+        "interests": [{"topic": "animal", "label": "動物", "hits": 10}],
+    })
+    assert "動物" in out
+    assert "animal" not in out

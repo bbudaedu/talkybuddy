@@ -10,8 +10,21 @@
 也就是說：不接這一層，玩偶永遠是第一次見到每個孩子。
 
 `server/app.py::_store_live_turn` 已經為 `/ws/live` 做過同一件事，本模組沿用
-它的紀錄形狀（`asr_text` / `reply_text` / `scores` / `source`），只是把 source
-標成 `pipecat`，方便日後分辨資料是哪條路徑產生的。
+它的紀錄形狀，但**欄位名以 `store.py:820` 的示範資料為準**，因為那才是所有
+讀取端真正吃的形狀。source 標成 `pipecat` 以便分辨資料來自哪條路徑。
+
+⚠️ **`_store_live_turn` 的欄位名是錯的**（2026-07-31 查出）：
+
+| 它寫的 | 讀取端要的 | 誰在讀 |
+|---|---|---|
+| `asr_text` | `student_text` | `profile.build_profile`（profile.py:112） |
+| `reply_text` | `ai_response_text` | 同上（profile.py:113） |
+| `asr_conf` | `asr_confidence` | profile.py:114、`srs`、`diagnose` |
+
+三個名字全不合。不會報錯，只會讓那條路徑產生的互動**完全不進畫像**——
+玩偶記得「聊過幾次」，卻永遠說不出「上次我們練過哪個字」。本模組寫正確的
+名字並以測試釘住；`_store_live_turn` 那邊是 `/ws/live` 路徑、決賽前不動，
+但**這個問題要記著**。
 
 ## 落地失敗絕不影響對話
 
@@ -100,9 +113,17 @@ class TurnRecorderProcessor(FrameProcessor):
             if asr_text or reply:
                 try:
                     self._store({
-                        "asr_text": asr_text,
-                        "asr_conf": 1.0,
-                        "reply_text": reply,
+                        # 欄位名以 store.py:820 的示範資料為準——那是所有
+                        # 讀取端（profile / srs / diagnose）真正吃的形狀。
+                        "student_text": asr_text,
+                        # 欄位名是 asr_confidence，**不是** asr_conf。
+                        # profile.build_profile / srs / diagnose 三處讀的都是
+                        # 前者；寫錯名字不會報錯，只會讓信心值一律當成 0.0，
+                        # 於是沒有任何字被算進 learning/mastered_vocab——
+                        # 玩偶記得「聊過幾次」，卻永遠說不出「上次我們練過
+                        # 哪個字」。2026-07-31 就是這樣被咬到的。
+                        "asr_confidence": 1.0,
+                        "ai_response_text": reply,
                         "scores": {},
                         "source": self._source,
                     })

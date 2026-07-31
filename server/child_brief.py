@@ -68,8 +68,12 @@ def build_child_brief(profile=None, due_words=None, diagnoses=None) -> str | Non
     if rounds > 0:
         parts.append(f"你以前跟這個孩子聊過 {rounds} 次了，不是第一次見面。")
 
-    interests = _names(profile.get("interests"), key="topic") or _names(
-        profile.get("interests")
+    # 優先用中文 label（動物／動作），不是英文 topic key。玩偶會把它唸出來，
+    # 講「他喜歡聊 animal」在一個台灣國小的對話裡非常突兀。
+    interests = (
+        _names(profile.get("interests"), key="label")
+        or _names(profile.get("interests"), key="topic")
+        or _names(profile.get("interests"))
     )
     if interests:
         parts.append(
