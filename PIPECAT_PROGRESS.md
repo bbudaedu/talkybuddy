@@ -744,14 +744,64 @@ docstring 開頭警告的「兩個取樣率混用會變怪腔怪調」，只是�
 | LLM（官方 OpenAI service） | ✅ 端到端 |
 | 四道教學／安全護欄 | ✅ 端到端未誤傷 |
 
+---
+
+# 第十三輪 — 真人一輪：pipeline 就緒，但被斷線打斷
+
+## ✅ 完整互動 pipeline 組好並能啟動
+
+`edge/probes/probe_live_conversation.py`：
+
+```
+麥克風(arecord) → VADProcessor(Silero) → SenseVoice STT → 教材注入
+   → llama-server → 安全閘門 → 帶讀護欄 → 邊緣 TTS → 簡轉繁 → 喇叭(aplay)
+```
+
+8 秒空跑驗證（無人說話）：
+
+```
+Recording raw data '-' : Rate 16000 Hz, Mono     ← 麥克風開了
+Playing raw data 'stdin' : Rate 22050 Hz, Mono   ← 喇叭開了，取樣率正確
+完成輪數 0（無人說話，正常）│ ✅ 麥克風與喇叭都已釋放
+```
+
+1.6.0 的 VAD 不掛在 `TransportParams` 上（那裡根本沒有 `vad_analyzer` 欄位），
+而是獨立的 `pipecat.processors.audio.vad_processor.VADProcessor`。
+
+## 🔴 真人一輪沒跑成：板子中途斷網
+
+90 秒窗口啟動後板子斷線（與凌晨那次同一個症狀），ssh 被切，輸出檔全空。
+
+**而且暴露了一個我自己的錯誤做法**：直接用前景 ssh 跑會碰硬體的 probe。
+連線一斷，probe 的 `finally` 清理有沒有跑到無從得知——**殘留的 arecord 會佔住
+麥克風**，讓 local-client 開不了錄音，症狀跟麥克風壞掉一模一樣。決賽當天出這種
+事極難查。
+
+已補 `edge/probes/run_live_conversation.sh`，三層保險：
+
+1. `setsid` + `nohup`：脫離 ssh session，連線斷了不會被 SIGHUP 帶走
+2. `timeout`：不管 probe 卡在哪，硬性上限一到就收掉
+3. 收尾一律 `pkill arecord/aplay`：**不依賴 Python 的 finally 有沒有跑到**
+
+用法：
+
+```bash
+ssh root@<板子> 'bash -s' < edge/probes/run_live_conversation.sh 90
+# 之後
+ssh root@<板子> 'cat /tmp/live_conversation.log'
+```
+
 ## 仍未驗證
 
-1. **`fallback_text` 該接 scaffold** — 目前是預設字串，接線時要帶入
+1. **真人對著麥克風講話的完整一輪** ← 就差這個
+   - STT 對真人語音／環境噪音的表現（先前輸入全是 TTS 合成的乾淨音訊）
+   - **會不會自我打斷**（喇叭與麥克風同在玩偶內，板子裝不了 AEC）。
+     刻意先不加 mute 策略，想看真實行為；pipecat 有 `AlwaysUserMuteStrategy`
+     可以當 half-duplex 閘門，確認會自我打斷再補
+   - VAD 斷句的實際手感
+2. **`fallback_text` 該接 scaffold** — 目前是預設字串，接線時要帶入
    `scaffold.reply_text` 才跟現行降級行為一致
-2. **VAD params 未設** — pipeline 警告 `stop_secs (0.0s) differs from
-   recommended default (0.2s)`，接真實 transport 時要設
-3. **真人對著麥克風講話的完整一輪** — 目前輸入音訊都是 TTS 合成的，
-   沒有真人語音、沒有環境噪音、沒有 AEC 問題（喇叭與麥克風同在玩偶內）
+3. **VAD params 未設** — 警告 `stop_secs (0.0s) differs from recommended 0.2s`
 
 ## 還沒有答案的問題
 
