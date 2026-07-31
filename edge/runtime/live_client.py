@@ -162,7 +162,12 @@ class PlaybackGate:
     """
 
     def __init__(self, tail_s: float = _PLAYBACK_TAIL_S,
-                 buffer_delay_s: float | None = None, now=time.monotonic):
+                 buffer_delay_s: float | None = None, now=time.monotonic,
+                 rate: int = DOWNLINK_RATE):
+        # rate 預設 DOWNLINK_RATE（24k，Nova Sonic）。pipecat 那條路的邊緣 TTS
+        # 是 22050Hz——**算錯取樣率就會算錯播放時長**，閘門會提早開，
+        # 玩偶就收得到自己的尾音（2026-07-31 真人實測聽成「跟我說一定方」）。
+        self._rate = rate
         self._tail = tail_s
         self._buffer_delay = (_PLAYBACK_BUFFER_US / 1_000_000
                               if buffer_delay_s is None else buffer_delay_s)
@@ -178,7 +183,7 @@ class PlaybackGate:
         24kHz、16-bit、mono → 每秒 2×24000 bytes。若前一段還沒播完就接續累加，
         否則從現在起算。
         """
-        duration = nbytes / 2 / DOWNLINK_RATE
+        duration = nbytes / 2 / self._rate
         start = max(self._now(), self._playing_until)
         self._playing_until = start + duration
         self._buffer_drained = False

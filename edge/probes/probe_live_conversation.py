@@ -12,12 +12,18 @@
    跑這支的時候**不要按玩偶的按鍵**，否則兩個行程搶麥（`38aa261`），
    症狀跟麥克風壞掉一模一樣。腳本啟動前會檢查，結束後會確認釋放。
 
-2. **可能會自我打斷**。喇叭與麥克風同在玩偶內，板子裝不了 AEC
-   （見記憶 `project-edge-s2s-tuning`）。玩偶講話時麥克風會收到自己的聲音，
-   VAD 可能判成「使用者開始說話」而打斷自己。**這正是這一輪要觀察的重點之一**，
-   所以刻意先不加 mute 策略——先看真實行為，再決定要不要補。
+2. **已加 half-duplex 閘門**。喇叭與麥克風同在玩偶內、板子裝不了 AEC
+   （見記憶 `project-edge-s2s-tuning`）。2026-07-31 真人實測，不加閘門時
+   **自我打斷 4 次**——玩偶把自己的聲音判成使用者開口。現已掛上
+   `AlwaysUserMuteStrategy`（玩偶講話時一律不聽）。代價是孩子**無法插話打斷**，
+   與現行 `PlaybackGate` 的取捨相同。
 
-3. **不會動決賽路徑**。全部跑在 `/root/pipecat-lab/`，用的是同一份模型檔（symlink）。
+3. **對話無狀態**。llama-server `--ctx-size 512`，累積歷史會直接爆
+   （實測 516→579→642 tokens）。`StatelessContextProcessor` 每輪把 context
+   清成只剩 system，與現行 `EdgeLLM.generate` 的行為一致。代價是玩偶不記得
+   上一輪。
+
+4. **不會動決賽路徑**。全部跑在 `/root/pipecat-lab/`，用的是同一份模型檔（symlink）。
 
 ## 用法
 
@@ -37,6 +43,7 @@ from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import (
     EndFrame,
     Frame,
+    LLMFullResponseEndFrame,
     LLMTextFrame,
     TranscriptionFrame,
     TTSAudioRawFrame,
@@ -47,18 +54,28 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.worker import PipelineWorker
 from pipecat.processors.aggregators.llm_context import LLMContext
-from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+    LLMUserAggregatorParams,
+)
 from pipecat.processors.audio.vad_processor import VADProcessor
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.turns.user_mute.always_user_mute_strategy import AlwaysUserMuteStrategy
 
+from edge.runtime.live_client import PlaybackGate
 from edge.runtime.pipecat_adapters.alsa_transport import AlsaTransport, AlsaTransportParams
 from edge.runtime.pipecat_adapters.edge_tts import EdgeVitsTTSService
 from edge.runtime.pipecat_adapters.lesson_prompt import LessonPromptInjector
 from edge.runtime.pipecat_adapters.opencc_processor import OpenCCProcessor
+from edge.runtime.pipecat_adapters.playback_gate import (
+    PlaybackGateFilter,
+    PlaybackGateSink,
+)
 from edge.runtime.pipecat_adapters.readalong_guard import ReadalongGuardProcessor
 from edge.runtime.pipecat_adapters.safety_gate import SafetyGateProcessor
 from edge.runtime.pipecat_adapters.sensevoice_stt import SenseVoiceSTTService
+from edge.runtime.pipecat_adapters.stateless_context import StatelessContextProcessor
 
 MIC_DEVICE = "plughw:1,0"
 SPEAKER_DEVICE = "plughw:0,0"
@@ -84,6 +101,7 @@ class Narrator(FrameProcessor):
         self._llm_buf: list[str] = []
         self.turns = 0
         self.audio_chunks = 0
+        self.said: list[str] = []
         self.self_interrupts = 0
         self._bot_speaking_since: float | None = None
 
@@ -102,6 +120,12 @@ class Narrator(FrameProcessor):
             self.turns += 1
         elif isinstance(frame, LLMTextFrame):
             self._llm_buf.append(frame.text)
+        elif isinstance(frame, LLMFullResponseEndFrame):
+            text = "".join(self._llm_buf).strip()
+            if text:
+                print(f"🗣  玩偶說：{text}")
+                self.said.append(text)
+            self._llm_buf.clear()
         elif isinstance(frame, TTSAudioRawFrame):
             if self.audio_chunks == 0 or self._bot_speaking_since is None:
                 self._bot_speaking_since = time.perf_counter()
@@ -147,23 +171,40 @@ async def main() -> int:
     stt = SenseVoiceSTTService(sample_rate=STT_RATE)
     llm = OpenAILLMService(model="qwen", api_key="none", base_url=LLAMA_BASE_URL)
     tts = EdgeVitsTTSService(engine=tts_engine)
-    narrator = Narrator("live")
+    narrator = Narrator("out")
+    narrator_in = Narrator("in")
+    narrator_llm = Narrator("llm")   # LLMTextFrame 會被 TTS 消費，探針必須在 TTS 之前
+    # 上下行共享同一個 gate：sink 記下播放時長，filter 立刻據此關閘。
+    gate = PlaybackGate(rate=TTS_RATE)
 
     context = LLMContext(messages=[{"role": "system", "content": SYSTEM_PROMPT}])
-    agg = LLMContextAggregatorPair(context)
+    # AlwaysUserMuteStrategy：玩偶講話時一律不聽使用者。
+    # 2026-07-31 真人實測，沒有它會自我打斷 4 次——喇叭與麥克風同在玩偶內、
+    # 板子裝不了 AEC，玩偶會把自己的聲音判成使用者開口。
+    agg = LLMContextAggregatorPair(
+        context,
+        user_params=LLMUserAggregatorParams(
+            user_mute_strategies=[AlwaysUserMuteStrategy()]
+        ),
+    )
 
     worker = PipelineWorker(
         Pipeline(
             [
                 transport.input(),
+                PlaybackGateFilter(gate),   # 玩偶講話時上行換靜音，攔在 VAD 之前
                 vad,
                 stt,
+                narrator_in,        # 探針要在 agg.user() 之前，否則看不到逐字稿
+                StatelessContextProcessor(context=context),
                 LessonPromptInjector(target=TARGET_SENTENCE),
                 agg.user(),
                 llm,
                 SafetyGateProcessor(),
                 ReadalongGuardProcessor(target=TARGET_SENTENCE),
+                narrator_llm,
                 tts,
+                PlaybackGateSink(gate),     # 記錄下行時長給 gate
                 OpenCCProcessor(),
                 narrator,
                 transport.output(),
@@ -199,9 +240,10 @@ async def main() -> int:
                 subprocess.run(["kill", "-9", *leftover])
 
     print("=" * 62)
-    print(f"完成的對話輪數　：{narrator.turns}")
+    print(f"完成的對話輪數　：{narrator_in.turns}")
+    print(f"玩偶回覆　　　　：{' | '.join(narrator_llm.said) or '(無)'}")
     print(f"輸出音訊 chunk　：{narrator.audio_chunks}")
-    print(f"疑似自我打斷次數：{narrator.self_interrupts}")
+    print(f"疑似自我打斷次數：{narrator.self_interrupts + narrator_in.self_interrupts}")
     mic_left, spk_left = _pids("arecord"), _pids("aplay")
     if mic_left or spk_left:
         print(f"❌ 裝置未釋放：arecord={mic_left} aplay={spk_left}")
