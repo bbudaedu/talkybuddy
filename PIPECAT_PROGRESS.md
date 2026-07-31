@@ -560,12 +560,63 @@ pipecat 的 context aggregator 直接把 `TranscriptionFrame` 當成 user messag
 **這個數字是「鏈路能跑通」的證據，不是延遲基準。**延遲基準看第八輪的
 `probe_pipecat_e2e`（round_total 3161–3423ms）。
 
+---
+
+# 第十輪 — 補上教材注入，教學品質恢復
+
+## ✅ 缺口補上，而且串流重疊也跟著回來
+
+`LessonPromptInjector` 攔 `TranscriptionFrame`，用
+`server.llm.build_user_prompt`（**抽成共用函式，兩條路徑同一份模板**）
+把逐字稿包成含目標句與教學策略的完整 prompt。
+
+```
+修復前：跟我說一遍：我想要蘋果。            ← 目標句掉成中文、沒稱讚
+修復後：你真棒！跟我說一遍：I want an apple.  ← 先稱讚 + 正確英文目標句
+```
+
+而且 `tts_first_audio 5880ms < llm_done 6932ms`——**串流重疊回來了**，
+正好印證上一輪的推論：教材要求「先稱讚再帶讀」＝兩句，真實情境會有重疊。
+（代價是 prompt 變長，`llm_done` 從 5152ms → 6932ms。）
+
+**原始逐字稿不會被蓋掉**：覆寫 `frame.text` 前先把原文放進 `frame.result`。
+擺放順序有要求——要在「記錄逐字稿的處理器」之後、`agg.user()` 之前。
+
+## ✅ 消掉一個自己造成的重複實作
+
+發現 `server/guardrails.py:113` **早就有 `to_traditional`**（s2twp，docstring
+還記著 2026-07-29「看到一只兔子」的實測背景）。我的 `OpenCCProcessor` 是
+第二份實作。已改成委派給它——本模組只決定「在 pipeline 哪個位置、對哪種 frame
+轉換」，轉換規則用既有那一份。
+
+板子上跑真實 opencc 測試 **8 passed**（主機沒裝 opencc 會 skip 那一項，
+這也是為什麼要在板子上再跑一次）。
+
+## 🔴 還缺兩道既有系統有、pipecat 版沒有的護欄
+
+`EdgeLLM.generate` 在輸出後做三件事，pipecat 版目前只補了第二件：
+
+| 護欄 | pipecat 版 | 說明 |
+|---|---|---|
+| `passes_guardrail(text)` | ❌ **缺** | 安全過濾；不通過要降級回 scaffold |
+| `to_traditional(text)` | ✅ 已補 | `OpenCCProcessor` |
+| `ensure_readalong(text, target)` | ❌ **缺** | 確保回覆恰含一句合規帶讀（漏句要補、格式跑掉要修、不得重複） |
+
+兩者都比 OpenCC 難接：
+
+- **安全過濾必須在 TTS 之前**（不安全的內容不該先被念出來），但 LLM 輸出是
+  串流 token，要在句子層級攔截；而且「不通過」時需要一個降級來源（scaffold 輸出）
+- **`ensure_readalong` 針對整則回覆**，不是單句，所以要累積到
+  `LLMFullResponseEndFrame` 才能判斷
+
+累計 **61 測試全綠**（1 skipped：主機未裝 opencc；該項在板子上通過）。
+
 ## 仍未驗證
 
-1. **教材 prompt 注入後的端到端品質**（上面的產品缺口）
-2. **真麥克風** — 目前板子上**沒有任何 arecord 在跑**（live-client inactive），
-   麥克風是空的，技術上可以測 `alsa_transport`；但那是唯一還沒在真機跑過的元件，
-   且決賽在即，**需要明確授權才動**
+1. **兩道缺的護欄**（上表）— 目前最重要的接線待辦
+2. **真麥克風** — 板子上**沒有任何 arecord 在跑**（live-client inactive），
+   麥克風是空的，技術上可以測 `alsa_transport`；但那是唯一沒在真機跑過的元件，
+   **需要明確授權才動**
 
 ## 還沒有答案的問題
 

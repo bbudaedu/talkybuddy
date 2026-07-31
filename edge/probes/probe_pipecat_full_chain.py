@@ -38,6 +38,7 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.openai.llm import OpenAILLMService
 
 from edge.runtime.pipecat_adapters.edge_tts import EdgeVitsTTSService
+from edge.runtime.pipecat_adapters.lesson_prompt import LessonPromptInjector
 from edge.runtime.pipecat_adapters.opencc_processor import OpenCCProcessor
 from edge.runtime.pipecat_adapters.sensevoice_stt import SenseVoiceSTTService
 
@@ -53,6 +54,7 @@ except Exception:
     SYSTEM_PROMPT = "你是陪伴孩子學英文的玩偶。用一句話回答。"
 
 SPOKEN_TEXT = "我想要蘋果"
+TARGET_SENTENCE = "I want an apple."
 
 
 class Probe(FrameProcessor):
@@ -136,6 +138,9 @@ async def main():
             [
                 stt,
                 probe_stt,
+                # 教材注入必須在 probe_stt 之後（逐字稿要先被記錄成孩子講的話）
+                # 且在 agg.user() 之前（那裡才會把文字變成 LLM 的 user message）。
+                LessonPromptInjector(target=TARGET_SENTENCE),
                 agg.user(),
                 llm,
                 probe_llm,

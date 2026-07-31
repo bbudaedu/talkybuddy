@@ -39,10 +39,10 @@ class _FakeCC:
 
 
 def _proc(cc=None, load_failed: bool = False) -> OpenCCProcessor:
-    p = OpenCCProcessor()
-    p._converter = cc
-    p._load_failed = load_failed
-    return p
+    """建立 processor；cc 為 None 時模擬「轉換完全不可用」。"""
+    if cc is None:
+        return OpenCCProcessor(converter=lambda t: t)  # 不可用 → 原文
+    return OpenCCProcessor(converter=cc.convert)
 
 
 def test_converts_simplified_to_traditional():
@@ -107,10 +107,11 @@ async def test_missing_opencc_does_not_break_pipeline():
 
 @pytest.mark.skipif(_opencc is None, reason="未安裝 opencc")
 def test_real_opencc_uses_taiwan_wording():
-    """真實 opencc：s2twp 不只轉字，還要轉台灣用詞。"""
-    p = OpenCCProcessor()
-    if p._ensure_converter() is None:
-        pytest.skip("opencc 不可用")
+    """真實路徑：不注入 converter 時要委派給 guardrails.to_traditional。
+
+    同時驗證 s2twp 不只轉字、還轉台灣用詞——那是選 s2twp 而非 s2t 的理由。
+    """
+    p = OpenCCProcessor()  # 不注入 → 走 guardrails.to_traditional
     assert p.convert("苹果") == "蘋果"
-    # s2twp 的重點是台灣用詞：軟件→軟體、質量→品質
     assert p.convert("软件") == "軟體"
+    assert p.convert("I want an apple.") == "I want an apple.", "英文不該被動到"

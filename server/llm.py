@@ -44,6 +44,35 @@ def _llama_server_base_url() -> str:
     return f"http://{config.LLM_SERVER_HOST}:{config.LLM_SERVER_PORT}"
 
 
+def build_user_prompt(
+    student_text: str, target: str | None, directive: str | None = None
+) -> str:
+    """組出帶讀教學的 user prompt（學生的話 + 目標英文句 + 可選教學策略）。
+
+    抽成模組層級函式，因為現在有兩個消費者：`EdgeLLM.generate`，以及 pipecat
+    pipeline 的 `LessonPromptInjector`（`edge/runtime/pipecat_adapters/`）。
+    **兩邊必須共用同一份模板**——2026-07-31 實測，pipecat 把 ASR 逐字稿直接當成
+    user message 送進 LLM，回覆變成「跟我說一遍：我想要蘋果」：目標句從英文
+    掉成中文，因為模型根本沒收到目標英文句。
+
+    Args:
+        student_text: 學生剛剛說的話（ASR 逐字稿）。
+        target: 本輪的目標英文句；None／空字串時該行留空。
+        directive: 已格式化的「本輪教學策略」中文區塊；None／空白則不注入。
+
+    Returns:
+        完整的 user prompt 字串。
+    """
+    directive_block = f"\n{directive.strip()}\n" if directive and directive.strip() else ""
+    return (
+        f"學生剛剛說：「{student_text}」\n"
+        f"目標英文句：{target or ''}\n"
+        f"{directive_block}"
+        "請照規則回覆：先一句繁體中文稱讚鼓勵，"
+        "再用「跟我說一遍：<英文句>」帶讀目標英文句。"
+    )
+
+
 class EdgeLLM:
     """llama-server HTTP client，失敗一律優雅降級（不 in-process 載入模型）。"""
 
@@ -124,16 +153,7 @@ class EdgeLLM:
         try:
             target = getattr(scaffold, "target_sentence", None)
 
-            directive_block = (
-                f"\n{directive.strip()}\n" if directive and directive.strip() else ""
-            )
-            user_prompt = (
-                f"學生剛剛說：「{student_text}」\n"
-                f"目標英文句：{target or ''}\n"
-                f"{directive_block}"
-                "請照規則回覆：先一句繁體中文稱讚鼓勵，"
-                "再用「跟我說一遍：<英文句>」帶讀目標英文句。"
-            )
+            user_prompt = build_user_prompt(student_text, target, directive)
             # PR #7 在這裡對 create_chat_completion 加了一把鎖，因為 llama.cpp 的
             # 單一 context 被兩個執行緒同時呼叫會在 native 層 segfault。**這條路徑
             # 已經不需要那把鎖**：Phase 8 之後 EdgeLLM 改走 HTTP 打獨立的

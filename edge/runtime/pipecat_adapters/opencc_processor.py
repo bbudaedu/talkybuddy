@@ -32,10 +32,14 @@
 
 `TTSTextFrame` 則是 TTSService 聚合過的完整句子，轉換結果正確。
 
-## 降級策略
+## 轉換本身一律委派給 `guardrails.to_traditional`
 
-沿用 `asr_sensevoice._ensure_opencc` 的既定做法：OpenCC 缺失或轉換失敗一律
-**回原文、不拋例外**。簡體逐字稿雖然不理想，但總比整場對話掛掉好。
+專案早就有這個函式（`server/guardrails.py:113`），而且它的 docstring 記著
+2026-07-29 的實測背景：edge LLM 回過「看到一只兔子」，簡體用字直接進字幕。
+
+本模組**只負責決定「在 pipeline 的哪個位置、對哪種 frame」轉換**，
+轉換規則（`s2twp`、失敗回原文、英文不受影響）一律用那一份，
+不在這裡另寫第二份會漂移的實作。
 """
 
 from __future__ import annotations
@@ -48,41 +52,16 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 class OpenCCProcessor(FrameProcessor):
     """把通過的 `TTSTextFrame` 轉成繁體（台灣用詞）。"""
 
-    def __init__(self, *, config: str | None = None, **kwargs):
+    def __init__(self, *, converter=None, **kwargs):
         """Initialize the OpenCC processor.
 
         Args:
-            config: OpenCC config name. Defaults to the project-wide
-                ``server.config.OPENCC_CONFIG`` (``s2twp``), so there is a single
-                source of truth for how the whole product converts text.
+            converter: Optional callable taking and returning ``str``, used
+                instead of ``guardrails.to_traditional``. For tests only —
+                production should keep the shared implementation.
         """
         super().__init__(**kwargs)
-        if config is None:
-            try:
-                from server.config import OPENCC_CONFIG
-
-                config = OPENCC_CONFIG
-            except Exception:
-                config = "s2twp"
-        self._config = config
-        self._converter = None
-        self._load_failed = False
-
-    def _ensure_converter(self):
-        """懶載入 OpenCC 轉換器；缺失／失敗回 None（不拋，比照 asr_sensevoice）。"""
-        if self._converter is not None:
-            return self._converter
-        if self._load_failed:
-            return None
-        try:
-            import opencc
-
-            self._converter = opencc.OpenCC(self._config)
-        except Exception:
-            self._load_failed = True
-            logger.warning(f"OpenCC({self._config}) 載入失敗，逐字稿將維持原文（不影響發音）")
-            return None
-        return self._converter
+        self._converter = converter
 
     def convert(self, text: str) -> str:
         """Convert one string to Traditional Chinese.
@@ -91,18 +70,25 @@ class OpenCCProcessor(FrameProcessor):
             text: Source text, possibly Simplified.
 
         Returns:
-            The converted text, or the original when OpenCC is unavailable or
-            conversion raised.
+            The converted text, or the original when conversion is unavailable
+            or raised (`guardrails.to_traditional` already degrades that way).
         """
         if not text:
             return text
-        cc = self._ensure_converter()
-        if cc is None:
-            return text
+        if self._converter is not None:
+            try:
+                return self._converter(text)
+            except Exception:
+                logger.exception("注入的轉換器失敗，本句維持原文")
+                return text
         try:
-            return cc.convert(text)
+            from server import guardrails
+
+            return guardrails.to_traditional(text)
         except Exception:
-            logger.exception("OpenCC 轉換失敗，本句維持原文")
+            # guardrails 自己已經對 opencc 缺失做過降級；能走到這裡代表連
+            # import 都失敗（例如精簡部署）。維持原文，不讓對話中斷。
+            logger.exception("guardrails.to_traditional 不可用，本句維持原文")
             return text
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
