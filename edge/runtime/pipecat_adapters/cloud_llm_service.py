@@ -53,6 +53,7 @@ event loop 上——**在那裡阻塞等於同時凍住 VAD、麥克風讀取與
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Callable
 
 from loguru import logger
@@ -75,6 +76,11 @@ GenerateFromPrompt = Callable[..., "str | None"]
 `CloudLLM.generate_from_prompt` 與 `EdgeLLM.generate_from_prompt` 都是這個形狀，
 所以兩者可以直接互相替換——這正是降級那一輪需要的性質。
 """
+
+# 句子邊界。整段回覆一次推下去的話，TTS 要等**全部**合成完才發第一個音
+# （板子實測 36 字要 3.12s）。拆成句子推，pipecat 的 TTSService 會逐句合成，
+# 第一個音提早好幾秒——這是改成非串流 CloudLLM 之後失去的東西，補回來。
+_SENTENCE_END = re.compile(r"(?<=[。！？!?\n])")
 
 TargetProvider = Callable[[], "str | None"]
 """回傳本輪目標英文句，供帶讀護欄補句用。應與 `LessonPromptInjector` 同源。"""
@@ -333,7 +339,13 @@ class CloudLLMService(LLMService):
             )
             await self.stop_ttfb_metrics()
             if text:
-                await self._push_llm_text(text)
+                # 逐句推而不是整段推。CloudLLM 是非串流的（一次拿到完整回覆），
+                # 但那不代表要一次交給 TTS——pipecat 的 TTSService 會在句子邊界
+                # 合成，所以逐句推等於把「等整段合成完」換成「等第一句合成完」。
+                # 板子實測 36 字整段合成要 3.12s，第一句通常只要 1s 上下。
+                for piece in _SENTENCE_END.split(text):
+                    if piece.strip():
+                        await self._push_llm_text(piece)
         except Exception as exc:
             # 走到這裡代表連降級都炸了。玩偶這一輪不會講話，但 pipeline 要活著
             # ——麥克風所有權絕不因為一次生成失敗而轉移。

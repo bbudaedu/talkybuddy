@@ -119,8 +119,9 @@ TARGET_SENTENCE = "I want an apple."
 # 不靜默跑成 edge——「以為在跑雲端、其實沒有」正是這個專案被咬過三次的坑。
 CLOUD_ENV = "TALKYBUDDY_PIPECAT_CLOUD"
 
-# 每則回覆字數上限（半雙工：這等於孩子不能開口的時間）。約 9 秒。
-LIVE_MAX_CHARS = 40
+# 每則回覆字數上限。板子實測：36 字 = 合成 3.12s + 播放 5.77s + 死區 2.6s
+# = 一輪光是「玩偶講話」就吃掉 11.5 秒。砍字數是唯一同時砍合成與播放的手段。
+LIVE_MAX_CHARS = 25
 
 try:
     from server.llm import EdgeLLM

@@ -58,7 +58,14 @@ async def _run(svc, n: int = 1):
 
 
 def _texts(down) -> list[str]:
-    return [f.text for f in down if isinstance(f, LLMTextFrame)]
+    """把一輪的 LLMTextFrame 合併回一則回覆。
+
+    CloudLLMService 自 2026-07-31 起**逐句推**而不是整段推：TTS 會在句子邊界
+    合成，逐句推等於把「等整段合成完」換成「等第一句合成完」（板子實測 36 字
+    整段要 3.12s）。所以一輪會有多個 frame，斷言要看合併後的內容。
+    """
+    joined = "".join(f.text for f in down if isinstance(f, LLMTextFrame)).strip()
+    return [joined] if joined else []
 
 
 @pytest.mark.asyncio

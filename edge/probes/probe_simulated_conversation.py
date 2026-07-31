@@ -61,8 +61,8 @@ from edge.runtime.pipecat_adapters.safety_gate import SafetyGateProcessor
 
 DEFAULT_TURNS = 6
 
-# 每則回覆字數上限。板子中文 TTS 約每秒 4.5 字，40 字≈9 秒。
-LIVE_MAX_CHARS = 40
+# 每則回覆字數上限。板子實測 36 字要合成 3.12s + 播放 5.77s。
+LIVE_MAX_CHARS = 25
 
 # 孩子的第一句固定，之後由模型接話。固定第一句是為了讓不同次執行可比較。
 FIRST_UTTERANCE = "我看到一隻狗"
