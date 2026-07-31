@@ -30,7 +30,7 @@ import json
 import logging
 import re
 
-from server import agentcore, bedrock_converse, guardrails, srs
+from server import agent_backends, agentcore, bedrock_converse, guardrails, srs
 from server.agents import privacy
 from server.scaffold import VOCAB
 
@@ -494,11 +494,10 @@ def _generate_homework(profile, diagnosis, *, allow_cloud: bool) -> dict:
     try:
         # 先看有沒有啟用 AgentCore。resolve_config 只讀環境變數不觸網，
         # 放在去識別化之前是為了在「兩個後端都沒設定」時儘早走規則式。
-        ac_cfg = agentcore.resolve_config("homework")
-        # 兩個後端**都要**解析。先前寫成 `None if ac_cfg else ...`，AgentCore
-        # 設定一存在就把 Bedrock 設成 None，Harness 一失敗直接摔到規則式——
-        # 撥了開關反而比不撥更差。第二層必須先備好，降級才有地方可降。
-        cfg = bedrock_converse.resolve_config(role="diag")
+        # 兩個後端**都要**解析（見 server/agent_backends.py 的模組說明：
+        # 先前寫成 `None if ac_cfg else ...`，第二層在第一層存在時整個消失）。
+        # 共用同一個解析點，preflight 印出來的鏈才不會跟這裡走的路漂移。
+        ac_cfg, cfg = agent_backends.resolve("homework")
         if ac_cfg is None and cfg is None:
             # 兩個雲端後端都沒設定 → 直接走規則式
             return _rule_based_homework(profile, diagnosis)

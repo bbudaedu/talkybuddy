@@ -30,7 +30,7 @@ import json
 import logging
 import re
 
-from server import agentcore, bedrock_converse, guardrails
+from server import agent_backends, agentcore, bedrock_converse, guardrails
 from server.agents import privacy
 
 _log = logging.getLogger(__name__)
@@ -743,10 +743,8 @@ def _generate_report(profile, diagnoses, *, allow_cloud: bool) -> dict:
 
     # 雲端路徑。後端優先序：AgentCore Harness → Bedrock Converse → 規則式。
     try:
-        ac_cfg = agentcore.resolve_config("report")
-        # 兩個後端**都要**解析；理由見 homework.py 同一處註解（AgentCore 一設定
-        # 就把 Bedrock 設成 None，等於讓第二層消失）。
-        cfg = bedrock_converse.resolve_config(role="diag")
+        # 兩個後端**都要**解析；理由見 server/agent_backends.py 的模組說明。
+        ac_cfg, cfg = agent_backends.resolve("report")
         if ac_cfg is None and cfg is None:
             # 兩個雲端後端都沒設定 → 直接走規則式
             return _rule_based_report(profile, diagnoses)

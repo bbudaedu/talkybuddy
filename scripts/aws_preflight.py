@@ -25,6 +25,54 @@ def _hr(title: str) -> None:
     print(f"\n{'=' * 62}\n{title}\n{'=' * 62}")
 
 
+_AGENT_ROLES = ("orchestrator", "homework", "report")
+
+# 角色 → 該角色 harness ARN 的環境變數名稱（訊息要講得出「去設哪一個」）
+_ROLE_ENV = {
+    "orchestrator": "AGENTCORE_HARNESS_ORCHESTRATOR",
+    "homework": "AGENTCORE_HARNESS_HOMEWORK",
+    "report": "AGENTCORE_HARNESS_REPORT",
+}
+
+
+def agentcore_checks(chains: dict[str, list[str]],
+                     flag_on: bool) -> list[tuple[str, str]]:
+    """把三個 agent 的降級鏈判成 ``(等級, 訊息)``；等級 ∈ ok / warn / bad。
+
+    純函式、不觸網，測試涵蓋在 tests/test_aws_preflight_agentcore.py。
+
+    判定原則：
+
+    - **AgentCore 沒撥開關 → warn，不是 bad。** 它是加分項；降級鏈本來就設計
+      成「沒有它也完整」。把加分項判成失敗會讓現場的人去救一個不需要救的東西。
+    - **撥了開關卻漏設某個角色的 harness ARN → bad。** 這是現場最容易犯、
+      也最難察覺的錯：開關看起來撥了，那個角色其實整個沒走 AgentCore，
+      而且沒有任何東西會報錯。
+    - **鏈上沒有 bedrock → bad。** 第二層不見了等於 AgentCore 一失敗就直接
+      摔到規則式，品質下界比什麼都不開還低。這正是先前那個缺陷造成的形狀。
+    """
+    out: list[tuple[str, str]] = []
+    for role in _AGENT_ROLES:
+        chain = list(chains.get(role) or [])
+        arrow = " → ".join(chain) if chain else "（空）"
+        has_ac = "agentcore" in chain
+        has_bedrock = "bedrock" in chain
+
+        if flag_on and not has_ac:
+            out.append(("bad", f"{role}：{arrow} —— 撥了 AgentCore 開關卻沒走到它。"
+                               f"修：export {_ROLE_ENV[role]}=<harness arn>"))
+        elif flag_on and not has_bedrock:
+            out.append(("bad", f"{role}：{arrow} —— 少了 Bedrock 這一層，"
+                               f"AgentCore 一失敗就直接掉規則式。"
+                               f"修：export TALKYBUDDY_CLOUD_PROVIDER=bedrock"))
+        elif has_ac:
+            out.append(("ok", f"{role}：{arrow}"))
+        else:
+            out.append(("warn", f"{role}：{arrow} —— AgentCore 未啟用"
+                                f"（加分項，不影響降級鏈完整性）"))
+    return out
+
+
 def cloud_timeout() -> float:
     """對話路徑的逾時上界（讀 cloud_llm 的實際值，避免文件與程式漂移）。"""
     from server import cloud_llm
@@ -58,7 +106,26 @@ def main() -> int:  # noqa: C901 - 線性檢查流程，拆開反而難讀
         print(f"       修：export BEDROCK_MODEL_ID_CHAT=<haiku> "
               f"BEDROCK_MODEL_ID_DIAG=<sonnet>")
 
-    _hr("② AWS 憑證（boto3 標準鏈：env → ~/.aws → EC2 IAM Role）")
+    _hr("② 三個 agent 的降級鏈（AgentCore → Bedrock → 規則式）")
+    try:
+        from server import agent_backends
+
+        flag_on = (os.environ.get("TALKYBUDDY_AGENT_BACKEND") or ""
+                   ).strip().lower() == "agentcore"
+        # 鏈的判定一律走 agent_backends.chain()——agent 用的是同一份。
+        # preflight 若自己重寫一遍，就會有一條會漂移的假鏈，而現場的人會信它。
+        chains = {role: agent_backends.chain(role) for role in _AGENT_ROLES}
+        for level, msg in agentcore_checks(chains, flag_on):
+            print(f"{ {'ok': OK, 'warn': WARN, 'bad': BAD}[level] } {msg}")
+            if level == "bad":
+                failures.append("agentcore-chain")
+        if not flag_on:
+            print("   （這是設定讀數，不是證據。要證明 AgentCore 真的產出過，"
+                  "看教師端卡片的 source 徽章。）")
+    except Exception as exc:
+        print(f"{WARN} 降級鏈檢查本身失敗：{type(exc).__name__}: {exc}")
+
+    _hr("③ AWS 憑證（boto3 標準鏈：env → ~/.aws → EC2 IAM Role）")
     try:
         import boto3
 
@@ -74,7 +141,7 @@ def main() -> int:  # noqa: C901 - 線性檢查流程，拆開反而難讀
         print("   修：aws configure（本機）／確認 EC2 已附掛 IAM Instance Profile")
         return 1
 
-    _hr("③ Bedrock 模型開通狀態")
+    _hr("④ Bedrock 模型開通狀態")
     try:
         available = bedrock_converse.list_models(cfg["region"])
         anthropic_ids = [m for m in available if "anthropic" in m and "(" not in m]
@@ -104,7 +171,7 @@ def main() -> int:  # noqa: C901 - 線性檢查流程，拆開反而難讀
     except Exception as exc:
         print(f"{WARN} 列模型失敗（不一定是致命問題）：{type(exc).__name__}: {exc}")
 
-    _hr("④ 真打一次 Converse（用對話路徑那顆 model）")
+    _hr("⑤ 真打一次 Converse（用對話路徑那顆 model）")
     try:
         import time
 
@@ -133,7 +200,7 @@ def main() -> int:  # noqa: C901 - 線性檢查流程，拆開反而難讀
         print("   常見原因：model_id 錯（見③）／IAM 缺 bedrock:Converse／region 沒開通")
         failures.append("converse")
 
-    _hr("⑤ 端到端：產出一次教師診斷")
+    _hr("⑥ 端到端：產出一次教師診斷")
     try:
         from server import diagnose
 
