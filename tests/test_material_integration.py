@@ -35,20 +35,25 @@ def test_homework_picks_up_newly_registered_word():
 
 
 def test_games_module_sees_new_word_via_shared_vocab_object():
-    """games.py 讀的 scaffold.VOCAB 跟合併時操作的是同一個物件。"""
-    from server import scaffold, games
+    """games.py 的分類詞池函式讀的 scaffold.VOCAB 跟合併時操作的是同一個物件，即時見到新詞。"""
+    from server import scaffold
+    from server.games import _words_in_cat
 
     snapshot = {zh: dict(v) for zh, v in scaffold.VOCAB.items()}
     try:
-        scaffold.register_material_vocab([
+        # 合併新詞到 animal 分類
+        accepted, rejected = scaffold.register_material_vocab([
             {"en": "koala", "zh": "無尾熊", "cat": "animal",
              "np": "a koala", "sent": "I see a koala."},
         ])
+        assert rejected == 0 and len(accepted) == 1
 
-        assert games.scaffold.VOCAB is scaffold.VOCAB, (
-            "games.py 應該跟 scaffold.py 共用同一個 VOCAB 物件參照"
+        # games.py 的 _words_in_cat 應該即時見到新詞，代表它讀的是同一個 VOCAB 物件
+        words = _words_in_cat("animal")
+        assert "無尾熊" in words, (
+            "新合併的教材詞應出現在 games._words_in_cat 的回傳值裡，"
+            "若沒出現代表 games._words_in_cat 沒有即時讀到突變後的 VOCAB"
         )
-        assert "無尾熊" in games.scaffold.VOCAB
     finally:
         scaffold.VOCAB.clear()
         scaffold.VOCAB.update(snapshot)
