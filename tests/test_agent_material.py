@@ -297,3 +297,41 @@ def test_no_exception_on_extreme_inputs():
     for bad in (None, ""):
         result = material.extract_vocab(bad, allow_cloud=False)
         _assert_valid_schema(result)
+
+
+def test_agentcore_branch_calls_invoke_with_truthy_actor_id(monkeypatch):
+    """AgentCore 分支被走到時，actor_id 必須是真值（非 None／非空字串）。
+
+    agentcore.invoke() 對非真值 actor_id 一律拋 ValueError（見
+    server/agentcore.py 的守門：漏傳會讓所有孩子共用同一份長期記憶）。教材
+    提煉不分學生，但仍要傳一個固定的非個人化 sentinel 滿足這道守門——
+    否則 AgentCore 分支即使正確設定也會每次都在第一步被守門擋下、
+    silently 降級到 Bedrock，agent_backends.chain("material") 回報的鏈
+    就變成一句謊言。
+    """
+    import json
+    from server.agents import material
+    from server import agent_backends, agentcore
+
+    captured: dict = {}
+
+    def fake_invoke(cfg, user_message, *, actor_id=None, session_id=None, timeout_s=None):
+        captured["actor_id"] = actor_id
+        return json.dumps({
+            "topic": "動物園一日遊",
+            "entries": [],
+            "source": "cloud",
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        agent_backends, "resolve",
+        lambda role: ({"region": "us-west-2", "harness_arn": "arn:material"}, None),
+    )
+    monkeypatch.setattr(agentcore, "invoke", fake_invoke)
+
+    result = material.extract_vocab("動物園教材", allow_cloud=True)
+
+    assert "actor_id" in captured, "AgentCore 分支應被走到（agentcore.invoke 應被呼叫）"
+    assert captured["actor_id"], "actor_id 必須是真值，不能是 None 或空字串"
+    assert captured["actor_id"] != "None"
+    _assert_valid_schema(result, expected_source="cloud")

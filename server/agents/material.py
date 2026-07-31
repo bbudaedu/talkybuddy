@@ -108,6 +108,17 @@ def _rule_based_extract(text: str) -> dict:
 _TIMEOUT_S = 12.0
 _MAX_TEXT_LEN = 2000  # 教材原文送雲端的長度上限
 
+# agentcore.invoke() 對非真值 actor_id 一律拋 ValueError（見 server/agentcore.py
+# 的 actor_id 守門：漏傳會讓所有孩子共用同一份長期記憶，那道守門對
+# homework/report/orchestrator 三個「學生維度」的 agent 是對的，不能弱化）。
+# 教材提煉刻意不分學生——教材是全域共用詞庫的擴充，不屬於任何一個孩子——
+# 但仍需要一個「真值」滿足 invoke() 的守門，否則 AgentCore 分支每次都會在
+# 第一步就被那道守門擋下，即使現場正確設定了 AGENTCORE_HARNESS_MATERIAL
+# 也永遠降級到 Bedrock，讓 agent_backends.chain("material") 回報的鏈變成謊言。
+# 用固定字串而非 None：語意上代表「這通呼叫屬於全域教材上傳流程，不屬於
+# 任何個別學生」，不會被誤判成某個孩子的 id，也不會撞到 Memory 分群。
+_MATERIAL_ACTOR_ID = "material-upload"
+
 _SYSTEM_PROMPT = (
     "你是台灣國小英語教材分析專家。從老師提供的教材文字中，"
     "挑出最多 8 個適合國小生學習的詞彙。"
@@ -196,7 +207,7 @@ def _extract_vocab(text: str, *, allow_cloud: bool) -> dict:
             try:
                 raw_text = agentcore.invoke(
                     ac_cfg, user_prompt,
-                    actor_id=None,
+                    actor_id=_MATERIAL_ACTOR_ID,
                     session_id="material-upload",
                 )
             except Exception:
