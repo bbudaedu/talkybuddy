@@ -23,7 +23,20 @@ region 與 model 的可用組合**每個帳號都不同**，換帳號務必先�
 
     PYTHONPATH=. python -m server.bedrock_converse   # 列出該帳號實際可用的 model ID
 
-**B. Anthropic 相容中轉／官方 API**
+**B. Gemini 直連（開發與驗證期間的真雲端）**
+
+    PYTHONPATH=. GEMINI_API_KEY=... python edge/probes/probe_cloud_llm_service.py
+
+model 由 `GEMINI_MODEL` 覆蓋，預設是最快的 `gemini-3.5-flash-lite`。
+Gemini 的型號改版很快，換金鑰或換環境時先確認預設值還在不在：
+
+    PYTHONPATH=. python -m server.gemini_llm      # 列出這把金鑰可用的 model
+
+⚠️ Bedrock 的優先序在 Gemini 之前。這是刻意的：開發期間為了驗證而設的
+Gemini 金鑰**不可以**把決賽主線蓋掉——現場最不該發生的事就是「以為在跑
+Bedrock，其實在跑 Gemini」。看輸出的 `後端` 那一行確認。
+
+**C. Anthropic 相容中轉／官方 API**
 
     PYTHONPATH=. ANTHROPIC_API_KEY=... ANTHROPIC_BASE_URL=http://<relay>:8317 \
         ANTHROPIC_MODEL=<model> python edge/probes/probe_cloud_llm_service.py
@@ -103,6 +116,18 @@ class Collector(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
+def _turn_deadline_s() -> float:
+    """一輪最多等多久才放棄（秒）。
+
+    綁在 `CLOUD_LLM_TIMEOUT_S` 上，因為雲端不可達時每一輪都會等好等滿。
+    """
+    try:
+        cloud_timeout = float(os.environ.get("CLOUD_LLM_TIMEOUT_S", "1.5"))
+    except ValueError:
+        cloud_timeout = 1.5
+    return cloud_timeout + 8.0
+
+
 def _describe_backend(cloud) -> str:
     """一句話講清楚這次會走哪條後端，以及依據是什麼。"""
     return f"configured={cloud.configured_backend()} | {cloud.status_detail()}"
@@ -137,8 +162,11 @@ async def _run_turns(service: CloudLLMService, collector: Collector, utterances)
             collector.mark_turn_start()
             before = len(collector.replies)
             await worker.queue_frames([TranscriptionFrame(text, "child", time_now_iso8601())])
-            # 等這一輪的回覆落地再送下一句（最多 40 秒）。
-            for _ in range(400):
+            # 等這一輪的回覆落地再送下一句。上界綁在 CLOUD_LLM_TIMEOUT_S 上、
+            # 不寫死：雲端不可達時每輪都會等好等滿，寫死 40s 的話光是「證明打
+            # 不通」就要空等兩分半（2026-07-31 板子上實測）。+8s 留給降級那顆
+            # 本機 LLM 的生成時間（板子實測約 3.9s）。
+            for _ in range(int(_turn_deadline_s() * 10)):
                 await asyncio.sleep(0.1)
                 if len(collector.replies) > before:
                     break
@@ -164,7 +192,8 @@ async def main() -> int:
 
     if not cloud.available():
         print("\n❌ 沒有可用的雲端設定，這支探針無事可做。")
-        print("   Bedrock：TALKYBUDDY_CLOUD_PROVIDER=bedrock + AWS 憑證 + BEDROCK_REGION")
+        print("   Bedrock　：TALKYBUDDY_CLOUD_PROVIDER=bedrock + AWS 憑證 + BEDROCK_REGION")
+        print("   Gemini　 ：GEMINI_API_KEY（＋可選 GEMINI_MODEL）")
         print("   中轉／官方：ANTHROPIC_API_KEY（＋可選 ANTHROPIC_BASE_URL / ANTHROPIC_MODEL）")
         return 2
 

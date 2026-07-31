@@ -15,7 +15,7 @@ import time
 import urllib.error
 import urllib.request
 
-from server import anthropic_relay, bedrock_converse, guardrails
+from server import anthropic_relay, bedrock_converse, gemini_llm, guardrails
 from server.llm import build_user_prompt
 
 _log = logging.getLogger(__name__)
@@ -82,26 +82,31 @@ class CloudLLM:
         self._last: dict | None = None
 
     def available(self) -> bool:
-        """任一後端（Bedrock 或 relay）可解析即 True；任何失敗回 False。
+        """任一後端（Bedrock / Gemini / relay）可解析即 True；任何失敗回 False。
 
         ⚠️ 這只代表「設定齊全」，不代表跑得動。判斷能不能用請看 `verified()`。
         """
-        try:
-            if bedrock_converse.resolve_config() is not None:
-                return True
-            return anthropic_relay.resolve_config() is not None
-        except Exception:
-            return False
+        return self.configured_backend() != "none"
 
     def configured_backend(self) -> str:
-        """設定上**會走**哪條後端："bedrock" | "relay" | "none"。
+        """設定上**會走**哪條後端："bedrock" | "gemini" | "relay" | "none"。
 
-        優先序與 generate() 一致。這是設定讀數，不是證據——要證據看
-        `verified_backend()`。
+        優先序與 generate_from_prompt() 一致，三條的排序都有理由：
+
+        - **bedrock 第一**：決賽主線。開發期間為了驗證而設的 Gemini 金鑰
+          不可以把它蓋掉——現場最不該發生的事就是「以為在跑 Bedrock」。
+        - **gemini 第二**：2026-07-31 使用者裁示「不要用中轉 改用 gemini
+          apikey」。中轉接 Claude 系列時 system prompt 會被上游的 Claude Code
+          蓋掉（玩偶會說自己是 CLI 工具），而且多依賴一台會斷線的中繼機。
+        - **relay 最後**：保留既有行為，不刪。
+
+        這是設定讀數，不是證據——要證據看 `verified_backend()`。
         """
         try:
             if bedrock_converse.resolve_config() is not None:
                 return "bedrock"
+            if gemini_llm.resolve_config() is not None:
+                return "gemini"
             if anthropic_relay.resolve_config() is not None:
                 return "relay"
         except Exception:
@@ -191,12 +196,27 @@ class CloudLLM:
             # role="chat"：取為 _TIMEOUT_S（1.5s）挑的快模型。若取到診斷用的
             # 大模型，這條路徑會穩定逾時而永遠降級回 edge。
             bedrock_cfg = bedrock_converse.resolve_config(role="chat")
-            cfg = anthropic_relay.resolve_config()
-            if bedrock_cfg is None and cfg is None:
+            gemini_cfg = gemini_llm.resolve_config() if bedrock_cfg is None else None
+            cfg = (
+                anthropic_relay.resolve_config()
+                if (bedrock_cfg is None and gemini_cfg is None)
+                else None
+            )
+            backend = self.configured_backend()
+            if backend == "none":
                 self._record(False, "none", "未設定任何雲端後端")
                 return None
-            backend = "bedrock" if bedrock_cfg is not None else "relay"
-            if bedrock_cfg is not None:
+            if gemini_cfg is not None:
+                # timeout 傳 _TIMEOUT_S 而非讓 gemini_llm 用它自己的 12s 預設
+                # ——理由與下面 Bedrock 那段完全相同。
+                text = gemini_llm.generate_text(
+                    _SYSTEM_PROMPT,
+                    user_prompt,
+                    cfg=gemini_cfg,
+                    max_tokens=_MAX_TOKENS,
+                    timeout_s=_TIMEOUT_S,
+                )
+            elif bedrock_cfg is not None:
                 # 原生 Bedrock Converse。timeout 刻意傳 _TIMEOUT_S 而非讓
                 # bedrock_converse 用它自己的 12s 預設——斷網橋段（D-03）
                 # 的「恢復 <1-2 秒」全靠這個上界，用錯就直接破功。

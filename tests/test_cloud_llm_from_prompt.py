@@ -149,3 +149,95 @@ def test_generate_from_prompt_without_backend_returns_none(_clean_env):
     c = CloudLLM()
     assert c.generate_from_prompt("prompt", target="x") is None
     assert c.verified_backend() == "none"
+
+
+# --- 第三條後端：Gemini 直連 -------------------------------------------------
+
+
+def _gemini_ok(monkeypatch, text: str) -> dict:
+    """攔下 gemini_llm 的 urlopen，錄下送出的 body。"""
+    from server import gemini_llm
+
+    seen: dict = {}
+
+    class _R:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"candidates": [{"content": {"parts": [{"text": text}]}}]}
+            ).encode("utf-8")
+
+    def _fake(req, timeout=None):
+        seen["body"] = json.loads(req.data.decode("utf-8"))
+        seen["timeout"] = timeout
+        return _R()
+
+    monkeypatch.setattr(gemini_llm.urllib.request, "urlopen", _fake)
+    return seen
+
+
+def test_gemini_is_used_when_configured(_clean_env, monkeypatch):
+    _clean_env.setenv("GEMINI_API_KEY", "g-key")
+    seen = _gemini_ok(monkeypatch, "很好！跟我說一遍：I want an apple.")
+
+    c = CloudLLM()
+    out = c.generate_from_prompt("已組好的 prompt", target="I want an apple.")
+
+    assert out == "很好！跟我說一遍：I want an apple."
+    assert c.verified_backend() == "gemini"
+    assert seen["body"]["contents"][0]["parts"][0]["text"] == "已組好的 prompt"
+
+
+def test_gemini_beats_relay(_clean_env, monkeypatch):
+    """使用者已裁定不用中轉：兩個都設時要走 Gemini。"""
+    _clean_env.setenv("GEMINI_API_KEY", "g-key")
+    _clean_env.setenv("ANTHROPIC_API_KEY", "sk-relay")
+    _gemini_ok(monkeypatch, "很好！跟我說一遍：I want an apple.")
+
+    c = CloudLLM()
+    assert c.configured_backend() == "gemini"
+    c.generate_from_prompt("prompt", target="I want an apple.")
+    assert c.verified_backend() == "gemini"
+
+
+def test_bedrock_still_beats_gemini(_clean_env, monkeypatch):
+    """決賽主線不可以被開發用的 Gemini 蓋掉。"""
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    _clean_env.setenv("GEMINI_API_KEY", "g-key")
+    assert CloudLLM().configured_backend() == "bedrock"
+
+
+def test_available_true_with_only_gemini(_clean_env):
+    _clean_env.setenv("GEMINI_API_KEY", "g-key")
+    assert CloudLLM().available() is True
+
+
+def test_gemini_gets_the_conversation_timeout_not_its_own_default(_clean_env, monkeypatch):
+    """1.5s 的斷網驗收上界靠這個；用錯就直接破功（與 Bedrock 同理）。"""
+    _clean_env.setenv("GEMINI_API_KEY", "g-key")
+    seen = _gemini_ok(monkeypatch, "很好！跟我說一遍：I want an apple.")
+
+    CloudLLM().generate_from_prompt("prompt", target="I want an apple.")
+
+    assert seen["timeout"] == cloud_llm_mod._TIMEOUT_S
+
+
+def test_gemini_failure_records_reason(_clean_env, monkeypatch):
+    from server import gemini_llm
+
+    _clean_env.setenv("GEMINI_API_KEY", "g-key")
+
+    def _boom(req, timeout=None):
+        raise TimeoutError("連線逾時")
+
+    monkeypatch.setattr(gemini_llm.urllib.request, "urlopen", _boom)
+
+    c = CloudLLM()
+    assert c.generate_from_prompt("prompt", target="x") is None
+    assert c.verified() is False
+    assert "TimeoutError" in c.status_detail()
