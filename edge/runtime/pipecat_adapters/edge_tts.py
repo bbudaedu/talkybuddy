@@ -25,12 +25,24 @@
 真正的串流要換後端（雲端 TTS 或支援串流的本地引擎），不在本 adapter 的範圍。
 **別把它當成延遲的解藥**——round_total 目前仍由 LLM 的 3.9s 主宰。
 
-## 語言判斷是啟發式的
+## 語言分段：預設用 `scaffold.split_tts_segments`
 
-`run_tts()` 的契約只給一段文字。這裡用「含 CJK 字元 → zh，否則 en」判斷。
-中英混排的句子會整段用中文聲音念，英文詞會有腔調。既有 `synth()` 支援
-逐段指定語言（`[("zh", ...), ("en", ...)]`），要更好的效果得由上游先分段，
-本 adapter 保留 `segments_provider` 讓上游注入那個能力。
+`run_tts()` 的契約只給一段文字，但 `TTSEngine.synth()` 吃的是
+`[(lang, text), ...]`——**分段是必要的，不是優化**。
+
+2026-07-31 真人實測踩到：本檔原本用「含 CJK → zh」的啟發式，於是
+「你說得好！跟我說一遍：I want an apple。」整句丟給 `zh_CN-huayan-medium`，
+**英文部分完全沒有念出來**。而帶讀句正是英文——跟讀教學等於失效。
+
+專案早就有 `server/scaffold.py::split_tts_segments`，現行 pipeline 一直在用：
+
+```
+'你說得好！跟我說一遍：I want an apple。'
+  → [('zh', '你說得好！跟我說一遍：'), ('en', 'I want an apple')]
+```
+
+所以預設就用它。`segments_provider` 仍可注入以便測試或替換。
+CJK 啟發式只在 `scaffold` 匯入失敗時當退路，並會 log warning。
 """
 
 from __future__ import annotations
@@ -97,6 +109,16 @@ class EdgeVitsTTSService(TTSService):
         # 一個不存在的 context_id → **音訊會被靜靜丟棄，下游收到 0 個 frame**。
         # 這個症狀在直接呼叫 run_tts() 的單元測試裡完全看不出來（frame 明明有產出），
         # 只有跑真實 pipeline 才會現形。官方本地 TTS（Piper）同樣是這兩個都設 True。
+        if segments_provider is None:
+            # 預設用專案既有的分段函式，不要用本檔那個 CJK 啟發式。
+            # 2026-07-31 真人實測：中英混排整句丟給 zh voice，**英文完全沒念出來**
+            # ——而帶讀句正是英文，等於跟讀教學失效。
+            try:
+                from server.scaffold import split_tts_segments
+
+                segments_provider = split_tts_segments
+            except Exception:
+                logger.warning("split_tts_segments 不可用，退回 CJK 啟發式（英文可能唸不出來）")
         super().__init__(
             push_start_frame=True,
             push_stop_frames=True,
