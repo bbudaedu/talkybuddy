@@ -136,6 +136,66 @@ def _extract_text(payload: dict) -> str:
     return "".join(parts)
 
 
+def _to_messages(messages: list[dict]) -> list[dict]:
+    """把通用的 ``{"role","content"}`` 訊息串轉成 Converse 的 ``messages``。
+
+    Converse 的 ``system`` 是獨立參數，不能混在 messages 裡——所以 system
+    角色直接濾掉，由呼叫端傳。content 統一包成 ``[{"text": ...}]``。
+    """
+    out: list[dict] = []
+    for m in messages:
+        role = m.get("role")
+        if role == "system":
+            continue
+        content = m.get("content")
+        if isinstance(content, list):
+            text = "".join(
+                p["text"] for p in content
+                if isinstance(p, dict) and isinstance(p.get("text"), str)
+            )
+        else:
+            text = content if isinstance(content, str) else ""
+        if not text:
+            continue
+        out.append({
+            "role": "assistant" if role == "assistant" else "user",
+            "content": [{"text": text}],
+        })
+    return out
+
+
+def converse_chat(
+    system: str,
+    messages: list[dict],
+    *,
+    cfg: dict,
+    max_tokens: int = 1024,
+    temperature: float = 0.7,
+    timeout_s: float = DEFAULT_TIMEOUT_S,
+) -> str:
+    """多輪版的 :func:`converse_text`；失敗一律拋例外，由呼叫端 fallback。
+
+    Args:
+        system: system prompt。
+        messages: ``[{"role": "user"|"assistant"|"system", "content": str}, ...]``。
+        cfg: :func:`resolve_config` 的輸出。
+        max_tokens: 產生上限。
+        temperature: 隨機性。
+        timeout_s: 呼叫逾時（秒）。
+
+    Returns:
+        產生的文字。
+    """
+    client = _build_client(cfg["region"], timeout_s)
+    payload = client.converse(
+        modelId=cfg["model_id"],
+        system=[{"text": system}],
+        messages=_to_messages(messages),
+        inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
+    )
+    return _extract_text(payload)
+
+
 def converse_text(
     system: str,
     user: str,
@@ -146,14 +206,14 @@ def converse_text(
     timeout_s: float = DEFAULT_TIMEOUT_S,
 ) -> str:
     """以 Bedrock Converse 產生文字；失敗一律拋例外，由呼叫端 fallback。"""
-    client = _build_client(cfg["region"], timeout_s)
-    payload = client.converse(
-        modelId=cfg["model_id"],
-        system=[{"text": system}],
-        messages=[{"role": "user", "content": [{"text": user}]}],
-        inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
+    return converse_chat(
+        system,
+        [{"role": "user", "content": user}],
+        cfg=cfg,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        timeout_s=timeout_s,
     )
-    return _extract_text(payload)
 
 
 def list_models(region: str | None = None) -> list[str]:

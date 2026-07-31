@@ -44,6 +44,35 @@ def _llama_server_base_url() -> str:
     return f"http://{config.LLM_SERVER_HOST}:{config.LLM_SERVER_PORT}"
 
 
+def build_user_prompt(
+    student_text: str, target: str | None, directive: str | None = None
+) -> str:
+    """組出帶讀教學的 user prompt（學生的話 + 目標英文句 + 可選教學策略）。
+
+    抽成模組層級函式，因為現在有兩個消費者：`EdgeLLM.generate`，以及 pipecat
+    pipeline 的 `LessonPromptInjector`（`edge/runtime/pipecat_adapters/`）。
+    **兩邊必須共用同一份模板**——2026-07-31 實測，pipecat 把 ASR 逐字稿直接當成
+    user message 送進 LLM，回覆變成「跟我說一遍：我想要蘋果」：目標句從英文
+    掉成中文，因為模型根本沒收到目標英文句。
+
+    Args:
+        student_text: 學生剛剛說的話（ASR 逐字稿）。
+        target: 本輪的目標英文句；None／空字串時該行留空。
+        directive: 已格式化的「本輪教學策略」中文區塊；None／空白則不注入。
+
+    Returns:
+        完整的 user prompt 字串。
+    """
+    directive_block = f"\n{directive.strip()}\n" if directive and directive.strip() else ""
+    return (
+        f"學生剛剛說：「{student_text}」\n"
+        f"目標英文句：{target or ''}\n"
+        f"{directive_block}"
+        "請照規則回覆：先一句繁體中文稱讚鼓勵，"
+        "再用「跟我說一遍：<英文句>」帶讀目標英文句。"
+    )
+
+
 class EdgeLLM:
     """llama-server HTTP client，失敗一律優雅降級（不 in-process 載入模型）。"""
 
@@ -120,20 +149,30 @@ class EdgeLLM:
         提供。None 或空白 → 完全不注入，行為與現況一致。護欄：target 帶讀句
         仍由 scaffold 決定，directive 只影響稱讚語與延伸問句。
         """
+        target = getattr(scaffold, "target_sentence", None)
+        return self.generate_from_prompt(
+            build_user_prompt(student_text, target, directive), target=target
+        )
+
+    def generate_from_prompt(self, user_prompt: str, *, target: str | None) -> str | None:
+        """以**已組好的** user prompt 呼叫 llama-server；任何失敗回 None。
+
+        與 :meth:`server.cloud_llm.CloudLLM.generate_from_prompt` 對稱，理由也
+        相同：pipecat pipeline 上游的 ``LessonPromptInjector`` 已經組好 prompt
+        了，這一層再組一次會變成雙重包裝。
+
+        對稱**本身**就是需求，不只是整潔：雲端降級回 edge 時，兩顆 LLM 必須吃
+        得下同一個 prompt，否則降級的那一輪會送出格式不同的請求。
+
+        Args:
+            user_prompt: 已組好的完整 user message。
+            target: 本輪目標英文句，供帶讀護欄補句用；None 表示不檢查。
+
+        Returns:
+            通過護欄的回覆文字；失敗、逾時或護欄命中時回 None。
+        """
         start = time.monotonic()
         try:
-            target = getattr(scaffold, "target_sentence", None)
-
-            directive_block = (
-                f"\n{directive.strip()}\n" if directive and directive.strip() else ""
-            )
-            user_prompt = (
-                f"學生剛剛說：「{student_text}」\n"
-                f"目標英文句：{target or ''}\n"
-                f"{directive_block}"
-                "請照規則回覆：先一句繁體中文稱讚鼓勵，"
-                "再用「跟我說一遍：<英文句>」帶讀目標英文句。"
-            )
             # PR #7 在這裡對 create_chat_completion 加了一把鎖，因為 llama.cpp 的
             # 單一 context 被兩個執行緒同時呼叫會在 native 層 segfault。**這條路徑
             # 已經不需要那把鎖**：Phase 8 之後 EdgeLLM 改走 HTTP 打獨立的

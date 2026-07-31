@@ -15,7 +15,8 @@ import time
 import urllib.error
 import urllib.request
 
-from server import anthropic_relay, bedrock_converse, guardrails
+from server import anthropic_relay, bedrock_converse, gemini_llm, guardrails
+from server.llm import build_user_prompt
 
 _log = logging.getLogger(__name__)
 
@@ -81,26 +82,31 @@ class CloudLLM:
         self._last: dict | None = None
 
     def available(self) -> bool:
-        """任一後端（Bedrock 或 relay）可解析即 True；任何失敗回 False。
+        """任一後端（Bedrock / Gemini / relay）可解析即 True；任何失敗回 False。
 
         ⚠️ 這只代表「設定齊全」，不代表跑得動。判斷能不能用請看 `verified()`。
         """
-        try:
-            if bedrock_converse.resolve_config() is not None:
-                return True
-            return anthropic_relay.resolve_config() is not None
-        except Exception:
-            return False
+        return self.configured_backend() != "none"
 
     def configured_backend(self) -> str:
-        """設定上**會走**哪條後端："bedrock" | "relay" | "none"。
+        """設定上**會走**哪條後端："bedrock" | "gemini" | "relay" | "none"。
 
-        優先序與 generate() 一致。這是設定讀數，不是證據——要證據看
-        `verified_backend()`。
+        優先序與 generate_from_prompt() 一致，三條的排序都有理由：
+
+        - **bedrock 第一**：決賽主線。開發期間為了驗證而設的 Gemini 金鑰
+          不可以把它蓋掉——現場最不該發生的事就是「以為在跑 Bedrock」。
+        - **gemini 第二**：2026-07-31 使用者裁示「不要用中轉 改用 gemini
+          apikey」。中轉接 Claude 系列時 system prompt 會被上游的 Claude Code
+          蓋掉（玩偶會說自己是 CLI 工具），而且多依賴一台會斷線的中繼機。
+        - **relay 最後**：保留既有行為，不刪。
+
+        這是設定讀數，不是證據——要證據看 `verified_backend()`。
         """
         try:
             if bedrock_converse.resolve_config() is not None:
                 return "bedrock"
+            if gemini_llm.resolve_config() is not None:
+                return "gemini"
             if anthropic_relay.resolve_config() is not None:
                 return "relay"
         except Exception:
@@ -151,37 +157,120 @@ class CloudLLM:
 
         後端優先序：原生 Bedrock Converse → Anthropic 相容 relay。前者需
         ``TALKYBUDDY_CLOUD_PROVIDER=bedrock`` 才啟用，未切換時行為與過去完全一致。
+
+        本方法只負責「把原始學生文字變成 prompt」，實際呼叫交給
+        :meth:`generate_from_prompt`。拆開的理由見該方法的 docstring。
+        """
+        target = getattr(scaffold, "target_sentence", None)
+        # 去識別化**只能**套在學生文字上，不可套在整段 prompt 上：deidentify
+        # 會把詞庫外的 Title-case 專名遮成 [名字]，而目標句本身就常有專名
+        # （`My name is Tom.` → `My name is [名字]`），玩偶就會帶讀錯。
+        safe_text = guardrails.deidentify(student_text)  # 上雲前去識別化
+        # 模板向 server.llm 借，與 EdgeLLM、LessonPromptInjector 共用同一份。
+        # 這裡曾經有一份一字不差的複製品，兩邊各改一次就會悄悄漂移。
+        return self.generate_from_prompt(
+            build_user_prompt(safe_text, target, directive), target=target
+        )
+
+    def generate_from_prompt(self, user_prompt: str, *, target: str | None) -> str | None:
+        """以**已組好的** user prompt 呼叫雲端腦；任何失敗回 None。
+
+        為 pipecat pipeline 開的進入點。那條 pipeline 上游的
+        ``LessonPromptInjector`` 已經用同一份 ``build_user_prompt`` 把 prompt
+        組好了（它必須這麼做，因為 edge 那顆 LLM 也吃同一個 context），雲端這
+        一層**不可以再組一次**，否則會變成雙重包裝的 prompt。
+
+        ⚠️ 本方法**不做去識別化**——呼叫端必須已經對學生文字做過。理由同
+        :meth:`generate`：對整段 prompt 做會遮掉目標句裡的專名。
+
+        Args:
+            user_prompt: 已組好、已去識別化的完整 user message。
+            target: 本輪目標英文句，供帶讀護欄補句用；None 表示不檢查。
+
+        Returns:
+            通過護欄的回覆文字；失敗、逾時或護欄命中時回 None。
+        """
+        return self.generate_chat(
+            [{"role": "user", "content": user_prompt}],
+            system=_SYSTEM_PROMPT,
+            target=target,
+        )
+
+    def generate_chat(
+        self,
+        messages: list[dict],
+        *,
+        system: str,
+        target: str | None,
+        enforce_readalong: bool = True,
+    ) -> str | None:
+        """多輪對話；可換 system prompt、可關帶讀強制。任何失敗回 None。
+
+        為 pipecat 的即時陪聊路徑開的。與 :meth:`generate_from_prompt` 的差別
+        只有三點，但那三點正是「玩偶講話很單調」的原因：
+
+        1. **看得到對話歷史** —— 前者只送一則 user 訊息，玩偶因此不記得上一輪。
+           雲端 context 遠大於 llama-server 的 512，這個限制在雲端不存在。
+        2. **system prompt 可換** —— 前者寫死 ``_SYSTEM_PROMPT``（60 字、每輪
+           硬帶讀），那是回合式鷹架給小模型的契約。即時陪聊要用
+           ``scaffold.build_live_system_prompt``（教練企鵝），那份 prompt 明寫
+           「孩子如果問你別的，一定要先回應他…絕對不可以假裝沒聽到孩子的話」。
+        3. **帶讀強制可關** —— ``ensure_readalong`` 會在事後把回覆補成
+           「…跟我說一遍：<目標句>」。回合式契約要它，即時陪聊不要：孩子問
+           問題時玩偶應該能只回答。``server/app.py`` 的 ``/ws/live`` 路徑
+           一直都不套這一層，這裡是讓 pipecat 接上同一套契約，不是新發明。
+
+        **放寬的只有帶讀格式**。安全護欄（``passes_guardrail``）與簡轉繁
+        （``to_traditional``）照跑，不因為契約不同而放行。
+
+        Args:
+            messages: ``[{"role": "user"|"assistant"|"system", "content": str}, ...]``。
+                ``system`` 角色會被各 provider 濾掉，請用 ``system`` 參數傳。
+            system: 這一場要用的 system prompt。
+            target: 本輪目標英文句，供帶讀護欄補句用。
+            enforce_readalong: 是否強制回覆恰含一句帶讀。預設 True 以維持
+                既有呼叫端行為不變。
+
+        Returns:
+            通過護欄的回覆文字；失敗、逾時或護欄命中時回 None。
         """
         t0 = time.monotonic()
         backend = "none"
         try:
+            if not any(m.get("role") != "system" for m in messages):
+                # 沒有任何非 system 訊息 = 沒有這一輪，別送空的上雲燒配額。
+                self._record(False, "none", "沒有可送出的對話訊息")
+                return None
             # role="chat"：取為 _TIMEOUT_S（1.5s）挑的快模型。若取到診斷用的
             # 大模型，這條路徑會穩定逾時而永遠降級回 edge。
             bedrock_cfg = bedrock_converse.resolve_config(role="chat")
-            cfg = anthropic_relay.resolve_config()
-            if bedrock_cfg is None and cfg is None:
+            gemini_cfg = gemini_llm.resolve_config() if bedrock_cfg is None else None
+            cfg = (
+                anthropic_relay.resolve_config()
+                if (bedrock_cfg is None and gemini_cfg is None)
+                else None
+            )
+            backend = self.configured_backend()
+            if backend == "none":
                 self._record(False, "none", "未設定任何雲端後端")
                 return None
-            backend = "bedrock" if bedrock_cfg is not None else "relay"
-            target = getattr(scaffold, "target_sentence", None)
-            safe_text = guardrails.deidentify(student_text)  # 上雲前去識別化
-            directive_block = (
-                f"\n{directive.strip()}\n" if directive and directive.strip() else ""
-            )
-            user_prompt = (
-                f"學生剛剛說：「{safe_text}」\n"
-                f"目標英文句：{target or ''}\n"
-                f"{directive_block}"
-                "請照規則回覆：先一句繁體中文稱讚鼓勵，"
-                "再用「跟我說一遍：<英文句>」帶讀目標英文句。"
-            )
-            if bedrock_cfg is not None:
+            if gemini_cfg is not None:
+                # timeout 傳 _TIMEOUT_S 而非讓 gemini_llm 用它自己的 12s 預設
+                # ——理由與下面 Bedrock 那段完全相同。
+                text = gemini_llm.generate_chat(
+                    system,
+                    messages,
+                    cfg=gemini_cfg,
+                    max_tokens=_MAX_TOKENS,
+                    timeout_s=_TIMEOUT_S,
+                )
+            elif bedrock_cfg is not None:
                 # 原生 Bedrock Converse。timeout 刻意傳 _TIMEOUT_S 而非讓
                 # bedrock_converse 用它自己的 12s 預設——斷網橋段（D-03）
                 # 的「恢復 <1-2 秒」全靠這個上界，用錯就直接破功。
-                text = bedrock_converse.converse_text(
-                    _SYSTEM_PROMPT,
-                    user_prompt,
+                text = bedrock_converse.converse_chat(
+                    system,
+                    messages,
                     cfg=bedrock_cfg,
                     max_tokens=_MAX_TOKENS,
                     timeout_s=_TIMEOUT_S,
@@ -191,8 +280,12 @@ class CloudLLM:
                     {
                         "model": cfg["model"],
                         "max_tokens": _MAX_TOKENS,
-                        "system": _SYSTEM_PROMPT,
-                        "messages": [{"role": "user", "content": user_prompt}],
+                        "system": system,
+                        "messages": [
+                            {"role": m.get("role"), "content": m.get("content")}
+                            for m in messages
+                            if m.get("role") != "system" and m.get("content")
+                        ],
                     }
                 ).encode("utf-8")
                 req = urllib.request.Request(
@@ -216,6 +309,9 @@ class CloudLLM:
             # 先繁化（與 edge 同序）再跑帶讀護欄
             text = guardrails.to_traditional(text)
             self._record(True, backend, "ok", int((time.monotonic() - t0) * 1000))
+            if not enforce_readalong:
+                # 即時陪聊契約：孩子問問題時玩偶要能只回答，不是每輪硬補帶讀。
+                return text
             # 帶讀恰好一句：漏句要補、格式跑掉要修、不得重複（與 edge 共用）
             return guardrails.ensure_readalong(text, target)
         except Exception as exc:

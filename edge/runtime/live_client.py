@@ -170,7 +170,12 @@ class PlaybackGate:
     """
 
     def __init__(self, tail_s: float = _PLAYBACK_TAIL_S,
-                 buffer_delay_s: float | None = None, now=time.monotonic):
+                 buffer_delay_s: float | None = None, now=time.monotonic,
+                 rate: int = DOWNLINK_RATE):
+        # rate 預設 DOWNLINK_RATE（24k，Nova Sonic）。pipecat 那條路的邊緣 TTS
+        # 是 22050Hz——**算錯取樣率就會算錯播放時長**，閘門會提早開，
+        # 玩偶就收得到自己的尾音（2026-07-31 真人實測聽成「跟我說一定方」）。
+        self._rate = rate
         self._tail = tail_s
         self._buffer_delay = (_PLAYBACK_BUFFER_US / 1_000_000
                               if buffer_delay_s is None else buffer_delay_s)
@@ -186,7 +191,7 @@ class PlaybackGate:
         24kHz、16-bit、mono → 每秒 2×24000 bytes。若前一段還沒播完就接續累加，
         否則從現在起算。
         """
-        duration = nbytes / 2 / DOWNLINK_RATE
+        duration = nbytes / 2 / self._rate
         start = max(self._now(), self._playing_until)
         self._playing_until = start + duration
         self._buffer_drained = False
@@ -243,17 +248,29 @@ def is_near_field(chunk: bytes, threshold: float = _NEAR_FIELD_PEAK) -> bool:
     return chunk_peak(chunk) >= threshold
 
 
-def build_arecord_argv(device: str) -> list[str]:
-    """上行：16k mono S16_LE raw 串流到 stdout。裝置為空時不帶 -D。"""
+def build_arecord_argv(device: str, rate: int = UPLINK_RATE) -> list[str]:
+    """上行：mono S16_LE raw 串流到 stdout。裝置為空時不帶 -D。
+
+    `rate` 預設 `UPLINK_RATE`（16k，Nova Sonic 的上行取樣率），既有呼叫端行為不變。
+    另一個消費者是 pipecat 的 `AlsaInputTransport`，它會傳入 pipeline 協商出來的
+    取樣率——**餵錯取樣率不會報錯，只會讓音調與速度跑掉**，所以不寫死。
+    """
     argv = ["arecord"]
     if device:
         argv += ["-D", device]
-    argv += ["-f", "S16_LE", "-r", str(UPLINK_RATE), "-c", "1", "-t", "raw", "-"]
+    argv += ["-f", "S16_LE", "-r", str(rate), "-c", "1", "-t", "raw", "-"]
     return argv
 
 
-def build_aplay_argv(device: str) -> list[str]:
-    """下行：從 stdin 讀 24k mono S16_LE raw 播放。裝置為空時不帶 -D。
+def build_aplay_argv(device: str, rate: int = DOWNLINK_RATE) -> list[str]:
+    """下行：從 stdin 讀 mono S16_LE raw 播放。裝置為空時不帶 -D。
+
+    `rate` 預設 `DOWNLINK_RATE`（24k，Nova Sonic 的下行取樣率）。
+
+    **這個參數是 2026-07-31 真機測試逼出來的**：邊緣 TTS 輸出 22050Hz，而當時
+    寫死 24000 送給 aplay，播放會快 8.8%、音調偏高——正是本檔開頭警告的
+    「兩個不同取樣率混用會變成怪腔怪調」，只是這次踩到的是我們自己。
+    **aplay 不會因為取樣率對不上而報錯**，所以單元測試看不出來，要真機才會現形。
 
     `--buffer-time` 不可省：Nova Sonic 的音訊**成批到達、中間有生成空檔**，
     aplay 預設緩衝吸收不了這種抖動，聽感就是「斷斷續續」。2026-07-30 實機
@@ -265,7 +282,7 @@ def build_aplay_argv(device: str) -> list[str]:
     argv = ["aplay"]
     if device:
         argv += ["-D", device]
-    argv += ["-f", "S16_LE", "-r", str(DOWNLINK_RATE), "-c", "1", "-t", "raw",
+    argv += ["-f", "S16_LE", "-r", str(rate), "-c", "1", "-t", "raw",
              "--buffer-time", str(_PLAYBACK_BUFFER_US), "-"]
     return argv
 
