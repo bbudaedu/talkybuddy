@@ -160,3 +160,60 @@ def test_invalid_config_rejected(kw):
     """設定錯誤要當場炸，不要等到現場才發現策略是空的。"""
     with pytest.raises(ValueError):
         FailoverPolicy(**kw)
+
+
+# --- 重試窗：降級之後要能升得回來 -----------------------------------------
+
+
+def test_should_try_primary_is_true_while_healthy():
+    """沒降級時當然要打雲端。"""
+    p = FailoverPolicy()
+    assert p.should_try_primary() is True
+
+
+def test_degraded_skips_primary_until_cooldown_elapses():
+    """剛降級的那段時間不要再浪費逾時去試雲端。"""
+    now = [0.0]
+    p = FailoverPolicy(failure_threshold=2, cooldown_s=30.0, clock=lambda: now[0])
+    p.record_failure()
+    p.record_failure()
+    assert p.degraded is True
+    assert p.should_try_primary() is False
+
+    now[0] = 29.9
+    assert p.should_try_primary() is False
+    now[0] = 30.0
+    assert p.should_try_primary() is True, "冷卻過了就該重試一次，否則永遠升不回去"
+
+
+def test_failed_reprobe_pushes_the_next_window_out():
+    """重試失敗要把下一次重試往後推，不可以每輪都白等一次逾時。"""
+    now = [0.0]
+    p = FailoverPolicy(failure_threshold=2, cooldown_s=30.0, clock=lambda: now[0])
+    p.record_failure()
+    p.record_failure()
+
+    now[0] = 30.0
+    assert p.should_try_primary() is True
+    p.record_failure()                      # 重試也失敗
+    assert p.should_try_primary() is False, "失敗後又立刻重試 = 每輪多等一次逾時"
+
+    now[0] = 60.0
+    assert p.should_try_primary() is True
+
+
+def test_recovers_after_enough_successful_reprobes():
+    """連續成功達門檻就升回雲端。"""
+    now = [0.0]
+    p = FailoverPolicy(
+        failure_threshold=2, recovery_threshold=2, cooldown_s=30.0, clock=lambda: now[0]
+    )
+    p.record_failure()
+    p.record_failure()
+    assert p.degraded is True
+
+    now[0] = 30.0
+    p.record_success()
+    now[0] = 60.0
+    p.record_success()
+    assert p.degraded is False, "連續成功達門檻卻沒升回 PRIMARY"

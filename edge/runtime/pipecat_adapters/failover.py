@@ -95,6 +95,8 @@ class FailoverPolicy:
         self._consecutive_failures = 0
         self._consecutive_successes = 0
         self._last_switch_at: float | None = None
+        # 最近一次「降級期間的重試」發生在什麼時候。見 should_try_primary()。
+        self._last_probe_at: float | None = None
 
     @property
     def route(self) -> Route:
@@ -113,6 +115,28 @@ class FailoverPolicy:
             True when running on the local fallback.
         """
         return self._route is Route.FALLBACK
+
+    def should_try_primary(self) -> bool:
+        """這一輪該不該（再）試一次雲端。
+
+        沒降級時永遠是 True。降級之後就有一個矛盾要解：**不呼叫雲端，就永遠
+        觀察不到「連續成功」，也就永遠升不回去**——`record_success` 等的那個
+        訊號根本不會出現。所以降級期間仍要週期性地重試一次。
+
+        重試的節奏用 `cooldown_s` 這同一個旋鈕，從「上次切換」或「上次重試」
+        兩者較晚的那個算起。少了後者的話，冷卻一過就會變成**每一輪都重試**，
+        鏈路真的斷掉時等於每輪白等一次 `CLOUD_LLM_TIMEOUT_S`。
+
+        Returns:
+            True 表示這一輪應該先嘗試雲端（失敗仍可當輪降級）。
+        """
+        if self._route is Route.PRIMARY:
+            return True
+        since = max(
+            self._last_switch_at if self._last_switch_at is not None else 0.0,
+            self._last_probe_at if self._last_probe_at is not None else 0.0,
+        )
+        return (self._clock() - since) >= self._cooldown_s
 
     def record_success(self) -> Route:
         """Record one successful request.
@@ -137,6 +161,10 @@ class FailoverPolicy:
         Returns:
             The route to use for the next request.
         """
+        # 這次失敗是不是「降級期間的重試」——要在可能的 _switch 之前判定，
+        # 否則剛降級的那一次會被誤記成重試，把下一個重試窗白白往後推。
+        was_degraded = self._route is Route.FALLBACK
+
         self._consecutive_successes = 0
         self._consecutive_failures += 1
 
@@ -146,6 +174,8 @@ class FailoverPolicy:
             and self._consecutive_failures >= self._failure_threshold
         ):
             self._switch(Route.FALLBACK)
+        elif was_degraded:
+            self._last_probe_at = self._clock()
         return self._route
 
     def force(self, route: Route) -> Route:
@@ -177,5 +207,6 @@ class FailoverPolicy:
             return
         self._route = route
         self._last_switch_at = self._clock()
+        self._last_probe_at = None
         self._consecutive_failures = 0
         self._consecutive_successes = 0
