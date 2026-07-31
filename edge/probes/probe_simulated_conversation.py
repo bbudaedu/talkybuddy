@@ -50,6 +50,7 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.utils.time import time_now_iso8601
 
 from edge.runtime.pipecat_adapters.cloud_llm_service import CloudLLMService
+from edge.runtime.pipecat_adapters.turn_recorder import TurnRecorderProcessor
 from edge.runtime.pipecat_adapters.lesson_progress import (
     LessonProgress,
     LessonProgressProcessor,

@@ -109,6 +109,13 @@ class LessonProgress:
         self._advance_after = advance_after
         self._index = 0
         self._streak = 0
+        self.last_utterance: str = ""
+        """孩子最後說的一句原文。
+
+        `LessonProgress` 本來就收得到每一句，順手留著——下游的
+        `TurnRecorderProcessor` 需要它，而那時候 `TranscriptionFrame.text`
+        已經被 `LessonPromptInjector` 覆寫成整段 prompt 了。
+        """
         self.advances = 0
         """這一場換過幾次句子（給探針與現場報數用）。"""
 
@@ -150,6 +157,7 @@ class LessonProgress:
         Returns:
             這一次呼叫有沒有換句子。
         """
+        self.last_utterance = str(student_text or "")
         target = self.current
         if not target:
             return False

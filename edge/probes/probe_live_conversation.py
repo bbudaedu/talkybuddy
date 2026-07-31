@@ -90,6 +90,7 @@ from edge.runtime.live_client import PlaybackGate
 from edge.runtime.pipecat_adapters.alsa_transport import AlsaTransport, AlsaTransportParams
 from edge.runtime.pipecat_adapters.cloud_llm_service import CloudLLMService
 from edge.runtime.pipecat_adapters.edge_tts import EdgeVitsTTSService
+from edge.runtime.pipecat_adapters.turn_recorder import TurnRecorderProcessor
 from edge.runtime.pipecat_adapters.lesson_progress import (
     LessonProgress,
     LessonProgressProcessor,
@@ -179,6 +180,53 @@ def _pids(name: str) -> list[str]:
     return [p for p in r.stdout.split() if p]
 
 
+def _child_memory():
+    """開場取一次孩子畫像；沒有資料或取不到都回 None（不假裝認識他）。
+
+    刻意只在開場呼叫一次：對話路徑的預算是 CLOUD_LLM_TIMEOUT_S（1.5s），
+    多一次 I/O 就少一分餘裕。畫像進了 system prompt 之後，每輪成本是零。
+    """
+    try:
+        from server import child_brief, store
+
+        store.init_db()
+        return child_brief.build_child_brief(
+            store.get_profile(), store.list_due_word_reviews(store.default_student_id()),
+            store.list_diagnoses(),
+        )
+    except Exception:
+        logger.warning("取不到孩子畫像，玩偶用預設開場（對話仍可進行）")
+        return None
+
+
+def _refresh_profile() -> str | None:
+    """對話結束後重算長期 profile；回一句可印的結果或 None。
+
+    這是記憶迴圈的最後一環。少了它，互動紀錄只是躺在資料庫裡的原始資料，
+    `child_brief` 下次還是組不出東西——玩偶永遠是第一次見到這個孩子。
+
+    沿用 `server/app.py:391` 同步時的做法（全量重算 + save_profile），
+    只是把時機從「同步」改成「對話結束」。非同步、慢一點無所謂，
+    絕不能影響剛才那場對話。
+    """
+    try:
+        from server import profile as profile_mod, store
+
+        prof = profile_mod.build_profile(
+            store.list_interactions(limit=500), store.list_diagnoses(),
+            store.get_profile(),
+        )
+        store.save_profile(prof)
+        return (
+            f"互動 {prof.get('interaction_count', 0)} 次｜"
+            f"正在學 {len(prof.get('learning_vocab') or [])} 個字｜"
+            f"已熟 {len(prof.get('mastered_vocab') or [])} 個字"
+        )
+    except Exception:
+        logger.exception("profile 重算失敗（不影響剛才那場對話）")
+        return None
+
+
 def _todays_lesson():
     """從既有的 SQLite 取本場教材；任何失敗回 None，退回寫死的預設。
 
@@ -239,6 +287,10 @@ def _build_llm(lesson=None, progress=None):
     # 那份 prompt 明寫「孩子如果問你別的，一定要先回應他…絕對不可以假裝沒聽到
     # 孩子的話」，正是回合式契約下四輪回覆一模一樣的解藥。`server/app.py` 的
     # /ws/live 一直是這樣跑的——這裡是接上既有契約，不是新發明。
+    brief = _child_memory()
+    if brief:
+        logger.info("已載入孩子畫像（{} 字）", len(brief))
+
     def _live_system() -> str:
         from server import scaffold
 
@@ -253,6 +305,7 @@ def _build_llm(lesson=None, progress=None):
             more = []
         return scaffold.build_live_system_prompt(
             current, directive, topic, max_chars=LIVE_MAX_CHARS,
+            child_brief=brief,
         )
 
     service = CloudLLMService(
@@ -360,6 +413,12 @@ async def main() -> int:
                     target_provider=lambda: progress.current or target_sentence,
                     allow_variation=cloud is not None,
                 ),
+                # 落地要在 LLM 之後（才看得到玩偶說了什麼）。孩子的原話由
+                # LessonProgress 保留——TranscriptionFrame 在上游已被
+                # LessonPromptInjector 覆寫成整段 prompt。
+                TurnRecorderProcessor(
+                    student_text_provider=lambda: progress.last_utterance
+                ),
                 narrator_llm,
                 tts,
                 PlaybackGateSink(gate),     # 記錄下行時長給 gate
@@ -424,6 +483,10 @@ async def main() -> int:
     print(f"玩偶回覆　　　　：{' | '.join(narrator_llm.said) or '(無)'}")
     print(f"輸出音訊 chunk　：{narrator.audio_chunks}")
     print(f"疑似自我打斷次數：{narrator.self_interrupts + narrator_in.self_interrupts}")
+    summary = _refresh_profile()
+    if summary:
+        print(f"畫像已更新　　　：{summary}")
+        print("　　　　　　　　　（下一場玩偶就會記得這些）")
     if cloud is not None:
         # 報**證據**不是報設定：verified_backend() 只在真的成功過才不是 "none"。
         # 這一行就是現場「大腦在雲端」那句話的憑據。

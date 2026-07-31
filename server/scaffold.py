@@ -759,7 +759,8 @@ _LIVE_STATIC_FRAME = (
 
 
 def build_live_system_prompt(target_sentence, directive, topic=None,
-                             max_chars=None, more_sentences=None) -> str:
+                             max_chars=None, more_sentences=None,
+                             child_brief=None) -> str:
     """組裝即時陪聊 system prompt（教練角色 + 跟讀迴圈）。
 
     - target_sentence：今日目標句（可 None）→ 提示教練帶讀、請孩子跟讀。
@@ -792,6 +793,10 @@ def build_live_system_prompt(target_sentence, directive, topic=None,
                      "帶讀時放慢、一次一句，請孩子跟著說一次，再給回饋。")
     if directive and str(directive).strip():
         parts.append(str(directive).strip())
+    if child_brief and str(child_brief).strip():
+        # 開場注入一次的孩子畫像（server.child_brief.build_child_brief）。
+        # 放在教材之後、字數上限之前：它是背景，不是本輪任務。
+        parts.append(str(child_brief).strip())
     if more_sentences:
         rest = [str(x).strip() for x in more_sentences if str(x).strip()]
         rest = [x for x in rest if x != str(target_sentence or "").strip()]
