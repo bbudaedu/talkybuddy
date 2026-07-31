@@ -60,6 +60,7 @@ import os
 import subprocess
 import sys
 import time
+import warnings
 
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -129,6 +130,45 @@ CLOUD_ENV = "TALKYBUDDY_PIPECAT_CLOUD"
 # 安靜環境下關著比較好演示，孩子不必記得先按鍵。見 press_to_talk 的 docstring。
 PTT_ENV = "TALKYBUDDY_PIPECAT_PTT"
 
+# 關掉 pipecat 的閒置逾時。**這不是最佳化，是 2026-08-01 板子上的實測失效**：
+# `PipelineWorker` 預設 `idle_timeout_secs=300` 且 `cancel_on_idle_timeout=True`，
+# 而它判斷「活著」只看 `(BotSpeakingFrame, UserSpeakingFrame)`——沒人講話就算閒置。
+# 啟動後五分鐘沒人開口，它就把 pipeline 連同 arecord 一起砍掉。
+#
+# 最糟的是**死得看不出來**：Python 行程沒退出，systemd 仍是 active，
+# `Restart=always` 因此不會救它。玩偶啞了而監控說一切正常。
+#
+# 玩偶必須能長時間待機（`local_client.py:119` 早就寫下這條需求），
+# 決賽現場架好等上台的那幾分鐘正好踩中。
+IDLE_TIMEOUT_SECS: float | None = None
+
+# `WorkerRunner.run(worker)` 自 pipecat 1.6.0 起 deprecated，官方要改成
+# `add_workers(worker)` + `run()`。**不要改**——兩者語意不同，實測（1.5.0 與
+# 1.6.0 都一樣）：
+#
+#   run(worker)              worker 死掉時 runner 跟著結束 → 行程退出 → systemd 重啟
+#   add_workers() + run()    worker 死掉時 runner **繼續跑** → 行程不退出
+#
+# 後者會把 serve_pipeline 的自癒能力整個拿掉，退回「service active 但玩偶啞了」。
+# 用 test_pipecat_idle_timeout.py 的 test_add_workers_would_break_self_healing 釘住。
+#
+# 只把那行警告消音（不是關掉整類 DeprecationWarning）：現場有人在讀這份 log
+# 判斷玩偶活了沒，兩行雜訊會蓋在「🟢 開始了」正下方。
+_RUNNER_DEPRECATION_RE = r".*Passing a worker to WorkerRunner\.run\(\).*"
+
+
+def silence_runner_deprecation() -> None:
+    """把 `run(worker)` 那一行 deprecation 警告消音，其餘警告照舊。
+
+    抽成具名函式是為了可測——測試要能在乾淨的 filter 狀態下驗證它真的擋得住。
+    """
+    warnings.filterwarnings(
+        "ignore", message=_RUNNER_DEPRECATION_RE, category=DeprecationWarning
+    )
+
+
+silence_runner_deprecation()
+
 # 每則回覆字數上限。板子實測：36 字 = 合成 3.12s + 播放 5.77s + 死區 2.6s
 # = 一輪光是「玩偶講話」就吃掉 11.5 秒。砍字數是唯一同時砍合成與播放的手段。
 LIVE_MAX_CHARS = 25
@@ -139,6 +179,52 @@ try:
     SYSTEM_PROMPT = EdgeLLM._SYSTEM_PROMPT
 except Exception:
     SYSTEM_PROMPT = "你是陪伴孩子學英文的玩偶。用一句話回答。"
+
+
+async def serve_pipeline(runner, worker, seconds: float, forever: bool) -> None:
+    """跑 pipeline，直到它自己結束（服務模式）或時間到（限時模式）。
+
+    **服務模式一定要在 runner 回來時跟著回來。** 原本這裡是
+    `asyncio.gather(runner.run(worker), stop_after())`，而服務模式的
+    `stop_after()` 是 `while True: await asyncio.sleep(3600)`——2026-08-01
+    板子實測，pipeline 被 pipecat 的閒置逾時砍掉之後，gather 還在等那個睡一
+    小時的協程，於是行程不退出、systemd 顯示 `active`、`Restart=always`
+    永遠不觸發。玩偶啞了而監控說一切正常。
+
+    關掉閒置逾時（見 `IDLE_TIMEOUT_SECS`）只拿掉一種死法；讓行程退出才是
+    對**任何**死法都成立的解——systemd 重啟一次約 7 秒，比啞掉整場好。
+
+    Args:
+        runner: pipecat 的 runner。
+        worker: 要跑的 `PipelineWorker`。
+        seconds: 限時模式跑多久。
+        forever: True 為服務模式，不自己結束。
+    """
+    if forever:
+        await runner.run(worker)
+        return
+
+    async def stop_after():
+        try:
+            await asyncio.sleep(seconds)
+        except asyncio.CancelledError:
+            return
+        await worker.queue_frames([EndFrame()])
+
+    await asyncio.gather(runner.run(worker), stop_after())
+
+
+def build_worker(pipeline, idle_timeout_secs: float | None = IDLE_TIMEOUT_SECS):
+    """組出玩偶的 `PipelineWorker`，預設不會因為沒人講話而自己死掉。
+
+    Args:
+        pipeline: 要跑的 pipeline。
+        idle_timeout_secs: 閒置多久算閒置；`None` 代表關掉這個機制。
+
+    Returns:
+        設定好的 `PipelineWorker`。
+    """
+    return PipelineWorker(pipeline, idle_timeout_secs=idle_timeout_secs)
 
 
 class Narrator(FrameProcessor):
@@ -401,7 +487,9 @@ async def main() -> int:
         ),
     )
 
-    worker = PipelineWorker(
+    # build_worker 而非直接 PipelineWorker：預設的閒置逾時會把待機中的玩偶砍掉，
+    # 見 IDLE_TIMEOUT_SECS 的註解與 test_pipecat_idle_timeout.py。
+    worker = build_worker(
         Pipeline(
             [
                 transport.input(),
@@ -486,23 +574,10 @@ async def main() -> int:
     print("   建議說：我想要蘋果")
     print("=" * 62)
 
-    async def stop_after():
-        if forever:
-            # 服務模式：不自己結束，等 systemd／Ctrl-C 來收。
-            try:
-                while True:
-                    await asyncio.sleep(3600)
-            except asyncio.CancelledError:
-                pass
-            return
-        try:
-            await asyncio.sleep(seconds)
-        except asyncio.CancelledError:
-            pass
-        await worker.queue_frames([EndFrame()])
-
     try:
-        await asyncio.gather(runner.run(worker), stop_after())
+        # serve_pipeline 而非 gather：服務模式必須在 pipeline 死掉時跟著回來，
+        # 否則行程不退出、systemd 以為一切正常。見它的 docstring。
+        await serve_pipeline(runner, worker, seconds, forever)
     except KeyboardInterrupt:
         print("\n收到 Ctrl-C，收尾中…")
     finally:
