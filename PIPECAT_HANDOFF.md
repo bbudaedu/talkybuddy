@@ -1,8 +1,13 @@
-# 交接：pipecat edge 已完成，下一步接雲端
+# 交接：pipecat edge 完成、雲端接線完成，卡在憑證
 
-**日期**：2026-07-31　**分支**：`feat/pipecat-edge`（worktree `/home/budaedu/talkybuddy-pipecat`）
-**狀態**：edge 全鏈路真人驗證通過；雲端未接
-**使用者裁示**：「edge 這樣就可以了，重點是雲端，把雲端接通」
+**日期**：2026-07-31（雲端章節同日稍晚更新）
+**分支**：`feat/pipecat-edge`（worktree `/home/budaedu/talkybuddy-pipecat`）
+**狀態**：edge 全鏈路真人驗證通過；**雲端接線完成並以真網路驗證過，但 Bedrock 本身接不上**
+**使用者裁示**：「edge 這樣就可以了，重點是雲端，把雲端接通」→
+「AWS 帳號沒救 只能決賽用官方資源」
+
+**下一個 session 最短路徑**：直接讀第三節末的〈決賽現場接通程序〉。
+程式碼那邊沒有待辦了，缺的是可用的雲端憑證。
 
 ---
 
@@ -65,51 +70,99 @@
 
 ---
 
-## 三、雲端：下一個 session 的主線
+## 三、雲端：接線已完成，卡在憑證（2026-07-31 更新）
 
-### 已查證的現況
+> ⚠️ **本節原本寫的「憑證有效，只差找對 model ID」是錯的**，已重寫。
+> model ID 那題 `server/bedrock_converse.py` 與 `deploy/aws/STATUS.md` 早就解過；
+> 換上正確的 region + model 之後，真正的阻塞才浮出來。保留這句是因為它正是
+> 第四節那個教訓的又一次重演。
 
-| 項目 | 狀態 |
+### 三條雲端路，全部實測過，卡點都不在程式碼
+
+| 路徑 | 實測結果 | 阻塞點 |
+|---|---|---|
+| **Bedrock**（決賽主線） | `AccessDeniedException: Your account is currently being verified` | AWS 帳號驗證卡死（自 07-26 起 5 天，遠超「2 小時」）。**使用者裁定：此帳號放棄，決賽只用官方資源** |
+| **relay** `192.168.100.200:8317` | 通，但接 **Claude 系列**時 system prompt 被上游 Claude Code 蓋掉 —— 玩偶回「我是 Claude Code，Anthropic 的官方 CLI 工具」並拒絕教英文 | 那個中轉的性質，不是我們的 bug |
+| **Anthropic 官方端點** | HTTP 401 `invalid x-api-key` | 板子那把 key 是中轉用的，非官方 key |
+
+補三個查證到的事實：
+
+- `ap-east-2` 的 11 個 anthropic inference profile 都在，`bedrock_converse.py`
+  寫死的兩顆預設（`global.anthropic.claude-sonnet-5`、
+  `global.anthropic.claude-haiku-4-5-20251001-v1:0`）**確實存在**。region 與
+  前綴都是對的，問題純粹在帳號。
+- 開發機 `~/.aws` 與板子 `.env` 是**同一組 access key**（`AKIAZKQ2…`），
+  所以在板子上裝 boto3 也會撞同一堵牆 —— **不要為此去動決賽 venv**。
+- **板子對外網路是通的**（`api.anthropic.com` HTTP 405、0.199s）。
+  也就是說憑證一對，板子直連雲端**不需要 tunnel** —— 上一版說「決賽現場要靠
+  tunnel」只對 relay 那條路成立。
+
+### 可用的替身：中轉的非 Anthropic 模型
+
+要在沒有 Bedrock 的情況下驗證接線，用中轉的 **Gemini／GPT** 上游，它們不會被
+注入 Claude Code 的人格：
+
+| 模型 | 延遲（開發機→中轉） |
 |---|---|
-| 板子 `.env` 的 `ANTHROPIC_BASE_URL` | `http://127.0.0.1:8317` ← **指向板子自己，沒人在聽** |
-| Ubuntu-AI-Server `192.168.100.200:8317` | `cli-proxy-api` 活著（relay 可用） |
-| 板子上的 `boto3` | ❌ **沒有安裝** ← AWS 路徑從未成功的底層原因 |
-| `AWS_REGION` | ❌ 未設 |
-| AWS 憑證有效性 | ✅ **有效**（見下） |
+| `gemini-3.1-flash-lite` | **2.3–3.0s**（目前最快，建議用這顆驗證） |
+| `Gemini 3.5 Flash` | 2.6s ~ 11.8s（同一天內差 4 倍，中轉本身會慢） |
+| `gpt-5.4-mini` | 7.1s |
 
-### 關鍵發現：Bedrock 憑證是通的
+⚠️ **這些數字不能拿來預測 Bedrock**。中轉的吞吐會隨時間大幅變動（同一顆模型、
+同一個 prompt，稍早 2.6s、稍後 11.8s），它只是驗證接線的替身。
 
-在 `/root/pipecat-lab/.venv`（已裝 boto3）用 `ap-southeast-1` 呼叫 Converse：
+### pipecat 端已完成（測試綠，真網路驗證過）
 
+| 元件 | 檔案 |
+|---|---|
+| 雲端 LLM service | `pipecat_adapters/cloud_llm_service.py` |
+| 真網路驗證探針 | `edge/probes/probe_cloud_llm_service.py` |
+| 真人對話接上雲端 | `probe_live_conversation.py`（`TALKYBUDDY_PIPECAT_CLOUD=1` opt-in） |
+| 已組好的 prompt 進入點 | `CloudLLM.generate_from_prompt` / `EdgeLLM.generate_from_prompt` |
+| 上雲前去識別化 | `LessonPromptInjector(deidentify=True)` |
+| 降級後升得回來 | `FailoverPolicy.should_try_primary()` |
+
+`tests/` 1404 全綠（新增 22 條）。
+`server/streaming/tests/` 的 11 紅 + 3 error 是**開發機缺 sherpa 模型檔**，
+在乾淨的樹上一模一樣，與這些改動無關。
+
+**兩個偏離既有文件的設計決定**（理由都寫在原始碼與 `docs/PIPECAT_EDGE_DESIGN.md`）：
+
+1. **降級是「當輪」不是「下一輪」**。原文件說用官方 `ServiceSwitcher`，但它是
+   收到 `ErrorFrame` 後換掉 service，**觸發切換的那一輪沒有回覆** —— 孩子聽到
+   沉默，而沉默的症狀跟玩偶壞掉一模一樣。改成兩層：`CloudLLMService` 當輪降級
+   （不掉輪），`FailoverPolicy` 決定接下來幾輪還要不要試雲端。
+2. **包既有 `CloudLLM` 而不是用 pipecat 原生 `AWSBedrockLLMService`**。前者帶著
+   去識別化、`verified()` 證據追蹤、Bedrock→relay 兩層降級，且與 edge 路徑逐字
+   共用同一份護欄 helper。代價是非串流（完整回覆一次推下去）。
+
+### 決賽現場接通程序（因為 Bedrock 事前驗不了）
+
+拿到官方 AWS 憑證之後，照這個順序做，每一步都會產生可以拿出來的證據：
+
+```bash
+# 1. 列出「這個帳號」實際可用的 model ID —— 各帳號不同，寫死的字串很容易過期
+PYTHONPATH=. python -m server.bedrock_converse
+
+# 2. 不佔麥克風、失敗成本最低的一跑
+PYTHONPATH=. TALKYBUDDY_CLOUD_PROVIDER=bedrock BEDROCK_REGION=<region> \
+  python edge/probes/probe_cloud_llm_service.py
+
+# 3. 上一步綠了再跑真人對話（會佔麥克風）
+TALKYBUDDY_PIPECAT_CLOUD=1 TALKYBUDDY_CLOUD_PROVIDER=bedrock BEDROCK_REGION=<region> \
+  PYTHONPATH=/root/pipecat-lab ./.venv/bin/python probe_live_conversation.py
 ```
-❌ ValidationException: The provided model identifier is invalid.
-```
 
-**這不是認證失敗，是 model ID 不對** —— 表示憑證有效、region 可連、網路通。
-下一步只要找對 model ID（試 inference profile ARN 或 `bedrock list-foundation-models`）。
+**看 `雲端實際走的` 那一行**：它是 `verified_backend()`，只有真的成功過才不是
+`none`。設定讀數會騙人，這個不會。
 
-我試的是 `apac.anthropic.claude-sonnet-4-5-20250929-v1:0`。
-
-### 建議的接法（兩條路，擇一或都做）
-
-**A. relay（快，但依賴這台機器）**
-`ANTHROPIC_BASE_URL` → `http://192.168.100.200:8317`。
-pipecat 端直接用 `OpenAILLMService(base_url=...)` 換掉 llama-server 那顆。
-⚠️ 實測 edge→server RTT 116ms、**鏈路 2026-07-31 斷過兩次**（半夜一次、白天一次）。
-決賽現場要靠 tunnel。
-
-**B. Bedrock（決賽方向）**
-決賽用官方 AWS 資源，所以這條才是主線。要做的：
-1. 找對 model ID（憑證已證實可用）
-2. 板子上裝 `boto3`（決賽 venv 或 lab venv —— **改決賽 venv 需要使用者授權**）
-3. 設 `AWS_REGION`
-4. pipecat 端接：pipecat 有 `services/aws/`，或用 `server/bedrock_converse.py` 包成 `LLMService`
+板子上還要做的兩件事（**動決賽 venv 需要使用者授權**）：
+`pip install boto3`、設 `BEDROCK_REGION`。
 
 ### 接雲端之後別忘了
 
-- **`failover.py` 就是為這一刻寫的** —— 雲端不可達時切回本機 llama-server，
-  麥克風所有權不轉移。接線方式寫在 `docs/PIPECAT_EDGE_DESIGN.md`
-  （用官方 `ServiceSwitcher` 做路由，`FailoverPolicy` 決定何時切）
+- **`CLOUD_LLM_TIMEOUT_S` 預設 1.5s**。每輪延遲超過它就會**每輪都降級回 edge**，
+  雲端等於白接。探針會在超過時直接印警告。
 - **ctx 限制會消失** —— 雲端模型 context 遠大於 512，
   `StatelessContextProcessor` 可以拿掉，玩偶就能記得上一輪
 - **round_total 的瓶頸也會變** —— 目前 LLM 佔 78%（3.9s），換雲端後
@@ -129,6 +182,7 @@ pipecat 端直接用 `OpenAILLMService(base_url=...)` 換掉 llama-server 那顆
 | 自寫 sherpa VAD | 官方 `SileroVADAnalyzer` | 白寫，還踩到 sample_rate 陷阱 |
 | 累積對話歷史（pipecat 預設） | `EdgeLLM.generate` 的無狀態設計 | **ctx 爆掉** |
 | `AlwaysUserMuteStrategy` | `live_client.PlaybackGate` | 擋錯層，玩偶還是聽到自己 |
+| 自己試 `ap-southeast-1` + `apac.` 前綴 | `bedrock_converse.py:28-46` 與 `deploy/aws/STATUS.md` 早就查證過：`ap-east-2` 只提供 `global.` 前綴 | 拿到誤導性的 `ValidationException`，於是**把「帳號被鎖」誤判成「model ID 沒找對」**，還寫進交接文件，害下一個 session 從錯的前提出發 |
 
 **下一個 session 接雲端前，先讀 `server/cloud_llm.py`、`server/bedrock_converse.py`、
 `server/pipeline.py` 既有的雲端路徑怎麼寫的**，不要重新發明。

@@ -174,8 +174,37 @@ pipecat 有 `pipeline/service_switcher.py`，提供 `ServiceSwitcher`
 via the `on_service_switched` event」。而「一錯就切」正是本設計論證過會在
 116ms／會整條斷的鏈路上抖動的做法。
 
-**接線方式**：用官方 `ServiceSwitcher` 做路由，把 `FailoverPolicy` 掛在
-`on_service_switched` 與錯誤處理上決定何時切、何時切回。**不要自己另做 frame 路由。**
+**接線方式（2026-07-31 修正，讀過 `service_switcher.py` 原始碼之後）**：
+
+原本這裡寫的是「用官方 `ServiceSwitcher` 做路由」。**實作時發現那達不到本節
+自己訂的目標**，所以改了，理由記在這裡免得下一個人又繞回去：
+
+`ServiceSwitcher` 是收到非致命 `ErrorFrame` 後**換掉作用中的 service**，換完
+之後的 frame 才走新路。也就是說，**觸發切換的那一輪沒有回覆**。對著玩偶講話
+的孩子聽到的是沉默——而沉默的症狀跟「玩偶壞了」一模一樣，正是上面問題 1、2
+要避免的東西。
+
+實際採用的是兩層，各司其職（見 `pipecat_adapters/cloud_llm_service.py`）：
+
+| 層 | 誰做 | 管什麼 |
+|---|---|---|
+| **當輪降級** | `CloudLLMService` | 雲端這次沒回 → 立刻改用本機 `fallback`，這一輪不掉 |
+| **跨輪路由** | `FailoverPolicy` | 連續失敗就別再浪費 `CLOUD_LLM_TIMEOUT_S` 去試 |
+
+第一層保證不掉輪（代價是那一輪比較慢：雲端逾時之後還要再等 edge 生成），
+第二層保證那個代價不會每輪都付。`CloudLLM` 與 `EdgeLLM` 都提供
+`generate_from_prompt(prompt, *, target)`，形狀相同才能在同一輪內互換。
+
+`ServiceSwitcher` 仍可用在「兩個 service 都健康、只是要手動切」的場景
+（demo 控制），但它不是降級機制。**不要自己另做 frame 路由。**
+
+### 降級之後怎麼升得回來
+
+`FailoverPolicy.should_try_primary()`：降級期間仍要週期性重試雲端，否則
+`record_success()` 等的那個訊號永遠不會出現——不呼叫雲端，就永遠觀察不到
+「連續成功」，也就**永遠升不回去**。重試節奏用 `cooldown_s` 這同一個旋鈕，
+從「上次切換」或「上次重試」兩者較晚的算起（少了後者，冷卻一過就會變成每輪
+重試，鏈路真的斷掉時等於每輪白等一次逾時）。
 
 | 參數 | 預設 | 為什麼 |
 |---|---|---|
