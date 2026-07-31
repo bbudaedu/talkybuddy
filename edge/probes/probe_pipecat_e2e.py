@@ -16,6 +16,7 @@ from pipecat.frames.frames import (
     LLMTextFrame,
     TranscriptionFrame,
     TTSAudioRawFrame,
+    TTSTextFrame,
 )
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -27,6 +28,7 @@ from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.utils.time import time_now_iso8601
 
 from edge.runtime.pipecat_adapters.edge_tts import EdgeVitsTTSService
+from edge.runtime.pipecat_adapters.opencc_processor import OpenCCProcessor
 
 LLAMA_BASE_URL = "http://127.0.0.1:8080/v1"
 
@@ -59,6 +61,7 @@ class Timeline(FrameProcessor):
         self.marks: list[tuple[str, float]] = []
         self.audio_bytes = 0
         self.text_parts: list[str] = []
+        self.tts_text_parts: list[str] = []
 
     def start_clock(self):
         self.t0 = time.perf_counter()
@@ -75,6 +78,8 @@ class Timeline(FrameProcessor):
             self.text_parts.append(frame.text)
         elif isinstance(frame, LLMFullResponseEndFrame):
             self._mark("llm_done")
+        elif isinstance(frame, TTSTextFrame):
+            self.tts_text_parts.append(frame.text)
         elif isinstance(frame, TTSAudioRawFrame):
             if not any(m[0] == "tts_first_audio" for m in self.marks):
                 self._mark("tts_first_audio")
@@ -117,8 +122,10 @@ async def main(use_real_tts: bool):
     # 放後面就看不到了）；timeline 在 TTS 之後量音訊。
     llm_probe = Timeline()
     llm_probe.t0 = None
+    # OpenCC 放在 TTS 之後：TTSTextFrame 是聚合過的完整句子，轉換不會破壞
+    # s2twp 的詞彙對應；而發音層面實測繁簡念得一樣，不需要轉（見 opencc_processor）。
     worker = PipelineWorker(
-        Pipeline([agg.user(), llm, llm_probe, tts, timeline, agg.assistant()])
+        Pipeline([agg.user(), llm, llm_probe, tts, OpenCCProcessor(), timeline, agg.assistant()])
     )
     runner = PipelineRunner()
 
@@ -142,6 +149,8 @@ async def main(use_real_tts: bool):
     print(f"system prompt：{'真實 EdgeLLM' if _REAL_PROMPT else '簡短替代'}"
           f"（{len(SYSTEM_PROMPT)} 字）  user prompt {len(USER_TEXT)} 字")
     print(f"使用者輸入：我想要蘋果")
+    print(f"LLM 原始輸出：{''.join(llm_probe.text_parts).strip()}")
+    print(f"逐字稿(OpenCC)：{''.join(timeline.tts_text_parts).strip()}")
     print(f"玩偶回應　：{''.join(llm_probe.text_parts).strip()}")
     print("-" * 64)
     for label in ("llm_first_text", "llm_done"):

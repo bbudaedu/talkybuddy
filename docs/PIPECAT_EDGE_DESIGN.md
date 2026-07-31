@@ -23,23 +23,35 @@
 
 | 指標 | 現行架構 | pipecat | 差異 |
 |---|---|---|---|
-| **first-audio**（孩子聽到第一個字） | 約 5022ms<sup>*</sup> | **1462–3381ms** | **明顯改善** |
-| round_total（整段講完） | 4685–5025ms | 3129–5405ms | 同量級，樣本少不宜下強結論 |
+| **first-audio**（孩子聽到第一個字） | 約 5022ms<sup>*</sup> | **1733–2700ms** | **明顯改善** |
+| round_total（整段講完） | 4685–5025ms | **3161–3423ms** | 改善，但見下方但書 |
 
 <sup>*</sup>現行架構是「LLM 全部跑完才開始 TTS」：`a874141` 量到 llm 3859ms
 ＋ tts_first 1163ms ≈ 5022ms。
 
-**決定性證據不是那些數字，而是 `tts_first_audio` 早於 `llm_done`**
-（四次量測中兩次明顯如此：1462 < 2706、2328 < 2709）。那代表 pipecat 在 LLM
-還在生成時，就把已完成的**第一個句子**送去合成播放了——現行架構做不到這件事。
+**決定性證據不是那些數字，而是 `tts_first_audio` 早於 `llm_done`**——
+暖機後連續四次量測**全部如此**：
 
-**所以「pipecat 不會讓對話變快」只對了一半**：它不會讓 LLM 變快（LLM 仍是
-2.7–3.3s），但它讓孩子**不必等 LLM 講完才聽到聲音**。對感知上的流暢度而言，
+| | llm_done | tts_first_audio | round_total |
+|---|---|---|---|
+| 1 | 2996 | **1881** | 3423 |
+| 2 | 2656 | **2017** | 3257 |
+| 3 | 2728 | **2700** | 3161 |
+| 4 | 2792 | **1733** | 3245 |
+
+那代表 pipecat 在 LLM 還在生成時，就把已完成的**第一個句子**送去合成播放了——
+現行架構做不到這件事。round_total 也因此縮短：總時間變成
+「LLM 時間 + **最後一句**的 TTS」，而不是「LLM 時間 + **整段**的 TTS」。
+
+**所以「pipecat 不會讓對話變快」只對了一半**：它不會讓 LLM 變快，
+但它讓孩子**不必等 LLM 講完才聽到聲音**。對感知上的流暢度而言，
 first-audio 才是那個關鍵指標。
 
-（樣本僅四次、變異大，且量測方式與現行的 `probe_latency` 多輪中位數不完全可比。
-`tts_first_audio < llm_done` 這個現象本身不受樣本數影響，但**時間數字要當作
-量級參考而非定論**。）
+⚠️ **但 LLM 那段的差異不要歸功給 pipecat**：本量測的 `llm_done` 是 2656–2996ms，
+而 `a874141` 量到 3859ms。那個差距可能來自 prompt 長度或量測方式不同
+（本量測的 user prompt 79 字，現行含 directive 可能更長），
+**不是 pipecat 讓 LLM 變快了**——它動不到推論速度。
+可以明確歸功給 pipecat 的只有 `tts_first_audio < llm_done` 這個重疊。
 
 ---
 
@@ -117,7 +129,27 @@ Genio 520（單一行程，麥克風所有權不轉移）
 | STT | **自寫 `sensevoice_stt`** | 包既有引擎，不重載模型 |
 | TTS | **自寫 `edge_tts`** | 包既有 sherpa VITS |
 | LLM | **官方 `OpenAILLMService`** | llama-server 本來就是 OpenAI 相容 |
+| 簡轉繁 | **自寫 `opencc_processor`** | LLM 會吐簡體，見下 |
 | 降級 | **自寫 `failover`** | 純狀態機，無 I/O |
+
+### 簡轉繁放在 TTS 之後，而且是低頻保險
+
+llama-server 的 qwen2.5-1.5b **會吐簡體**（無 system prompt 直接問，回的是
+「苹果的英文是 apple」）。但接上真實教材 prompt（其中寫明「只用繁體中文和英文
+回覆」）後，**連續四次端到端量測 LLM 都輸出繁體，OpenCC 一次都沒觸發**。
+
+所以它是保險，不是熱路徑。仍然要留著——system prompt 是請求不是保證。
+
+放在 **TTS 之後**的兩個理由（都有實測支撐）：
+
+1. **發音層面不需要轉**。閉環實測（TTS 合成 → SenseVoice 回頭辨識）：
+   繁簡輸入念出來的內容**完全一致、沒有漏字**，`zh_CN-huayan-medium` 兩種都認得。
+2. **放 TTS 之前會壞事**。那裡的 `LLMTextFrame` 是串流 token 片段，
+   而 `s2twp` 含詞彙轉換（「軟件」→「軟體」），**逐 token 轉會破壞詞彙邊界**。
+   `TTSTextFrame` 則是聚合過的完整句子。
+
+官方的 `text_transforms` 鉤子改不到逐字稿——`TTSTextFrame` 帶的是**原始未轉換
+文字**（`tts_service.py:1182` 刻意如此，避免 TTS 標記污染對話 context）。
 
 ---
 
