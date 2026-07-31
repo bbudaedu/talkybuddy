@@ -156,6 +156,37 @@ async def test_filter_does_not_play_the_cue_while_disarmed():
 
 
 @pytest.mark.asyncio
+async def test_a_hanging_cue_does_not_block_the_uplink():
+    """提示音卡住時上行仍要通過——否則按了鍵玩偶就聾。
+
+    `_play_cue` 走 `transport.output().write_audio_frame()`，裡面是
+    `stdin.write()` + `await drain()`。aplay 的緩衝被 keepalive 餵滿時
+    `drain()` 會等，而它是在 `process_frame` 裡 await 的——**擋住的正是上行**。
+
+    症狀完全對得上 2026-08-01 真人實測：音訊照樣被讀進 python（transport 的
+    reader task 不受影響）、但 VAD 一次都沒觸發、閘門 15 秒後由等待執行緒自己
+    關掉。從外面看就是「按了、有嗶聲、講話沒反應」。
+    """
+    import asyncio as _aio
+    import threading
+
+    async def hanging_cue():
+        await _aio.sleep(60)
+
+    gate = PressToTalkGate(now=lambda: 1000.0)
+    never = threading.Event()
+    filt = PressToTalkFilter(gate, trigger=never.wait, cue=hanging_cue)
+    gate.arm()
+
+    down, _ = await _aio.wait_for(
+        run_test(filt, frames_to_send=[_mic()], expected_down_frames=None), timeout=5.0
+    )
+
+    audio = [f for f in down if isinstance(f, InputAudioRawFrame)]
+    assert audio and audio[0].audio == b"\x11" * 640, "提示音卡住時上行仍要原封不動通過"
+
+
+@pytest.mark.asyncio
 async def test_cue_failure_does_not_break_the_conversation():
     """喇叭出問題時提示音發不出來，但玩偶還是要能聽孩子講話。"""
 

@@ -46,6 +46,7 @@ setup/cleanup 生命週期走。
 
 from __future__ import annotations
 
+import asyncio
 import math
 import struct
 import threading
@@ -60,6 +61,9 @@ from edge.runtime import audio_io
 
 # 按了鍵卻沒開口就走人時要自己關掉，否則閘門一直開著收會場噪音。
 DEFAULT_IDLE_TIMEOUT_S = 15.0
+
+# 提示音最多等這麼久。喇叭卡住時不該把背景工作永遠掛著。
+CUE_TIMEOUT_S = 2.0
 
 # 等待「孩子講完 → 閘門關上」的輪詢間隔。20Hz 對背景執行緒是免費的，
 # 換來不必在兩個執行緒之間拉一條 Event。
@@ -193,6 +197,7 @@ class PressToTalkFilter(FrameProcessor):
         self._gate = gate
         self._trigger = trigger or audio_io.wait_for_trigger
         self._cue = cue
+        self._cue_task: asyncio.Task | None = None
         self._thread: threading.Thread | None = None
         self._gave_up = False
         self._muted_frames = 0
@@ -245,6 +250,14 @@ class PressToTalkFilter(FrameProcessor):
             while self._gate.is_armed():
                 time.sleep(_REARM_POLL_S)
 
+    async def _play_cue_safely(self) -> None:
+        """在背景放提示音，逾時或出錯都不影響對話。"""
+        try:
+            await asyncio.wait_for(self._cue(), timeout=CUE_TIMEOUT_S)
+        except Exception:
+            # 喇叭出問題不該讓玩偶聾掉——提示音是加分項，聽孩子講話不是。
+            logger.warning("提示音發不出來，對話照常進行", exc_info=True)
+
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Replace uplink audio with silence until the key is pressed.
 
@@ -255,11 +268,11 @@ class PressToTalkFilter(FrameProcessor):
         await super().process_frame(frame, direction)
         self._ensure_waiter()
         if self._cue is not None and self._gate.take_cue():
-            try:
-                await self._cue()
-            except Exception:
-                # 喇叭出問題不該讓玩偶聾掉——提示音是加分項，聽孩子講話不是。
-                logger.warning("提示音發不出來，對話照常進行", exc_info=True)
+            # **不可以 await**：提示音走 aplay 的 stdin，緩衝滿時 `drain()` 會等，
+            # 而這裡是**上行路徑**——擋住它就等於玩偶聾掉（音訊照樣被讀進來，
+            # 但卡在這一層進不了 VAD，從外面看就是「按了、有嗶聲、講話沒反應」）。
+            # 見 test_a_hanging_cue_does_not_block_the_uplink。
+            self._cue_task = asyncio.create_task(self._play_cue_safely())
         if isinstance(frame, InputAudioRawFrame):
             armed = self._gate.is_armed()
             if armed != self._was_armed:
