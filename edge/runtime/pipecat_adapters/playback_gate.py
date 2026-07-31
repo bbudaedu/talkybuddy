@@ -92,6 +92,7 @@ class PlaybackGateFilter(FrameProcessor):
         *,
         now: Callable[[], float] = time.monotonic,
         stuck_warn_s: float = DEFAULT_STUCK_WARN_S,
+        on_reopen: Callable[[], None] | None = None,
         **kwargs,
     ):
         """Initialize the playback gate filter.
@@ -100,10 +101,13 @@ class PlaybackGateFilter(FrameProcessor):
             gate: Shared PlaybackGate instance, also held by the sink.
             now: Injectable clock, for tests.
             stuck_warn_s: Warn once when the uplink stays closed this long.
+            on_reopen: 上行重新開啟時呼叫一次。按鍵觸發靠它「玩偶講完就自動
+                開始聽」——跟讀的自然反應是立刻跟著唸，不是先按鈕。
         """
         super().__init__(**kwargs)
         self._gate = gate
         self._now = now
+        self._on_reopen = on_reopen
         self._stuck_warn_s = stuck_warn_s
         self._muted_frames = 0
         self._was_open = True
@@ -128,6 +132,12 @@ class PlaybackGateFilter(FrameProcessor):
             logger.info(f"PlaybackGate 開啟上行（關了 {deaf_s:.1f}s，靜音 {eaten} 幀）")
             self._closed_since = None
             self._warned_stuck = False
+            if self._on_reopen is not None:
+                try:
+                    self._on_reopen()
+                except Exception:
+                    # 通知對象壞掉不該讓玩偶聾掉——聽孩子講話比自動開始聽重要。
+                    logger.warning("上行重開的通知失敗，對話照常進行", exc_info=True)
         else:
             self._closed_since = self._now()
             self._closed_at_frames = self._muted_frames

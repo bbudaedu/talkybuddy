@@ -192,6 +192,46 @@ async def test_stuck_warning_is_not_repeated_every_frame(logged):
 
 
 @pytest.mark.asyncio
+async def test_reopening_notifies_a_listener():
+    """玩偶講完就要能通知別人——按鍵觸發靠它自動開始聽。
+
+    2026-08-01 真人測試：玩偶說「跟我說一遍：I see a dog.」之後，孩子的自然反應
+    是立刻跟著唸，不是先按鈕。少了這個通知，跟讀——這個產品的核心互動——就死了。
+    """
+    calls: list[int] = []
+    clock = [1000.0]
+    gate = _gate(clock)
+    gate.note_audio(RATE * 2)          # 1 秒音訊 → 閘門關閉
+    f = PlaybackGateFilter(gate, now=lambda: clock[0], on_reopen=lambda: calls.append(1))
+
+    await _run(f, [_mic()])            # 關閉
+    assert calls == [], "關閘時不該通知"
+
+    clock[0] += 1.0 + 2.0 + 0.6 + 0.1  # 播完 + 緩衝 + tail
+    await _run(f, [_mic()])            # 重開
+    assert calls == [1], "重開時要通知一次"
+
+
+@pytest.mark.asyncio
+async def test_reopen_listener_failure_does_not_break_the_uplink():
+    """通知對象出錯時上行照舊——聽孩子講話比自動開始聽重要。"""
+    clock = [1000.0]
+    gate = _gate(clock)
+    gate.note_audio(RATE * 2)
+
+    def boom():
+        raise RuntimeError("壞了")
+
+    f = PlaybackGateFilter(gate, now=lambda: clock[0], on_reopen=boom)
+    await _run(f, [_mic()])
+    clock[0] += 3.7
+    down = await _run(f, [_mic()])
+
+    audio = [x for x in down if isinstance(x, InputAudioRawFrame)]
+    assert audio and audio[0].audio == b"\x11" * 640
+
+
+@pytest.mark.asyncio
 async def test_sink_and_filter_share_state():
     """兩個 processor 在 pipeline 的不同位置，必須共用同一個 gate 實例。"""
     clock = [1000.0]

@@ -547,7 +547,11 @@ async def main() -> int:
                 transport.input(),
                 # 沒按鍵之前就換靜音，會場噪音連 VAD 都碰不到（opt-in，預設不接）。
                 *([PressToTalkFilter(ptt, cue=_play_cue)] if ptt is not None else []),
-                PlaybackGateFilter(gate),   # 玩偶講話時上行換靜音，攔在 VAD 之前
+                # on_reopen：玩偶講完就自動開始聽（並嗶一聲），孩子可以直接
+                # 跟讀而不必再按一次鍵。2026-08-01 真人測試，少了它跟讀完全
+                # 沒反應——而跟讀是這個產品的核心互動。閒置 15 秒後仍會回到
+                # 「必須按鍵」，所以長時間待機的噪音免疫力沒有損失。
+                PlaybackGateFilter(gate, on_reopen=(ptt.arm if ptt is not None else None)),
                 vad,
                 # 孩子講完就關閘門等下一次按鍵。只有 VAD 之後看得到這個訊號。
                 *([PressToTalkDisarmer(ptt)] if ptt is not None else []),
