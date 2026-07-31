@@ -69,7 +69,11 @@ setsid nohup bash -c "
         set -a; . '$ENV_FILE'; set +a
         export TALKYBUDDY_PIPECAT_CLOUD=1
     fi
-    PYTHONPATH='$LAB' timeout '$HARD_LIMIT' ./.venv/bin/python probe_live_conversation.py '$SECONDS_TO_RUN' > '$LOG' 2>&1
+    # PYTHONUNBUFFERED=1：stdout 導向檔案時 Python 會做區塊緩衝，probe 的
+    # print() 要等行程結束才進 log。2026-07-31 實測，跑到一半去看 log 只有
+    # ALSA 的訊息（那是子行程直接寫 fd），連「開始了，請對著玩偶說話」都看
+    # 不到——等於整段對話期間完全無法判斷玩偶到底醒了沒。
+    PYTHONUNBUFFERED=1 PYTHONPATH='$LAB' timeout '$HARD_LIMIT' ./.venv/bin/python probe_live_conversation.py '$SECONDS_TO_RUN' > '$LOG' 2>&1
     rc=\$?
     # 不管上面怎麼結束（正常、timeout、被殺），麥克風一定要還回去。
     pkill -9 -x arecord 2>/dev/null
