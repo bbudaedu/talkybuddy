@@ -44,6 +44,41 @@ def pick_target_sentence(topic, profile=None) -> str:
         return _DEFAULT_SENTENCE
 
 
+def topic_sentences(topic, profile=None, limit: int = 5) -> list[str]:
+    """取同主題的多個例句，今日目標句排第一。
+
+    `pick_target_sentence` 一次只給一句，於是即時陪聊的教練 prompt 只知道
+    一句可以練。2026-07-31 十輪模擬對話的結果是：孩子第 1 輪就唸對了，玩偶
+    仍然十輪都教同一句，孩子抗議「你怎麼一直叫我唸一樣的啦」。
+
+    教練 prompt 本來就寫著「孩子跟上就換下一句或延伸一點」——缺的不是指令，
+    是**材料**。`scaffold.VOCAB` 的 animal 類其實有 29 句。
+
+    任何例外都回空 list，不炸（與本模組其他函式一致）。
+    """
+    from server import scaffold
+
+    try:
+        first = pick_target_sentence(topic, profile)
+        out = [first]
+        for info in scaffold.VOCAB.values():
+            if info.get("cat") != topic or not info.get("sent"):
+                continue
+            sent = info["sent"]
+            if sent not in out:
+                out.append(sent)
+            if len(out) >= limit:
+                break
+        # 主題不存在時 pick_target_sentence 會回通用預設，那不算這個主題的句子
+        if len(out) == 1 and not any(
+            i.get("cat") == topic and i.get("sent") for i in scaffold.VOCAB.values()
+        ):
+            return []
+        return out[:limit]
+    except Exception:
+        return []
+
+
 def build_lesson(diagnoses, profile=None) -> Lesson:
     """由最新診斷 + profile 組本場教材。全程安全退化，永不擋 live。"""
     from server import curriculum, diagnose

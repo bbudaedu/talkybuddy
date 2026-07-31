@@ -114,6 +114,9 @@ TARGET_SENTENCE = "I want an apple."
 # 不靜默跑成 edge——「以為在跑雲端、其實沒有」正是這個專案被咬過三次的坑。
 CLOUD_ENV = "TALKYBUDDY_PIPECAT_CLOUD"
 
+# 每則回覆字數上限（半雙工：這等於孩子不能開口的時間）。約 9 秒。
+LIVE_MAX_CHARS = 40
+
 try:
     from server.llm import EdgeLLM
 
@@ -235,7 +238,17 @@ def _build_llm(lesson=None):
     def _live_system() -> str:
         from server import scaffold
 
-        return scaffold.build_live_system_prompt(target, directive, topic)
+        # max_chars：玩偶講話時孩子的麥克風是關的（半雙工），所以回覆長度
+        # 直接等於「孩子不能開口的秒數」。實測不加這個上限會講到 76 字≈17 秒。
+        try:
+            from server import lesson as _lm
+
+            more = _lm.topic_sentences(topic, limit=5) if topic else []
+        except Exception:
+            more = []
+        return scaffold.build_live_system_prompt(
+            target, directive, topic, max_chars=LIVE_MAX_CHARS, more_sentences=more
+        )
 
     service = CloudLLMService(
         cloud=cloud,
@@ -320,7 +333,12 @@ async def main() -> int:
                 agg.user(),
                 llm,
                 SafetyGateProcessor(),
-                ReadalongGuardProcessor(target=target_sentence),
+                # allow_variation 只在雲端打開：即時陪聊契約下玩偶可以順著
+                # 孩子換句子（孩子說想練貓，帶讀 I see a cat. 是對的）。
+                # edge 仍要嚴格對齊教材的目標句。
+                ReadalongGuardProcessor(
+                    target=target_sentence, allow_variation=cloud is not None
+                ),
                 narrator_llm,
                 tts,
                 PlaybackGateSink(gate),     # 記錄下行時長給 gate

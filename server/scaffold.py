@@ -758,14 +758,29 @@ _LIVE_STATIC_FRAME = (
 )
 
 
-def build_live_system_prompt(target_sentence, directive, topic=None) -> str:
+def build_live_system_prompt(target_sentence, directive, topic=None,
+                             max_chars=None, more_sentences=None) -> str:
     """組裝即時陪聊 system prompt（教練角色 + 跟讀迴圈）。
 
     - target_sentence：今日目標句（可 None）→ 提示教練帶讀、請孩子跟讀。
     - directive：B 軸 companion_directive 注入字串（可 None，見
       diagnose.format_directive_for_prompt）→ 折入本輪教學策略。
     - topic：今日主題（可 None）→ 提示先引出主題情境。
+    - max_chars：每則回覆的字數上限（可 None）。
     None/空欄位一律略過，向後相容。
+
+    ## max_chars 為什麼需要
+
+    上面的靜態框架已經寫了「每次回覆不超過兩句話」，但 2026-07-31 模擬對話
+    量到玩偶回覆最長 **76 字、板子上唸出來約 17 秒**——模型會把「兩句話」寫成
+    三個子句的長句。而回合式那份 prompt 用的是「不超過60個字」，**具體字數
+    才管得住**。
+
+    這在半雙工玩偶上不是美觀問題：玩偶講話時麥克風一律關著（喇叭與麥克風同在
+    玩偶內、板子裝不了 AEC），所以每多講一秒，孩子就多一秒不能開口。這個框架
+    自己也寫著「你多講一句，他就多一句話的時間不能開口」。
+
+    預設 None＝完全不加，`/ws/live`（Nova Sonic）那條路行為不變。
     """
     from server import guardrails
 
@@ -777,4 +792,28 @@ def build_live_system_prompt(target_sentence, directive, topic=None) -> str:
                      "帶讀時放慢、一次一句，請孩子跟著說一次，再給回饋。")
     if directive and str(directive).strip():
         parts.append(str(directive).strip())
+    if more_sentences:
+        rest = [str(x).strip() for x in more_sentences if str(x).strip()]
+        rest = [x for x in rest if x != str(target_sentence or "").strip()]
+        if rest:
+            # 2026-07-31 十輪模擬：孩子第一輪就唸對了，玩偶仍十輪教同一句，
+            # 孩子抗議「你怎麼一直叫我唸一樣的啦」。上面的框架本來就寫著
+            # 「孩子跟上就換下一句」——缺的不是指令，是**材料**。
+            parts.append(
+                "孩子把目前這句唸對之後（連續兩次就算會了），"
+                "**一定要換下一句**，不要一直重複同一句話。"
+                "今天這個主題還可以練這些句子，照順序換："
+                + "、".join(f"「{x}」" for x in rest)
+                + "。換句子的時候用一句話自然帶過，例如「好厲害，那我們試試看這句」。"
+            )
+    try:
+        limit = int(max_chars) if max_chars else 0
+    except (TypeError, ValueError):
+        limit = 0
+    if limit > 0:
+        parts.append(
+            f"每一則回覆總長**絕對不可以超過{limit}個字**（含帶讀那句）。"
+            "寧可只講一句稱讚就請他跟讀，也不要多解釋——"
+            "你講話的時候孩子不能開口，講越久他越沒機會練習。"
+        )
     return "".join(parts)

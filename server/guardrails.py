@@ -156,8 +156,22 @@ def _normalise_readalong(s: str) -> str:
     return re.sub(r"\s+", " ", s.lower()).strip()
 
 
-def ensure_readalong(text, target) -> str:
+def ensure_readalong(text, target, *, allow_variation: bool = False) -> str:
     """確保回覆恰好含一句合規的「跟我說一遍：<目標英文句>」帶讀。
+
+    ``allow_variation``（即時陪聊契約用）：回覆裡若已經帶讀了**某個英文句**，
+    即使不是本輪 target 也放行、不再補第二句。
+
+    2026-07-31 模擬對話抓到的真實案例：
+
+        孩子：我不想要說狗，我想說 I see a cat！
+        玩偶：…跟我說一遍：I see a cat.跟我說一遍：I see a dog.
+
+    模型講的「I see a cat.」其實是對的——孩子想練貓。但護欄看不到本輪 target，
+    就再補一句，孩子聽到兩句帶讀。回合式契約要嚴格（目標句由教材決定，不可被
+    模型改掉），即時陪聊契約不要。所以是加旗標，**預設不變**。
+
+    放寬的只有「換句子」：漏帶讀仍會補，帶讀中文仍會清掉。
 
     取代原本 edge/雲端各寫一份的 ``if target not in text`` 子字串比對，該寫法
     實測漏掉兩種情況（`edge/PR7_MERGE_VALIDATION_2026-07-29.md` §三）：
@@ -182,6 +196,10 @@ def ensure_readalong(text, target) -> str:
     norm_target = _normalise_readalong(tgt)
     for seg in _normalise_readalong(s).split(READALONG_MARKER)[1:]:
         if seg.strip().startswith(norm_target):
+            return s
+        # 即時陪聊：帶讀的是別的**英文**句也算數。中文帶讀在上面已經被清掉了，
+        # 所以走到這裡還含英文字母，就是一句像樣的英文帶讀。
+        if allow_variation and re.search(r"[A-Za-z]", seg):
             return s
 
     # 否則：清掉格式跑掉的那句（連同它的引導語），再補一句合規的

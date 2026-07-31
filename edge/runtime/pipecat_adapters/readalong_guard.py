@@ -58,7 +58,8 @@ class ReadalongGuardProcessor(FrameProcessor):
         *,
         target: str | None = None,
         target_provider: TargetProvider | None = None,
-        ensure_fn: Callable[[str, str | None], str] | None = None,
+        ensure_fn: Callable[..., str] | None = None,
+        allow_variation: bool = False,
         **kwargs,
     ):
         """Initialize the read-along guard.
@@ -68,11 +69,17 @@ class ReadalongGuardProcessor(FrameProcessor):
             target_provider: Called once per response to fetch the current
                 target sentence (mirrors ``server.lesson.build_lesson``).
             ensure_fn: Defaults to ``guardrails.ensure_readalong``. Injected in tests.
+            allow_variation: Accept a read-along of *any* English sentence, not
+                only this turn's target. Turn this on for the live-chat
+                contract, where the doll may legitimately switch sentences to
+                follow what the child asked for. Off by default so the
+                turn-based scaffold keeps its exact-target guarantee.
         """
         super().__init__(**kwargs)
         self._target = target
         self._target_provider = target_provider
         self._ensure_fn = ensure_fn
+        self._allow_variation = allow_variation
         self._buffer: list[str] = []
 
     def _current_target(self) -> str | None:
@@ -90,7 +97,9 @@ class ReadalongGuardProcessor(FrameProcessor):
         try:
             from server import guardrails
 
-            return guardrails.ensure_readalong(text, target)
+            return guardrails.ensure_readalong(
+                text, target, allow_variation=self._allow_variation
+            )
         except Exception:
             # 護欄不可用時維持原文：少一句帶讀，總比讓對話中斷好。
             logger.exception("guardrails.ensure_readalong 不可用，本輪不補帶讀句")
