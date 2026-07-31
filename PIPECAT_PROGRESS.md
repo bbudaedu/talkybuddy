@@ -867,3 +867,55 @@ ssh root@<板子> 'cat /tmp/live_conversation.log'
 1. **環境噪音誤觸** ← 最嚴重，「玩偶會自己跟電視聊起來」
 2. **aplay underrun 16.6s**（需要 keepalive 餵靜音）
 3. `fallback_text` 未接 scaffold、VAD params 未調
+
+---
+
+# 第十六輪 — 英文分段修好，但閘門吃掉了說話開頭
+
+## ✅ 帶讀句終於是英文
+
+使用者回報「跟我說一遍」後面的英文完全沒聽到。根因：`edge_tts` 用「含 CJK → zh」
+的啟發式，整句丟給 `zh_CN-huayan-medium`，純中文模型遇到英文就跳過——
+**而帶讀句正是英文，跟讀教學等於失效**。
+
+專案早有 `scaffold.split_tts_segments`（現行 pipeline 一直在用）：
+
+```
+'你說得好！跟我說一遍：I want an apple。'
+  → [('zh', '你說得好！跟我說一遍：'), ('en', 'I want an apple')]
+```
+
+已改成預設用它。**同一個模式第 N 次出現：既有程式碼看似簡陋，其實是踩過坑後的
+正確解，我卻自己發明了更差的。**（`PlaybackGate`、`build_aplay_argv` 取樣率、
+`guardrails.to_traditional` 都是這樣。）
+
+## 🔴 但 PlaybackGate 造成新問題：吃掉說話開頭
+
+| | 上一輪（無閘門） | 這一輪（有閘門） |
+|---|---|---|
+| STT 辨識 | 三句全對 | 全錯（「沒有想要的紅語」「お大じ子」） |
+| 自我打斷 | 3 | **0** |
+
+記憶 `project-edge-s2s-tuning` 早就寫過這個代價：
+
+> 閘門在玩偶講完後仍聾約 2.6 秒（2.0 緩衝 + 0.6 tail），
+> **孩子話音剛落就跟讀會被吃掉開頭**。
+
+## 📌 關鍵連動：underrun 與閘門死區是同一個問題
+
+同一份記憶接著寫：
+
+> **未做的優化**：降低緩衝（keepalive 已接手「撐過空檔」的職責），
+> 可把死區降到約 1.1 秒。
+
+`--buffer-time 2.0s` 是為了壓下 underrun 才調大的，而它直接造成 2.6 秒死區。
+**做了 keepalive 才能降緩衝，降了緩衝才能縮短死區。**
+
+所以 underrun 不只是聽感問題，它是解掉「吃掉開頭」的前提。實測本輪
+underrun 仍達 17.2 秒。
+
+## 下一步（依連動關係排序）
+
+1. **keepalive 餵靜音** → 可降 `--buffer-time` → 死區從 2.6s 降到約 1.1s
+2. 環境噪音誤觸（`is_near_field` 或按鍵觸發，兩者 `live_client` 都有現成的）
+3. `fallback_text` 接 scaffold、VAD params 調校
