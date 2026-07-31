@@ -134,12 +134,13 @@ def test_semantic_namespace_is_scoped_per_student():
 def test_system_prompts_come_from_the_agent_modules():
     """抄一份的話，改了程式碼卻忘了更新 harness，雲端與離線會給出不同的
     東西，而且測試抓不到（測試跑的是離線那條）。"""
-    from server.agents import homework, orchestrator, report
+    from server.agents import homework, material, orchestrator, report
 
     by_name = {n: p for n, _e, p, _m in prov.HARNESSES}
     assert by_name["TalkyBuddyOrchestrator"] is orchestrator._SYSTEM_PROMPT
     assert by_name["TalkyBuddyHomework"] is homework._SYSTEM_PROMPT
     assert by_name["TalkyBuddyReport"] is report._SYSTEM_PROMPT
+    assert by_name["TalkyBuddyMaterial"] is material._SYSTEM_PROMPT
 
 
 def test_skill_is_optional_and_uses_the_s3_variant():

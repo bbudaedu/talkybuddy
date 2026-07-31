@@ -43,7 +43,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from server.agents import homework, orchestrator, report  # noqa: E402
+from server.agents import homework, material, orchestrator, report  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 常數（與 AGENTCORE_RESOURCES.md 記錄的現行值一致）
@@ -77,6 +77,8 @@ HARNESSES = [
      homework._SYSTEM_PROMPT, 1024),
     ("TalkyBuddyReport", "AGENTCORE_HARNESS_REPORT",
      report._SYSTEM_PROMPT, 2048),
+    ("TalkyBuddyMaterial", "AGENTCORE_HARNESS_MATERIAL",
+     material._SYSTEM_PROMPT, 768),
 ]
 
 

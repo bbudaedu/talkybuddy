@@ -25,19 +25,20 @@ def _hr(title: str) -> None:
     print(f"\n{'=' * 62}\n{title}\n{'=' * 62}")
 
 
-_AGENT_ROLES = ("orchestrator", "homework", "report")
+_AGENT_ROLES = ("orchestrator", "homework", "report", "material")
 
 # 角色 → 該角色 harness ARN 的環境變數名稱（訊息要講得出「去設哪一個」）
 _ROLE_ENV = {
     "orchestrator": "AGENTCORE_HARNESS_ORCHESTRATOR",
     "homework": "AGENTCORE_HARNESS_HOMEWORK",
     "report": "AGENTCORE_HARNESS_REPORT",
+    "material": "AGENTCORE_HARNESS_MATERIAL",
 }
 
 
 def agentcore_checks(chains: dict[str, list[str]],
                      flag_on: bool) -> list[tuple[str, str]]:
-    """把三個 agent 的降級鏈判成 ``(等級, 訊息)``；等級 ∈ ok / warn / bad。
+    """把四個 agent 的降級鏈判成 ``(等級, 訊息)``；等級 ∈ ok / warn / bad。
 
     純函式、不觸網，測試涵蓋在 tests/test_aws_preflight_agentcore.py。
 
@@ -106,7 +107,7 @@ def main() -> int:  # noqa: C901 - 線性檢查流程，拆開反而難讀
         print(f"       修：export BEDROCK_MODEL_ID_CHAT=<haiku> "
               f"BEDROCK_MODEL_ID_DIAG=<sonnet>")
 
-    _hr("② 三個 agent 的降級鏈（AgentCore → Bedrock → 規則式）")
+    _hr("② 四個 agent 的降級鏈（AgentCore → Bedrock → 規則式）")
     try:
         from server import agent_backends
 

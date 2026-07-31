@@ -29,20 +29,20 @@ def _levels(checks) -> list[str]:
     return [level for level, _ in checks]
 
 
-def test_full_chain_on_all_three_roles_is_ok():
+def test_full_chain_on_all_four_roles_is_ok():
     chains = {r: ["agentcore", "bedrock", "rule"]
-              for r in ("orchestrator", "homework", "report")}
+              for r in ("orchestrator", "homework", "report", "material")}
     checks = pf.agentcore_checks(chains, flag_on=True)
-    assert _levels(checks) == ["ok", "ok", "ok"]
+    assert _levels(checks) == ["ok", "ok", "ok", "ok"]
 
 
 def test_flag_off_is_a_warning_not_a_failure():
     """AgentCore 是加分項。沒撥開關不該讓 preflight 判定失敗——
     降級鏈本來就設計成「沒有它也完整」。"""
     chains = {r: ["bedrock", "rule"]
-              for r in ("orchestrator", "homework", "report")}
+              for r in ("orchestrator", "homework", "report", "material")}
     checks = pf.agentcore_checks(chains, flag_on=False)
-    assert _levels(checks) == ["warn", "warn", "warn"]
+    assert _levels(checks) == ["warn", "warn", "warn", "warn"]
     assert all("加分" in msg or "未啟用" in msg for _, msg in checks)
 
 
@@ -56,9 +56,10 @@ def test_flag_on_but_a_role_missing_its_harness_arn_is_a_failure():
         "orchestrator": ["agentcore", "bedrock", "rule"],
         "homework": ["agentcore", "bedrock", "rule"],
         "report": ["bedrock", "rule"],          # 漏設 AGENTCORE_HARNESS_REPORT
+        "material": ["agentcore", "bedrock", "rule"],
     }
     checks = pf.agentcore_checks(chains, flag_on=True)
-    assert _levels(checks) == ["ok", "ok", "bad"]
+    assert _levels(checks) == ["ok", "ok", "bad", "ok"]
     assert "AGENTCORE_HARNESS_REPORT" in checks[2][1], checks[2][1]
 
 
@@ -69,26 +70,26 @@ def test_missing_bedrock_layer_is_a_failure_even_when_agentcore_is_on():
     品質下界比什麼都不開還低——preflight 要在現場就把它擋下來。
     """
     chains = {r: ["agentcore", "rule"]
-              for r in ("orchestrator", "homework", "report")}
+              for r in ("orchestrator", "homework", "report", "material")}
     checks = pf.agentcore_checks(chains, flag_on=True)
-    assert _levels(checks) == ["bad", "bad", "bad"]
+    assert _levels(checks) == ["bad", "bad", "bad", "bad"]
     assert all("Bedrock" in msg for _, msg in checks)
 
 
 def test_rule_only_chain_is_reported_when_flag_off():
     """完全沒有雲端：誠實回報，但不是 AgentCore 段該判失敗的事
     （Bedrock 本身有第①③④段在管）。"""
-    chains = {r: ["rule"] for r in ("orchestrator", "homework", "report")}
+    chains = {r: ["rule"] for r in ("orchestrator", "homework", "report", "material")}
     checks = pf.agentcore_checks(chains, flag_on=False)
-    assert _levels(checks) == ["warn", "warn", "warn"]
+    assert _levels(checks) == ["warn", "warn", "warn", "warn"]
 
 
 def test_every_role_gets_exactly_one_check():
-    """不漏報也不重複——三個 agent 各一行，現場一眼掃完。"""
+    """不漏報也不重複——四個 agent 各一行，現場一眼掃完。"""
     chains = {r: ["bedrock", "rule"]
-              for r in ("orchestrator", "homework", "report")}
+              for r in ("orchestrator", "homework", "report", "material")}
     checks = pf.agentcore_checks(chains, flag_on=False)
-    assert len(checks) == 3
+    assert len(checks) == 4
 
 
 def test_messages_name_the_role_so_you_know_which_one_to_fix():
@@ -96,6 +97,7 @@ def test_messages_name_the_role_so_you_know_which_one_to_fix():
         "orchestrator": ["agentcore", "bedrock", "rule"],
         "homework": ["bedrock", "rule"],
         "report": ["agentcore", "bedrock", "rule"],
+        "material": ["agentcore", "bedrock", "rule"],
     }
     checks = pf.agentcore_checks(chains, flag_on=True)
     bad = [msg for lvl, msg in checks if lvl == "bad"]
@@ -122,7 +124,8 @@ def test_checks_use_the_same_chain_source_as_the_agents():
 def test_never_raises_on_unexpected_chain_values(flag_on):
     """鏈的內容若因日後改動變了樣，preflight 也不該炸——
     上台前 60 秒跑的東西，最不能做的事就是自己拋例外。"""
+    # 刻意漏掉 "material"：agentcore_checks 對缺鍵的角色要當空鏈處理，不炸。
     chains = {"orchestrator": [], "homework": ["???"], "report": ["rule"]}
     checks = pf.agentcore_checks(chains, flag_on=flag_on)
-    assert len(checks) == 3
+    assert len(checks) == 4
     assert all(lvl in ("ok", "warn", "bad") for lvl, _ in checks)
