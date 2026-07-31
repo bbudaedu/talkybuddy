@@ -390,6 +390,12 @@ def _article_for(word: str) -> str:
 _MATERIAL_CATS = {"food", "school", "animal", "family", "action", "color"}
 _MATERIAL_ENTRY_KEYS = ("en", "zh", "cat", "np", "sent")
 
+# 單次 register_material_vocab 呼叫最多接受幾條——跟 material.py 規則式路徑
+# 的上限共用同一個常數（單一真相來源，見 register_material_vocab 的說明）。
+# 放在 scaffold.py 而不是 material.py：scaffold 是較低層的模組（material.py
+# 已經 import scaffold），常數放在被依賴的一側才不會造成循環匯入。
+MATERIAL_MAX_ENTRIES = 8
+
 
 def _article_is_consistent(np: str) -> bool:
     """只驗證 a/an 這條有明確規則的冠詞；其餘開頭（some/my/the…）不強制檢查。"""
@@ -402,14 +408,26 @@ def _article_is_consistent(np: str) -> bool:
     return _article_for(parts[1]) == article
 
 
-def _is_valid_material_entry(entry, existing_en: set[str], existing_sent: set[str]) -> bool:
-    """單一教材詞條的合法性檢查：欄位齊全、分類合法、en/sent 不重複、冠詞一致。"""
+def _is_valid_material_entry(
+    entry, existing_en: set[str], existing_sent: set[str], existing_zh: set[str]
+) -> bool:
+    """單一教材詞條的合法性檢查：欄位齊全、分類合法、zh/en/sent 不重複、冠詞一致。
+
+    ``zh`` 已存在於 VOCAB 一律拒絕——教材只能「新增」詞彙，不能靠重新提交
+    既有的中文鍵去改寫（進而覆蓋）一個已經存在的詞條，就算提議的 ``en``
+    本身是全新的、沒有跟任何其他詞條的 en 撞名。少了這條檢查，
+    ``VOCAB[zh] = {...}`` 的原地寫入語意上就是「取代」，會無聲刪掉課綱詞條
+    （例如把「獅子」→lion 換成「獅子」→koala），而且這個損失會持久化到
+    ``materials`` 表、每次伺服器重啟都經 ``_replay_materials`` 重放一次。
+    """
     if not isinstance(entry, dict):
         return False
     for key in _MATERIAL_ENTRY_KEYS:
         if not (isinstance(entry.get(key), str) and entry[key].strip()):
             return False
     if entry["cat"] not in _MATERIAL_CATS:
+        return False
+    if entry["zh"] in existing_zh:
         return False
     if entry["en"].lower() in existing_en:
         return False
@@ -431,14 +449,36 @@ def register_material_vocab(entries: list[dict]) -> tuple[list[dict], int]:
     homework.py／games.py／profile.py 都是 ``from server.scaffold import VOCAB``
     拿到同一個參照，原地 mutate 後這些模組不必改就看得到新詞。
 
+    單次呼叫最多接受 ``MATERIAL_MAX_ENTRIES`` 條——超過的一律計入 rejected
+    （不是靜默丟棄不計數），避免單一雲端呼叫把 VOCAB 一次撐大過多，
+    且這個成長會持久化到 ``materials`` 表、每次重啟都 replay。
+
     任何輸入（None、非 dict、缺欄位）都不拋例外，直接計入 rejected。
+
+    合併成功後（有至少一條 accepted）就地重建兩份衍生快取，避免「新詞被
+    舊快取蓋住」：
+
+    - ``_ZH_KEYS_BY_LEN``：``_find_zh_vocab``／``_substitute_zh`` 用它找中文
+      詞。這裡沒重建的話，新詞的中文鍵會被舊快取裡某個既有詞的子字串
+      搶先卡位（例如「無尾熊」被「熊」搶走），教材詞永遠比對不到自己。
+      必須用 ``[:] =`` 原地覆寫、不能重新賦值——否則任何在 import 當下
+      就拿到這個 list 物件參照的呼叫端會停在舊版本。
+    - ``guardrails._safe_en_words``：``@lru_cache`` 過的白名單，一旦在
+      伺服器第一次雲端去識別化時暖機就不會再讀 VOCAB。不清掉的話，新詞
+      的英文（如 Title-case 的「Koala」）會被 ``guardrails.deidentify``
+      誤判成人名遮罩掉，送到雲端的教材文字/回覆就壞了。用區域匯入
+      避免在模組載入期就在 scaffold/guardrails 之間建立循環匯入。
     """
     accepted: list[dict] = []
     rejected = 0
     existing_en = {v["en"].lower() for v in VOCAB.values()}
     existing_sent = {v["sent"] for v in VOCAB.values()}
+    existing_zh = set(VOCAB.keys())
     for entry in entries or []:
-        if not _is_valid_material_entry(entry, existing_en, existing_sent):
+        if len(accepted) >= MATERIAL_MAX_ENTRIES:
+            rejected += 1
+            continue
+        if not _is_valid_material_entry(entry, existing_en, existing_sent, existing_zh):
             rejected += 1
             continue
         zh = entry["zh"]
@@ -447,7 +487,17 @@ def register_material_vocab(entries: list[dict]) -> tuple[list[dict], int]:
         VOCAB[zh] = clean
         existing_en.add(entry["en"].lower())
         existing_sent.add(entry["sent"])
+        existing_zh.add(zh)
         accepted.append({"zh": zh, **clean})
+
+    if accepted:
+        _ZH_KEYS_BY_LEN[:] = sorted(VOCAB.keys(), key=len, reverse=True)
+        try:
+            from server import guardrails
+            guardrails._safe_en_words.cache_clear()
+        except Exception:
+            pass
+
     return accepted, rejected
 
 
