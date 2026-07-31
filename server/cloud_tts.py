@@ -71,6 +71,13 @@ class CloudTTS:
 
         ⚠️ 這只代表「設定齊全」，不代表跑得動。判斷能不能用請看 `verified()`。
         """
+        from server import aws_only
+
+        # 競賽合規：ElevenLabs 不是 AWS 服務（server/aws_only.py）。
+        # 擋掉之後語音自動回落到邊緣 sherpa-onnx 本地合成——零出境，
+        # 而且斷網橋段本來就是靠它，所以這個降級不減損 demo。
+        if not aws_only.cloud_tts_allowed():
+            return False
         try:
             from server.config import ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
         except Exception:

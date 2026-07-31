@@ -21,6 +21,20 @@ def pytest_configure(config):  # noqa: F811 - pytest hook
 
 
 @pytest.fixture(autouse=True)
+def _relax_aws_only_gate(monkeypatch):
+    """測試期間關掉競賽合規閘門（``server/aws_only.py`` 預設是開的）。
+
+    閘門是**部署期政策**，不是程式正確性。「Gemini／relay／ElevenLabs 這幾條
+    路徑本身會不會正常運作」仍然必須測——它們沒有壞掉，只是競賽期間不准用，
+    而且賽後要一行恢復。
+
+    閘門自己的行為由 ``tests/test_aws_only_gate.py`` 專門驗證；那個檔會
+    ``delenv`` 把環境變數移掉，藉此把「預設就是開」這個性質一起測到。
+    """
+    monkeypatch.setenv("TALKYBUDDY_AWS_ONLY", "0")
+
+
+@pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):
     """把 DB_PATH 導向 tmp 目錄，並建立乾淨的資料表。"""
     db_path = tmp_path / "talkybuddy_test.db"

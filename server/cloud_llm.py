@@ -102,12 +102,18 @@ class CloudLLM:
 
         這是設定讀數，不是證據——要證據看 `verified_backend()`。
         """
+        from server import aws_only
+
         try:
             if bedrock_converse.resolve_config() is not None:
                 return "bedrock"
-            if gemini_llm.resolve_config() is not None:
+            # 競賽合規：非 AWS 後端在 AWS_ONLY 模式下不可選（server/aws_only.py）。
+            # 擋在這裡而不是擋在 generate()：configured_backend() 是 /api/status
+            # 的資料來源，要讓現場看到的就是「這條路不通」，而不是先說會走
+            # gemini、真的跑時才失敗。
+            if aws_only.llm_backend_allowed("gemini") and gemini_llm.resolve_config() is not None:
                 return "gemini"
-            if anthropic_relay.resolve_config() is not None:
+            if aws_only.llm_backend_allowed("relay") and anthropic_relay.resolve_config() is not None:
                 return "relay"
         except Exception:
             pass
@@ -243,11 +249,22 @@ class CloudLLM:
                 return None
             # role="chat"：取為 _TIMEOUT_S（1.5s）挑的快模型。若取到診斷用的
             # 大模型，這條路徑會穩定逾時而永遠降級回 edge。
+            from server import aws_only
+
             bedrock_cfg = bedrock_converse.resolve_config(role="chat")
-            gemini_cfg = gemini_llm.resolve_config() if bedrock_cfg is None else None
+            # 競賽合規閘門要擋在**這裡**，不能只擋 configured_backend()——
+            # 這條路徑自己解析設定，只擋那邊的話真正送出去的仍是 Gemini。
+            # （這正是「兩處各寫一套判斷就會漂開」的典型，所以兩邊共用
+            #   server/aws_only.py 的同一個函式。）
+            gemini_cfg = (
+                gemini_llm.resolve_config()
+                if bedrock_cfg is None and aws_only.llm_backend_allowed("gemini")
+                else None
+            )
             cfg = (
                 anthropic_relay.resolve_config()
-                if (bedrock_cfg is None and gemini_cfg is None)
+                if (bedrock_cfg is None and gemini_cfg is None
+                    and aws_only.llm_backend_allowed("relay"))
                 else None
             )
             backend = self.configured_backend()
