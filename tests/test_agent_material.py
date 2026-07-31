@@ -124,3 +124,176 @@ def test_rule_based_extract_handles_non_string_inputs():
         assert result["accepted_count"] == 0, f"Failed for input type: {type(bad_input)}"
         assert result["rejected_count"] == 0, f"Failed for input type: {type(bad_input)}"
         assert isinstance(result["topic"], str), f"Failed for input type: {type(bad_input)}"
+
+
+# ---------------------------------------------------------------------------
+# extract_vocab 公開入口：allow_cloud 閘門與降級鏈
+# ---------------------------------------------------------------------------
+
+def _assert_valid_schema(result: dict, expected_source: str | None = None) -> None:
+    assert isinstance(result, dict)
+    assert isinstance(result.get("topic"), str) and result["topic"].strip()
+    assert isinstance(result.get("entries"), list)
+    assert isinstance(result.get("accepted_count"), int)
+    assert isinstance(result.get("rejected_count"), int)
+    assert result.get("source") in ("cloud", "rule")
+    if expected_source is not None:
+        assert result["source"] == expected_source
+
+
+def test_allow_cloud_false_never_touches_network(monkeypatch):
+    """allow_cloud=False → resolve_config／converse_text 皆不被呼叫，source='rule'。"""
+    from server.agents import material
+    from server import bedrock_converse
+
+    def _should_not_call(*a, **kw):
+        import pytest
+        pytest.fail("allow_cloud=False 時不應呼叫雲端函式")
+
+    monkeypatch.setattr(bedrock_converse, "resolve_config", _should_not_call)
+    monkeypatch.setattr(bedrock_converse, "converse_text", _should_not_call)
+
+    result = material.extract_vocab("我們去動物園看獅子。", allow_cloud=False)
+
+    _assert_valid_schema(result, expected_source="rule")
+
+
+def test_cloud_path_success_merges_new_entries(monkeypatch):
+    """雲端回傳合法 JSON → 詞條經 register_material_vocab 驗證合併，source='cloud'。"""
+    import json
+    from server.agents import material
+    from server import bedrock_converse, scaffold
+
+    snapshot = {zh: dict(v) for zh, v in scaffold.VOCAB.items()}
+    try:
+        cloud_json = json.dumps({
+            "topic": "動物園一日遊",
+            "entries": [
+                {"en": "koala", "zh": "無尾熊", "cat": "animal",
+                 "np": "a koala", "sent": "I see a koala."},
+            ],
+            "source": "cloud",
+        }, ensure_ascii=False)
+
+        monkeypatch.setattr(bedrock_converse, "resolve_config",
+                            lambda role=None: {"region": "ap-east-2", "model_id": "test-model"})
+        monkeypatch.setattr(bedrock_converse, "converse_text",
+                            lambda *a, **kw: cloud_json)
+
+        result = material.extract_vocab("今天去動物園看了一隻無尾熊。", allow_cloud=True)
+
+        _assert_valid_schema(result, expected_source="cloud")
+        assert result["accepted_count"] == 1
+        assert result["rejected_count"] == 0
+        assert "無尾熊" in scaffold.VOCAB
+        assert scaffold.VOCAB["無尾熊"]["en"] == "koala"
+    finally:
+        scaffold.VOCAB.clear()
+        scaffold.VOCAB.update(snapshot)
+
+
+def test_cloud_response_with_invalid_entries_reports_rejected(monkeypatch):
+    """雲端提議的詞條裡有不合法的（分類錯誤）→ accepted/rejected 誠實回報。"""
+    import json
+    from server.agents import material
+    from server import bedrock_converse, scaffold
+
+    snapshot = {zh: dict(v) for zh, v in scaffold.VOCAB.items()}
+    try:
+        cloud_json = json.dumps({
+            "topic": "動物園一日遊",
+            "entries": [
+                {"en": "koala", "zh": "無尾熊", "cat": "animal",
+                 "np": "a koala", "sent": "I see a koala."},
+                {"en": "robot", "zh": "機器人", "cat": "toy",  # 不合法分類
+                 "np": "a robot", "sent": "I see a robot."},
+            ],
+            "source": "cloud",
+        }, ensure_ascii=False)
+
+        monkeypatch.setattr(bedrock_converse, "resolve_config",
+                            lambda role=None: {"region": "ap-east-2", "model_id": "test-model"})
+        monkeypatch.setattr(bedrock_converse, "converse_text",
+                            lambda *a, **kw: cloud_json)
+
+        result = material.extract_vocab("動物園教材", allow_cloud=True)
+
+        assert result["accepted_count"] == 1
+        assert result["rejected_count"] == 1
+        assert "機器人" not in scaffold.VOCAB
+    finally:
+        scaffold.VOCAB.clear()
+        scaffold.VOCAB.update(snapshot)
+
+
+def test_cloud_failure_falls_back_to_rule(monkeypatch):
+    """converse_text 拋例外 → 靜默降級，source='rule'。"""
+    from server.agents import material
+    from server import bedrock_converse
+
+    monkeypatch.setattr(bedrock_converse, "resolve_config",
+                        lambda role=None: {"region": "ap-east-2", "model_id": "test-model"})
+    monkeypatch.setattr(bedrock_converse, "converse_text",
+                        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("網路超時")))
+
+    result = material.extract_vocab("動物園教材", allow_cloud=True)
+
+    _assert_valid_schema(result, expected_source="rule")
+
+
+def test_cloud_invalid_json_falls_back_to_rule(monkeypatch):
+    """converse_text 回傳非 JSON → 降級到規則式，不拋例外。"""
+    from server.agents import material
+    from server import bedrock_converse
+
+    monkeypatch.setattr(bedrock_converse, "resolve_config",
+                        lambda role=None: {"region": "ap-east-2", "model_id": "test-model"})
+    monkeypatch.setattr(bedrock_converse, "converse_text",
+                        lambda *a, **kw: "這不是 JSON {broken")
+
+    result = material.extract_vocab("動物園教材", allow_cloud=True)
+
+    _assert_valid_schema(result, expected_source="rule")
+
+
+def test_guardrail_hit_falls_back_to_rule(monkeypatch):
+    """雲端回覆含禁詞 → 護欄攔截後降級，source='rule'。"""
+    import json
+    from server.agents import material
+    from server import bedrock_converse
+
+    unsafe = json.dumps({
+        "topic": "動物園",
+        "entries": [{"en": "kill", "zh": "殺", "cat": "action",
+                     "np": "kill", "sent": "Kill the monster."}],
+        "source": "cloud",
+    }, ensure_ascii=False)
+
+    monkeypatch.setattr(bedrock_converse, "resolve_config",
+                        lambda role=None: {"region": "ap-east-2", "model_id": "test-model"})
+    monkeypatch.setattr(bedrock_converse, "converse_text", lambda *a, **kw: unsafe)
+
+    result = material.extract_vocab("動物園教材", allow_cloud=True)
+
+    _assert_valid_schema(result, expected_source="rule")
+
+
+def test_no_cloud_backend_configured_falls_back_to_rule(monkeypatch):
+    """allow_cloud=True 但沒有任何雲端後端設定（resolve_config 回 None）→ 規則式。"""
+    from server.agents import material
+    from server import bedrock_converse
+
+    monkeypatch.setattr(bedrock_converse, "resolve_config", lambda role=None: None)
+
+    result = material.extract_vocab("動物園教材", allow_cloud=True)
+
+    _assert_valid_schema(result, expected_source="rule")
+
+
+def test_no_exception_on_extreme_inputs():
+    """None／空字串輸入不拋例外。"""
+    from server.agents import material
+
+    for bad in (None, ""):
+        result = material.extract_vocab(bad, allow_cloud=False)
+        _assert_valid_schema(result)

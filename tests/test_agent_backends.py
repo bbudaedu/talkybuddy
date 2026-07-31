@@ -21,7 +21,7 @@ from server import agent_backends
 _ENV = [
     "TALKYBUDDY_AGENT_BACKEND", "TALKYBUDDY_CLOUD_PROVIDER",
     "AGENTCORE_HARNESS_ORCHESTRATOR", "AGENTCORE_HARNESS_HOMEWORK",
-    "AGENTCORE_HARNESS_REPORT", "AGENTCORE_REGION",
+    "AGENTCORE_HARNESS_REPORT", "AGENTCORE_HARNESS_MATERIAL", "AGENTCORE_REGION",
 ]
 
 
@@ -133,3 +133,11 @@ def test_agents_use_this_module_rather_than_resolving_it_themselves():
             f"{mod.__name__} 又出現「AgentCore 一設定就把 Bedrock 設成 None」的寫法"
         assert "bedrock_converse.resolve_config(" not in code, \
             f"{mod.__name__} 又自己解析 Bedrock 設定，共用模組就白抽了"
+
+
+def test_chain_supports_material_role(_clean_env):
+    """material 角色比照既有三個 agent，能出現在降級鏈最前面。"""
+    _clean_env.setenv("TALKYBUDDY_AGENT_BACKEND", "agentcore")
+    _clean_env.setenv("AGENTCORE_HARNESS_MATERIAL", "arn:material")
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    assert agent_backends.chain("material") == ["agentcore", "bedrock", "rule"]

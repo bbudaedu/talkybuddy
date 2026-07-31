@@ -66,6 +66,7 @@ _ROLE_ENV = {
     "orchestrator": "AGENTCORE_HARNESS_ORCHESTRATOR",
     "homework": "AGENTCORE_HARNESS_HOMEWORK",
     "report": "AGENTCORE_HARNESS_REPORT",
+    "material": "AGENTCORE_HARNESS_MATERIAL",
 }
 
 

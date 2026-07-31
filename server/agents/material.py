@@ -27,10 +27,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 
-from server import scaffold
+from server import agent_backends, agentcore, bedrock_converse, guardrails, scaffold
 
 _log = logging.getLogger(__name__)
 
@@ -98,3 +99,135 @@ def _rule_based_extract(text: str) -> dict:
         "rejected_count": 0,
         "source": "rule",
     }
+
+
+# ---------------------------------------------------------------------------
+# 雲端路徑（AgentCore Harness → Bedrock Converse → 規則式）
+# ---------------------------------------------------------------------------
+
+_TIMEOUT_S = 12.0
+_MAX_TEXT_LEN = 2000  # 教材原文送雲端的長度上限
+
+_SYSTEM_PROMPT = (
+    "你是台灣國小英語教材分析專家。從老師提供的教材文字中，"
+    "挑出最多 8 個適合國小生學習的詞彙。"
+    "每個詞附：英文（en）、繁體中文（zh）、分類（cat，只能是 "
+    "food/school/animal/family/action/color 之一）、"
+    "含正確冠詞的名詞片語（np）、一句用到這個詞的目標英文例句（sent）。"
+    "同時給這份教材一個簡短的主題描述（topic，繁體中文）。"
+    "只輸出一個 JSON 物件，不得有 markdown 圍欄或額外文字。"
+)
+
+
+def _build_user_prompt(text: str) -> str:
+    schema_example = {
+        "topic": "動物園一日遊",
+        "entries": [
+            {"en": "lion", "zh": "獅子", "cat": "animal",
+             "np": "a lion", "sent": "I see a lion."},
+        ],
+        "source": "cloud",
+    }
+    return (
+        f"教材內容：\n{text[:_MAX_TEXT_LEN]}\n\n"
+        "請從上述教材挑出最多 8 個適合國小生的詞彙。"
+        "cat 只能是 food/school/animal/family/action/color 之一。"
+        "僅輸出符合以下 schema 的 JSON 物件（source 固定為 \"cloud\"）：\n"
+        + json.dumps(schema_example, ensure_ascii=False)
+    )
+
+
+def _parse_cloud_response(raw_text: str) -> dict | None:
+    """解析雲端回傳的 JSON 字串並做最基本的形狀檢查；任何問題回 None。"""
+    text = (raw_text or "").strip()
+    if not text:
+        return None
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text).strip()
+    try:
+        data = json.loads(text)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if not (isinstance(data.get("topic"), str) and data["topic"].strip()):
+        return None
+    if not isinstance(data.get("entries"), list):
+        return None
+    return data
+
+
+def extract_vocab(text: str, *, allow_cloud: bool = True) -> dict:
+    """教材提煉 agent 主入口。
+
+    流程：
+    1. allow_cloud=False 或未取得家長同意 → 直接走規則式，不碰任何雲端呼叫。
+    2. allow_cloud=True → 嘗試 agent_backends.resolve("material")：
+       AgentCore Harness → Bedrock Converse。
+    3. 雲端回覆整體字串經 guardrails.passes_guardrail；不通過 → 降級。
+    4. 解析 JSON，對提議詞條呼叫 scaffold.register_material_vocab 逐條驗證。
+    5. 任何例外不往外拋，一律降級回規則式；規則式路徑永遠能產出合法結果。
+    """
+    try:
+        return _extract_vocab(text, allow_cloud=allow_cloud)
+    except Exception:
+        _log.exception("extract_vocab 全數路徑失敗，回傳最小合法結果")
+        return {
+            "topic": "教材解析暫時失敗", "entries": [],
+            "accepted_count": 0, "rejected_count": 0, "source": "rule",
+        }
+
+
+def _extract_vocab(text: str, *, allow_cloud: bool) -> dict:
+    text = text if isinstance(text, str) else ""
+
+    if not allow_cloud or not guardrails.consent_granted():
+        return _rule_based_extract(text)
+
+    try:
+        ac_cfg, cfg = agent_backends.resolve("material")
+        if ac_cfg is None and cfg is None:
+            return _rule_based_extract(text)
+
+        user_prompt = _build_user_prompt(text)
+
+        raw_text = None
+        if ac_cfg is not None:
+            try:
+                raw_text = agentcore.invoke(
+                    ac_cfg, user_prompt,
+                    actor_id=None,
+                    session_id="material-upload",
+                )
+            except Exception:
+                _log.exception("extract_vocab AgentCore 失敗，改試 Bedrock Converse")
+                raw_text = None
+
+        if raw_text is None:
+            if cfg is None:
+                return _rule_based_extract(text)
+            raw_text = bedrock_converse.converse_text(
+                _SYSTEM_PROMPT, user_prompt, cfg=cfg,
+                max_tokens=768, timeout_s=_TIMEOUT_S,
+            )
+
+        if not guardrails.passes_guardrail(raw_text):
+            _log.warning("extract_vocab 雲端回覆未通過護欄，降級回規則式")
+            return _rule_based_extract(text)
+
+        parsed = _parse_cloud_response(raw_text)
+        if parsed is None:
+            _log.warning("extract_vocab 雲端回覆 schema 不合法，降級回規則式")
+            return _rule_based_extract(text)
+
+        accepted_entries, rejected = scaffold.register_material_vocab(parsed["entries"])
+        return {
+            "topic": parsed["topic"],
+            "entries": accepted_entries,
+            "accepted_count": len(accepted_entries),
+            "rejected_count": rejected,
+            "source": "cloud",
+        }
+    except Exception:
+        _log.exception("extract_vocab 雲端路徑失敗，降級回規則式")
+        return _rule_based_extract(text)
