@@ -9,6 +9,10 @@
 **下一個 session 最短路徑**：直接讀第三節末的〈決賽現場接通程序〉。
 程式碼那邊沒有待辦了，缺的是可用的雲端憑證。
 
+**2026-07-31 深夜追加**：對話品質（生動有趣 + 記得孩子）已完成，見第三之二節。
+開發期間的雲端替身是 **Gemini 直連**（`GEMINI_API_KEY`），板子上
+`/root/pipecat-lab/.env` 已放好。決賽改 Bedrock 只需換環境變數。
+
 ---
 
 ## 一、決賽路徑從頭到尾沒被動過
@@ -167,6 +171,75 @@ TALKYBUDDY_PIPECAT_CLOUD=1 TALKYBUDDY_CLOUD_PROVIDER=bedrock BEDROCK_REGION=<reg
   `StatelessContextProcessor` 可以拿掉，玩偶就能記得上一輪
 - **round_total 的瓶頸也會變** —— 目前 LLM 佔 78%（3.9s），換雲端後
   瓶頸可能變成網路 RTT，`docs/PIPECAT_EDGE_DESIGN.md` 的數字表要重量
+
+---
+
+## 三之二、對話品質（2026-07-31 深夜追加）
+
+雲端接通之後真人實測，玩偶**四輪回覆幾乎一模一樣**，孩子問「可以跟我練習說
+英文嗎？」它還是回「跟我說一遍：I want an apple.」。追下去發現三個原因疊在
+一起，而**三個的解法專案裡全都已經有了**，只是 pipecat 一個都沒接。
+
+### 換掉的東西
+
+| 層 | 從 | 到 |
+|---|---|---|
+| system prompt | `EdgeLLM._SYSTEM_PROMPT`（60 字硬帶讀） | `scaffold.build_live_system_prompt`（教練企鵝） |
+| 對話歷史 | 只送一則訊息 | 送完整歷史（`CloudLLM.generate_chat`） |
+| 帶讀強制 | 每輪事後硬補 | 雲端不套（edge 保留） |
+| 教材 | 寫死一句 | `lesson.build_lesson` + `topic_sentences` |
+| 換句子 | 交給模型判斷（實測第 7 輪才換） | `LessonProgress` 狀態機（唸對 1 次就換） |
+| 記憶 | 無 | `child_brief` 開場注入 + `TurnRecorder` 收場落地 |
+
+**回合式契約完全沒動**——edge 降級那顆仍吃舊的，斷網時風格明顯不同是刻意的。
+
+### 量得出來的結果（`probe_simulated_conversation.py`，板子實跑）
+
+| 指標 | 之前 | 之後 |
+|---|---|---|
+| 開場白變化 | 4 輪幾乎一樣 | 8/8 都不同 |
+| 孩子提問被回應 | 0（直接無視） | 5/5 |
+| 回覆長度 | 76 字 ≈ 17 秒靜音 | 38 字 ≈ 8 秒 |
+| 一場練過幾句 | 1 | 4 |
+
+`probe_simulated_conversation.py` 不用麥克風（`TranscriptionFrame` 直接餵進
+pipeline，走與真人完全相同的那條路），另一顆 LLM 扮小孩。**小孩在旁邊吵、
+沒有安靜環境時就用它。**
+
+### 記憶迴圈
+
+```
+對話 → TurnRecorder 落地 interactions
+     → profile.build_profile 算出興趣/正在學的字/情緒
+     → child_brief 濃縮成一段話
+     → 下一場開場注入 system prompt（一次，不佔每輪 1.5s 預算）
+```
+
+板子上已經有真實資料（8 次互動）。開場記憶長這樣：
+
+> 【你對這個孩子的記憶】你以前跟這個孩子聊過 8 次了…他平常喜歡聊動物、動作…
+> 他最近在學的字有 dog、rabbit。他已經很熟的字有 cat，可以拿來稱讚他。
+
+### ⚠️ 一個沒修的既有 bug
+
+`server/app.py::_store_live_turn` 寫的欄位名**三個全錯**：
+
+| 它寫的 | 讀取端要的 | 誰在讀 |
+|---|---|---|
+| `asr_text` | `student_text` | `profile.build_profile:112` |
+| `reply_text` | `ai_response_text` | 同上 `:113` |
+| `asr_conf` | `asr_confidence` | 同上 `:114`、`srs`、`diagnose` |
+
+不會報錯、測試綠，只是 `/ws/live`（Nova Sonic）那條路徑產生的互動**完全不進
+畫像**。pipecat 這條已修並用測試釘住（`test_pipecat_turn_recorder.py`），
+app.py 那邊決賽前不動，但**不要讓它繼續躺著**。
+
+### 待決定的一行
+
+`child_brief` 目前叫玩偶「不要一口氣講出來，只在自然的時候提一兩件」，所以它
+**不一定**會在鏡頭裡說出「上次我們練過…」。要讓那句話必定出現，把指示改成
+「第一句就自然提到一件你記得的事」即可——一行的事，但玩偶會顯得比較刻意。
+**這是取捨，不是 bug。**
 
 ---
 
