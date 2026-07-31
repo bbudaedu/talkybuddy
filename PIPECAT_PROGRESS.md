@@ -611,12 +611,81 @@ pipecat 的 context aggregator 直接把 `TranscriptionFrame` 當成 user messag
 
 累計 **61 測試全綠**（1 skipped：主機未裝 opencc；該項在板子上通過）。
 
+---
+
+# 第十一輪 — 補上兩道護欄，功能面補齊
+
+## ✅ `SafetyGateProcessor`：句子級安全過濾，攔在 TTS 之前
+
+**必須在 TTS 之前**——不安全的句子一旦合成、進了 aplay 緩衝，再攔沒有意義。
+
+LLM 輸出是串流 token，逐 token 比對禁詞會兩頭落空（詞被切開比不中、單字誤判），
+所以用 pipecat 內建的 `SimpleTextAggregator` 累積到句子邊界才檢查。副作用是下游
+拿到整句而非 token——但 TTS 本來就要聚合成句子，**first-audio 不受影響**。
+
+不通過時丟棄該回合**後續所有** LLM 文字（同一則出現一句不安全，後面的也不該信任），
+改送 `fallback_text`（呼叫端應帶入 scaffold 的確定性回覆，行為才跟現行一致）。
+
+沿用既有的保守策略：`passes_guardrail` 在安全模組不可用時回 False。代價是安全模組
+壞掉時每輪都變罐頭回覆——**刻意的**，但會 log warning，因為「玩偶只會講同一句話」
+這個症狀不看 log 猜不到原因。
+
+## ✅ `ReadalongGuardProcessor`：確保帶讀了正確的目標句
+
+累積整則回覆，在 `LLMFullResponseEndFrame` 用 `guardrails.ensure_readalong` 檢查。
+
+**串流下只能補、不能改**（誠實限制）：
+
+| 情況 | 能做什麼 |
+|---|---|
+| 已合規 | 什麼都不做（多數情況） |
+| 漏了帶讀句 | ✅ 結尾補一句 |
+| 帶讀了錯的句子／格式跑掉 | ⚠️ 只能**再補一句正確的**，錯的那句已經唸出去了 |
+
+第三種情況孩子會聽到兩句帶讀（一錯一對）。**這是換取 first-audio 提前的代價。**
+若哪天判定「寧可慢也不能唸錯」，做法是緩衝整則回覆再送 TTS——那會失去串流重疊，
+是明確取捨，不是可以兩全的事。
+
+## 🐛 修掉一個自己寫的 bug
+
+`SimpleTextAggregator` **沒有 `reset()`**（只有 `handle_interruption`）。
+我誤呼叫 `reset()`，它既不生效也不報錯——結果上一則被擋下的殘句留在緩衝裡，
+把**下一則**回覆也一起汙染成不安全。單元測試抓到了（連續兩則都變 fallback）。
+改成建新實例，不依賴內部 API。
+
+## 板子端到端驗證：護欄沒有誤傷正常對話
+
+```
+LLM 原始輸出：你說的很好！跟我說一遍：I want an apple.
+逐字稿(繁)　：你說的很好！跟我說一遍：I want an apple.
+tts_first_audio 4870ms < llm_done 5303ms   ← 串流重疊仍在
+CPU 16% │ RSS 925MB
+```
+
+沒有誤擋、沒有多補句子（回應本來就合規）、串流重疊沒有被護欄破壞。
+
+累計 **73 測試全綠**（1 skipped：主機未裝 opencc，該項在板子通過）。
+
+---
+
+## 功能面盤點：與現行架構的差距已補齊
+
+| `EdgeLLM.generate` 的護欄 | pipecat 版 |
+|---|---|
+| 教材 prompt（目標句／directive） | ✅ `LessonPromptInjector` |
+| `passes_guardrail` | ✅ `SafetyGateProcessor` |
+| `to_traditional` | ✅ `OpenCCProcessor`（委派 guardrails） |
+| `ensure_readalong` | ✅ `ReadalongGuardProcessor`（串流限制已記錄） |
+
 ## 仍未驗證
 
-1. **兩道缺的護欄**（上表）— 目前最重要的接線待辦
-2. **真麥克風** — 板子上**沒有任何 arecord 在跑**（live-client inactive），
-   麥克風是空的，技術上可以測 `alsa_transport`；但那是唯一沒在真機跑過的元件，
+1. **真麥克風** — 板子上**沒有任何 arecord 在跑**（live-client inactive），
+   麥克風是空的，技術上可以測 `alsa_transport`；那是唯一沒在真機跑過的元件，
    **需要明確授權才動**
+2. **`fallback_text` 該接 scaffold** — 目前是預設字串，接線時要帶入
+   `scaffold.reply_text` 才跟現行降級行為一致
+3. **VAD params 未設** — pipeline 警告 `stop_secs (0.0s) differs from
+   recommended default (0.2s)`，接真實 transport 時要設
 
 ## 還沒有答案的問題
 

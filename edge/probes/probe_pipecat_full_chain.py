@@ -40,6 +40,8 @@ from pipecat.services.openai.llm import OpenAILLMService
 from edge.runtime.pipecat_adapters.edge_tts import EdgeVitsTTSService
 from edge.runtime.pipecat_adapters.lesson_prompt import LessonPromptInjector
 from edge.runtime.pipecat_adapters.opencc_processor import OpenCCProcessor
+from edge.runtime.pipecat_adapters.readalong_guard import ReadalongGuardProcessor
+from edge.runtime.pipecat_adapters.safety_gate import SafetyGateProcessor
 from edge.runtime.pipecat_adapters.sensevoice_stt import SenseVoiceSTTService
 
 LLAMA_BASE_URL = "http://127.0.0.1:8080/v1"
@@ -143,6 +145,10 @@ async def main():
                 LessonPromptInjector(target=TARGET_SENTENCE),
                 agg.user(),
                 llm,
+                # 兩道護欄都必須在 TTS 之前：不安全的句子一旦合成就已經唸出去了，
+                # 補的帶讀句也要來得及被唸。
+                SafetyGateProcessor(),
+                ReadalongGuardProcessor(target=TARGET_SENTENCE),
                 probe_llm,
                 tts,
                 OpenCCProcessor(),
