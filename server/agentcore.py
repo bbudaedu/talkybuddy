@@ -12,11 +12,13 @@ model / systemPrompt / tools / memory 都在建立時宣告好，呼叫端只送
 **不需要打包容器、不需要部署管線**。Runtime 適合需要自訂執行環境的情境，
 本專案的三個 agent 都是純推理 + JSON 輸出，用不到那層複雜度。
 
-**region 是 ap-southeast-1（新加坡），不是台北。** 2026-07-26 實測：
-`bedrock-agentcore-control.ap-east-2.amazonaws.com` endpoint 不存在，
-AgentCore 沒有在台北提供服務（console 會把你轉去雪梨）。同時具備 AgentCore
-與滿額 Bedrock 配額的 region 只有新加坡、雪梨、法蘭克福；新加坡離台灣最近
-（約 50ms vs 雪梨約 130ms）。詳見 docs/AGENTCORE_ARCHITECTURE.md。
+**region 是 us-west-2（Oregon）。** 競賽環境規範第 6 條指定該 region，
+官方 region 表（devguide/agentcore-regions）列 AgentCore harness 與 Memory
+在 US West (Oregon) 皆可用，規範與可用性沒有衝突。
+
+（歷史：2026-07-26 實測 `bedrock-agentcore-control.ap-east-2.amazonaws.com`
+endpoint 不存在，AgentCore 沒有在台北提供服務，當時選了離台灣最近的新加坡。
+規範指定 region 之後那個理由就不成立了。詳見 docs/AGENTCORE_ARCHITECTURE.md。）
 
 **預設不啟用**：只有 `TALKYBUDDY_AGENT_BACKEND=agentcore` 時 resolve_config()
 才回設定，否則回 None——既有 in-process 路徑行為完全不變。
@@ -38,8 +40,10 @@ _SESSION_ID_MIN_LEN = 33
 # 上限沿用先前實作的保守值（文件未載明，取 64 不會踩到 API 限制）。
 _SESSION_ID_MAX_LEN = 64
 
-# AgentCore 服務所在 region。見上方模組說明：台北無此服務。
-DEFAULT_REGION = "ap-southeast-1"
+# AgentCore 服務所在 region。競賽環境規範第 6 條指定 us-west-2，
+# 官方 region 表列 AgentCore harness 與 Memory 在 US West (Oregon) 皆可用。
+# `AGENTCORE_REGION` 仍可覆蓋，現場出狀況時能立刻改。
+DEFAULT_REGION = "us-west-2"
 
 # 呼叫逾時（秒）。Harness 會跑多輪工具迴圈，比單次 converse 慢，
 # 故用比 bedrock_converse.DEFAULT_TIMEOUT_S 更寬鬆的值。
@@ -48,6 +52,14 @@ DEFAULT_REGION = "ap-southeast-1"
 DEFAULT_TIMEOUT_S = 60.0
 
 _BACKEND_ENV = "TALKYBUDDY_AGENT_BACKEND"
+
+# InvokeHarness 把錯誤當成**串流事件**送回來，不是拋 boto3 例外。
+# 名稱取自本機 botocore service model 的 InvokeHarnessStreamOutput 成員。
+_STREAM_ERROR_EVENTS = (
+    "validationException",
+    "internalServerException",
+    "runtimeClientError",
+)
 
 # role → 該角色 harness ARN 的環境變數名稱
 _ROLE_ENV = {
@@ -157,14 +169,46 @@ def _hash_actor(student_id: str) -> str:
 
 
 def _extract_text(payload: dict) -> str:
-    """從 InvokeHarness 回應取出所有 text block 串接；缺 text 即拋錯。"""
+    """消費 InvokeHarness 的 EventStream，串接所有文字 delta；缺文字即拋錯。
+
+    **回應是 EventStream，不是 dict payload。** 本函式先前解的是
+    ``payload["output"]["message"]["content"]``——那是 bedrock-runtime.Converse
+    的形狀。用本機 botocore service model 可離線驗證：``InvokeHarness`` 的
+    output shape 只有一個成員 ``stream``，且標記 ``{"eventstream": True}``。
+    形狀對不上，所以這條路徑對真實 API 一次都沒成功過。
+
+    只取 ``delta.text``：``delta`` 底下 ``text`` / ``toolUse`` / ``toolResult`` /
+    ``reasoningContent`` 是平行的鍵，把思考過程串進答案會直接毀掉 JSON。
+
+    錯誤是**串流裡的事件**（``validationException`` 等），不是 boto3 例外。
+    不主動檢查就會拿到半截 JSON、schema 驗證失敗、靜默降級回規則式——
+    現場看起來像「雲端品質不好」，而不是「雲端根本失敗了」。
+    """
     try:
-        blocks = payload["output"]["message"]["content"]
+        stream = payload["stream"]
     except (KeyError, TypeError) as exc:
-        raise AgentCoreResponseError(f"Harness 回應缺 output.message.content: {exc}")
-    parts = [b["text"] for b in blocks if isinstance(b, dict) and "text" in b]
+        raise AgentCoreResponseError(f"Harness 回應缺 stream: {exc}")
+
+    parts: list[str] = []
+    try:
+        for event in stream:
+            if not isinstance(event, dict):
+                continue
+            for name in _STREAM_ERROR_EVENTS:
+                if name in event:
+                    msg = (event.get(name) or {}).get("message") or ""
+                    raise AgentCoreResponseError(f"Harness 串流回報 {name}: {msg}")
+            delta = (event.get("contentBlockDelta") or {}).get("delta") or {}
+            text = delta.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    except AgentCoreResponseError:
+        raise
+    except Exception as exc:  # 串流中斷、解碼失敗…一律轉成本層的例外型別
+        raise AgentCoreResponseError(f"Harness 串流讀取失敗: {exc}")
+
     if not parts:
-        raise AgentCoreResponseError("Harness 回應無任何 text block")
+        raise AgentCoreResponseError("Harness 串流無任何文字 delta")
     return "".join(parts)
 
 
@@ -217,6 +261,16 @@ def invoke(
         # 但所有孩子的長期記憶會混在同一個 actor 底下。拋例外讓呼叫端的
         # except 降級回規則式——寧可這次不用雲端，也不要製造無聲的隱私事故。
         raise ValueError("AgentCore invoke 缺 actor_id：Memory 會跨學生混用")
+
+    # 競賽規範：Bedrock 請求須控制在每秒 1 個以下（server/bedrock_throttle.py）。
+    # Harness 在雲端跑的就是模型推理迴圈，它是第五個 Bedrock 呼叫端，走的是
+    # 另一支 API——不主動接上這道閘就會整個繞過去。lazy import 沿用本檔慣例。
+    # 排在 _build_client 之前：不放行就不必做事，ThrottleTimeout 往外拋，
+    # 呼叫端的 except 會把它當成雲端不可用，降級到 Bedrock Converse。
+    from server import bedrock_throttle
+
+    bedrock_throttle.acquire()
+
     client = _build_client(cfg["region"], timeout_s)
     params: dict = {
         "harnessArn": cfg["harness_arn"],

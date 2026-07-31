@@ -28,6 +28,14 @@ _ALL_ENV = [
 def _clean_env(monkeypatch):
     for name in _ALL_ENV:
         monkeypatch.delenv(name, raising=False)
+    # 本檔會真的走進 agentcore.invoke，而它現在會取全域 Bedrock 節流許可
+    # （每秒 1 個請求）。不擋掉的話這個檔案每呼叫一次就真的睡 1.05 秒，
+    # 二十幾次 = 整個測試套件慢二十幾秒。節流器本身有 tests/test_bedrock_throttle.py
+    # 驗，「invoke 有沒有過閘」則由本檔的 test_invoke_goes_through_the_bedrock_throttle
+    # 驗（它會自己覆蓋這個 stub）——這裡換成 no-op 不會少測到任何東西。
+    from server import bedrock_throttle
+
+    monkeypatch.setattr(bedrock_throttle, "acquire", lambda **k: 0.0)
     return monkeypatch
 
 
@@ -44,7 +52,18 @@ class _FakeClient:
 
 
 def _ok(text: str) -> dict:
-    return {"output": {"message": {"role": "assistant", "content": [{"text": text}]}}}
+    """一輪正常結束的 InvokeHarness 回應。
+
+    **這是 EventStream，不是 dict payload。** 舊版這裡回的是
+    ``{"output": {"message": {"content": [...]}}}``——那是 bedrock-runtime.Converse
+    的形狀。fake 寫錯了，於是整批測試一路全綠，卻把一個對真實 API 無效的契約
+    釘死。形狀的權威來源是本機 botocore service model，見本檔最後一條
+    ``test_fake_matches_the_real_botocore_service_model``。
+
+    定義在檔案前段但實作委派到後段的 ``_stream_ok``：那一段連同註解解釋了
+    為什麼形狀是這樣，放在一起讀比較清楚。
+    """
+    return _stream_ok(text)
 
 
 # ---------------------------------------------------------------------------
@@ -64,13 +83,27 @@ def test_enabled_when_backend_selected(_clean_env):
     assert cfg["harness_arn"] == "arn:aws:...:harness/HW-1"
 
 
-def test_region_defaults_to_singapore(_clean_env):
-    """AgentCore 不在台北提供服務（2026-07-26 實測 endpoint 不存在），
-    新加坡是同時具備 AgentCore 與滿額 Bedrock 配額、且離台灣最近的 region。"""
+def test_region_defaults_to_us_west_2(_clean_env):
+    """競賽環境規範第 6 條指定 us-west-2，且官方 region 表列 AgentCore harness
+    在 US West (Oregon) 可用，規範與可用性沒有衝突。
+
+    先前預設新加坡：那是自有帳號時期選的（AgentCore 不在台北提供服務，
+    新加坡是離台灣最近的可用 region）。理由當時成立，但規範指定 region 之後
+    就不成立了——留著預設值，現場照預設跑下去就會建到規範外的 region，
+    而且沒有任何東西會報錯。
+    """
     _clean_env.setenv("TALKYBUDDY_AGENT_BACKEND", "agentcore")
     _clean_env.setenv("AGENTCORE_HARNESS_HOMEWORK", "arn:x")
-    assert agentcore.DEFAULT_REGION == "ap-southeast-1"
-    assert agentcore.resolve_config("homework")["region"] == "ap-southeast-1"
+    assert agentcore.DEFAULT_REGION == "us-west-2"
+    assert agentcore.resolve_config("homework")["region"] == "us-west-2"
+
+
+def test_region_env_overrides_still_win(_clean_env):
+    """AGENTCORE_REGION 仍可覆蓋——現場若發現 us-west-2 有問題要能立刻改。"""
+    _clean_env.setenv("TALKYBUDDY_AGENT_BACKEND", "agentcore")
+    _clean_env.setenv("AGENTCORE_HARNESS_HOMEWORK", "arn:x")
+    _clean_env.setenv("AGENTCORE_REGION", "ap-northeast-1")
+    assert agentcore.resolve_config("homework")["region"] == "ap-northeast-1"
 
 
 def test_missing_harness_arn_returns_none(_clean_env):
@@ -232,7 +265,13 @@ def test_session_id_does_not_leak_student_id(_clean_env, monkeypatch):
 
 
 def test_concatenates_multiple_text_blocks(_clean_env, monkeypatch):
-    payload = {"output": {"message": {"content": [{"text": "前"}, {"text": "後"}]}}}
+    """跨多個 content block 的文字要串起來（模型分段輸出時會這樣回）。"""
+    payload = _stream(
+        {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "前"}}},
+        {"contentBlockStop": {"contentBlockIndex": 0}},
+        {"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"text": "後"}}},
+        {"messageStop": {"stopReason": "end_turn"}},
+    )
     monkeypatch.setattr(
         agentcore, "_build_client", lambda region, timeout_s: _FakeClient(payload)
     )
@@ -247,7 +286,10 @@ def test_raises_when_no_text_block(_clean_env, monkeypatch):
     """回應缺 text：明確拋錯讓呼叫端降級，不靜默回空字串。"""
     monkeypatch.setattr(
         agentcore, "_build_client",
-        lambda region, timeout_s: _FakeClient({"output": {"message": {"content": []}}}),
+        lambda region, timeout_s: _FakeClient(_stream(
+            {"messageStart": {"role": "assistant"}},
+            {"messageStop": {"stopReason": "end_turn"}},
+        )),
     )
     with pytest.raises(agentcore.AgentCoreResponseError):
         agentcore.invoke(
@@ -315,3 +357,229 @@ def test_invoke_never_forwards_a_skills_override(_clean_env, monkeypatch):
         f"送出的參數多了：{set(fake.captured) - {'harnessArn', 'runtimeSessionId', 'messages', 'actorId'}}"
     assert "skills" not in fake.captured
     assert "systemPrompt" not in fake.captured
+
+
+# ---------------------------------------------------------------------------
+# InvokeHarness 的真實回應是 EventStream，不是 dict
+# ---------------------------------------------------------------------------
+#
+# 這一段是本檔最重要的部分。原本 `_extract_text` 解的是
+# `payload["output"]["message"]["content"]`，那是 **bedrock-runtime.Converse**
+# 的形狀，不是 **bedrock-agentcore.InvokeHarness** 的。用本機 botocore service
+# model 離線驗證：InvokeHarness 的 output shape 只有一個成員 `stream`，
+# 而且標了 `{"eventstream": True}`。
+#
+# 也就是說：這條路一次都沒成功過。而上面那批測試用的 fake 回的是 dict，
+# 於是它們一路全綠，把一個對真實 API 無效的契約釘死了。假的越像真的越好，
+# 這裡改成 yield 事件。
+
+
+def _stream(*events) -> dict:
+    """模擬 botocore EventStream：可迭代物件，每次 yield 一個單鍵 dict。"""
+    return {"stream": iter(events)}
+
+
+def _delta(text: str) -> dict:
+    return {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": text}}}
+
+
+def _stream_ok(text: str) -> dict:
+    """一輪完整、正常結束的 Harness 串流。"""
+    return _stream(
+        {"messageStart": {"role": "assistant"}},
+        _delta(text),
+        {"contentBlockStop": {"contentBlockIndex": 0}},
+        {"messageStop": {"stopReason": "end_turn"}},
+        {"metadata": {"usage": {"inputTokens": 10, "outputTokens": 5}}},
+    )
+
+
+def test_extract_text_consumes_event_stream(_clean_env, monkeypatch):
+    """真實 InvokeHarness 回 EventStream；文字要從 contentBlockDelta 累積。"""
+    monkeypatch.setattr(
+        agentcore, "_build_client",
+        lambda region, timeout_s: _FakeClient(_stream_ok('{"focus":"文法"}')),
+    )
+    out = agentcore.invoke(
+        {"region": "r", "harness_arn": "a", "memory_arn": None}, "u",
+        session_id="s", actor_id="s1",
+    )
+    assert out == '{"focus":"文法"}'
+
+
+def test_extract_text_concatenates_deltas_in_order(_clean_env, monkeypatch):
+    """一段 JSON 會被切成很多個 delta 送回來，順序錯了就解不出 JSON。"""
+    payload = _stream(
+        {"messageStart": {"role": "assistant"}},
+        _delta('{"focus":'), _delta('"文法"'), _delta("}"),
+        {"messageStop": {"stopReason": "end_turn"}},
+    )
+    monkeypatch.setattr(
+        agentcore, "_build_client", lambda region, timeout_s: _FakeClient(payload)
+    )
+    out = agentcore.invoke(
+        {"region": "r", "harness_arn": "a", "memory_arn": None}, "u",
+        session_id="s", actor_id="s1",
+    )
+    assert out == '{"focus":"文法"}'
+
+
+def test_reasoning_content_is_not_mixed_into_the_answer(_clean_env, monkeypatch):
+    """`delta.reasoningContent` 是思考過程，不是答案，混進去 JSON 就爛了。
+
+    這個專案已經被同型的坑咬過一次（Gemini thinking token 截斷回覆）。
+    delta 是個 union-ish 結構，text / toolUse / toolResult / reasoningContent
+    是平行的鍵——只取 text，其他一律略過。
+    """
+    payload = _stream(
+        {"contentBlockDelta": {"delta": {"reasoningContent": {"text": "讓我想想…"}}}},
+        _delta('{"focus":"文法"}'),
+        {"messageStop": {"stopReason": "end_turn"}},
+    )
+    monkeypatch.setattr(
+        agentcore, "_build_client", lambda region, timeout_s: _FakeClient(payload)
+    )
+    out = agentcore.invoke(
+        {"region": "r", "harness_arn": "a", "memory_arn": None}, "u",
+        session_id="s", actor_id="s1",
+    )
+    assert out == '{"focus":"文法"}', "思考過程不得混入答案"
+
+
+@pytest.mark.parametrize("err_event", [
+    "validationException", "internalServerException", "runtimeClientError",
+])
+def test_error_event_in_stream_raises(_clean_env, monkeypatch, err_event):
+    """錯誤是**串流中的事件**，不是 boto3 例外——不主動檢查就會靜默吞掉。
+
+    症狀會是「拿到半截 JSON → schema 驗證失敗 → 降級回規則式」，
+    現場看起來像「雲端品質不好」，而不是「雲端根本失敗了」。
+    """
+    payload = _stream(
+        _delta('{"focus":'),
+        {err_event: {"message": "boom"}},
+    )
+    monkeypatch.setattr(
+        agentcore, "_build_client", lambda region, timeout_s: _FakeClient(payload)
+    )
+    with pytest.raises(agentcore.AgentCoreResponseError):
+        agentcore.invoke(
+            {"region": "r", "harness_arn": "a", "memory_arn": None}, "u",
+            session_id="s", actor_id="s1",
+        )
+
+
+def test_stream_without_any_text_raises(_clean_env, monkeypatch):
+    """串流跑完一個 text 都沒有 → 拋錯讓呼叫端降級，不回空字串。"""
+    payload = _stream(
+        {"messageStart": {"role": "assistant"}},
+        {"messageStop": {"stopReason": "end_turn"}},
+    )
+    monkeypatch.setattr(
+        agentcore, "_build_client", lambda region, timeout_s: _FakeClient(payload)
+    )
+    with pytest.raises(agentcore.AgentCoreResponseError):
+        agentcore.invoke(
+            {"region": "r", "harness_arn": "a", "memory_arn": None}, "u",
+            session_id="s", actor_id="s1",
+        )
+
+
+def test_response_without_stream_key_raises(_clean_env, monkeypatch):
+    """回應根本沒有 stream 鍵（API 形狀漂移）→ 拋錯，不要 TypeError 到外面。"""
+    monkeypatch.setattr(
+        agentcore, "_build_client", lambda region, timeout_s: _FakeClient({"output": {}})
+    )
+    with pytest.raises(agentcore.AgentCoreResponseError):
+        agentcore.invoke(
+            {"region": "r", "harness_arn": "a", "memory_arn": None}, "u",
+            session_id="s", actor_id="s1",
+        )
+
+
+# ---------------------------------------------------------------------------
+# 競賽規範：Bedrock 每秒 1 個請求以下
+# ---------------------------------------------------------------------------
+
+def test_invoke_goes_through_the_bedrock_throttle(_clean_env, monkeypatch):
+    """InvokeHarness 也是打到 Bedrock，必須過同一道全域節流閘。
+
+    規範第 1 條限的是「Amazon Bedrock 的請求」，Harness 在雲端跑的就是模型
+    推理迴圈。四個直呼端已經收斂在 bedrock_converse 那道閘；AgentCore 是
+    **第五個**呼叫端，走的是另一支 API，不主動接上去就會繞過節流——
+    而超速的症狀（ThrottlingException → 靜默降級）在現場只會看起來像
+    「雲端很慢」，沒人會想到是自己違規。
+    """
+    from server import bedrock_throttle
+
+    order: list[str] = []
+    monkeypatch.setattr(
+        bedrock_throttle, "acquire", lambda **k: order.append("throttle") or 0.0
+    )
+
+    class _RecordingClient(_FakeClient):
+        def invoke_harness(self, **kwargs):
+            order.append("invoke")
+            return super().invoke_harness(**kwargs)
+
+    monkeypatch.setattr(
+        agentcore, "_build_client",
+        lambda region, timeout_s: _RecordingClient(_ok("ok")),
+    )
+    agentcore.invoke(
+        {"region": "r", "harness_arn": "a", "memory_arn": None}, "u",
+        session_id="s", actor_id="s1",
+    )
+
+    assert order == ["throttle", "invoke"], "必須先取得節流許可才送出請求"
+
+
+def test_throttle_timeout_propagates_as_failure(_clean_env, monkeypatch):
+    """排隊太久時放棄本次呼叫——呼叫端的 except 會降級到 Bedrock 再到規則式。"""
+    from server import bedrock_throttle
+
+    def _timeout(**k):
+        raise bedrock_throttle.ThrottleTimeout("排太久")
+
+    monkeypatch.setattr(bedrock_throttle, "acquire", _timeout)
+    monkeypatch.setattr(
+        agentcore, "_build_client",
+        lambda region, timeout_s: pytest.fail("節流未放行時不得送出請求"),
+    )
+    with pytest.raises(bedrock_throttle.ThrottleTimeout):
+        agentcore.invoke(
+            {"region": "r", "harness_arn": "a", "memory_arn": None}, "u",
+            session_id="s", actor_id="s1",
+        )
+
+
+def test_fake_matches_the_real_botocore_service_model(_clean_env):
+    """把上面那些 fake 的形狀釘到本機 botocore 的真實 service model 上。
+
+    這條測試存在的唯一理由：**上一版的 fake 是憑想像寫的，而且憑想像寫錯了。**
+    離線、不需憑證、不觸網，卻能在本機當場抓到 API 形狀漂移——
+    而不是在決賽現場才發現。
+    """
+    botocore_session = pytest.importorskip("botocore.session")
+    model = botocore_session.get_session().get_service_model("bedrock-agentcore")
+    op = model.operation_model("InvokeHarness")
+
+    # 1. output 只有 stream，而且是 event stream
+    assert set(op.output_shape.members) == {"stream"}, \
+        "InvokeHarness 的回應不是 dict payload，是 EventStream"
+    stream_shape = op.output_shape.members["stream"]
+    assert stream_shape.serialization.get("eventstream") is True
+
+    # 2. 我們消費的事件與欄位真的存在
+    assert "contentBlockDelta" in stream_shape.members
+    delta = stream_shape.members["contentBlockDelta"].members["delta"]
+    assert "text" in delta.members
+    assert "reasoningContent" in delta.members, "reasoningContent 是平行鍵，不能當成 text"
+
+    # 3. 我們檢查的錯誤事件真的是串流事件（不是 boto3 例外）
+    for name in ("validationException", "internalServerException", "runtimeClientError"):
+        assert name in stream_shape.members, name
+
+    # 4. 我們送出的參數名稱都存在（harnessArn 而非 harness_arn 之類的低級錯）
+    for name in ("harnessArn", "runtimeSessionId", "messages", "actorId"):
+        assert name in op.input_shape.members, name

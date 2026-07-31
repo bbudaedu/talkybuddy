@@ -49,7 +49,11 @@ from server.agents import homework, orchestrator, report  # noqa: E402
 # 常數（與 AGENTCORE_RESOURCES.md 記錄的現行值一致）
 # ---------------------------------------------------------------------------
 
-DEFAULT_REGION = "ap-southeast-1"   # AgentCore + Bedrock 配額都有、離台灣最近
+# 競賽環境規範第 6 條指定 us-west-2。官方 region 表（devguide/agentcore-regions）
+# 列 AgentCore harness 與 Memory 在 US West (Oregon) 皆可用，故規範與可用性沒有
+# 衝突。先前預設新加坡是自有帳號時期的選擇（離台灣最近），現場照預設跑下去
+# 就會建到規範外的 region。
+DEFAULT_REGION = "us-west-2"
 
 ROLE_NAME = "TalkyBuddyAgentCoreExecution"
 INLINE_POLICY_NAME = "TalkyBuddyAgentCoreRuntime"
@@ -110,7 +114,20 @@ def inline_policy(account_id: str, region: str) -> dict:
     模型權限收斂到 ``anthropic.claude-*``（稽核缺陷 2）。
     Memory 那組是必要的——``AmazonBedrockFullAccess`` **不涵蓋**
     ``bedrock-agentcore:*``，這是實測踩到的坑。
+
+    其餘各組來自官方 harness-security 的「Sample execution role policy」：
+    https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/harness-security.html
+
+    先前只有模型與 Memory 兩組。**少掉的那些不會讓 CreateHarness 失敗**——
+    資源會建起來、狀態會變 READY，然後 InvokeHarness 起不來。因為 harness
+    是在自己的 Firecracker microVM 裡開機的：它得先從 ECR Public 拉管理容器
+    映像、得能寫自己的 log。症狀跟「模型沒開通」「region 不對」長得一模一樣，
+    現場分不出來，是最貴的那種缺陷。
+
+    刻意**沒有**加的：私有 ECR（我們不用自訂容器）、Browser／Code Interpreter
+    （三個 agent 都是純推理 + JSON 輸出，用不到工具）。最小權限原則。
     """
+    log_group = f"arn:aws:logs:{region}:{account_id}:log-group"
     return {
         "Version": "2012-10-17",
         "Statement": [
@@ -134,6 +151,80 @@ def inline_policy(account_id: str, region: str) -> dict:
                     "bedrock-agentcore:ListMemoryRecords",
                 ],
                 "Resource": f"arn:aws:bedrock-agentcore:{region}:{account_id}:memory/*",
+            },
+            {
+                # harness 每個 session 都從 ECR Public 拉管理容器映像。
+                # 這兩組是「READY 但 Invoke 起不來」的頭號元凶。
+                "Sid": "EcrPublicTokenAccess",
+                "Effect": "Allow",
+                "Action": ["ecr-public:GetAuthorizationToken"],
+                "Resource": "*",
+            },
+            {
+                "Sid": "StsForEcrPublicPull",
+                "Effect": "Allow",
+                "Action": ["sts:GetServiceBearerToken"],
+                "Resource": "*",
+            },
+            {
+                "Sid": "XRayTracingAccess",
+                "Effect": "Allow",
+                "Action": [
+                    "xray:PutTraceSegments",
+                    "xray:PutTelemetryRecords",
+                    "xray:GetSamplingRules",
+                    "xray:GetSamplingTargets",
+                ],
+                "Resource": "*",
+            },
+            {
+                # 沒有 log 權限時，失敗現場連 log 都沒有，等於瞎著除錯。
+                "Sid": "CloudWatchLogsGroup",
+                "Effect": "Allow",
+                "Action": ["logs:CreateLogGroup", "logs:DescribeLogStreams"],
+                "Resource": f"{log_group}:/aws/bedrock-agentcore/runtimes/*",
+            },
+            {
+                "Sid": "CloudWatchLogsDescribeGroups",
+                "Effect": "Allow",
+                "Action": ["logs:DescribeLogGroups"],
+                "Resource": f"{log_group}:*",
+            },
+            {
+                "Sid": "CloudWatchLogsStream",
+                "Effect": "Allow",
+                "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                "Resource": f"{log_group}:/aws/bedrock-agentcore/runtimes/*:log-stream:*",
+            },
+            {
+                "Sid": "CloudWatchLogsPutResourcePolicy",
+                "Effect": "Allow",
+                "Action": ["logs:PutResourcePolicy"],
+                "Resource": "*",
+            },
+            {
+                # Resource 只能是 *，故用 namespace 條件收斂（官方範例同款）。
+                "Sid": "CloudWatchMetricsPublish",
+                "Effect": "Allow",
+                "Action": "cloudwatch:PutMetricData",
+                "Resource": "*",
+                "Condition": {
+                    "StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"},
+                },
+            },
+            {
+                "Sid": "AgentCoreWorkloadIdentity",
+                "Effect": "Allow",
+                "Action": [
+                    "bedrock-agentcore:GetWorkloadAccessToken",
+                    "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
+                ],
+                "Resource": [
+                    f"arn:aws:bedrock-agentcore:{region}:{account_id}"
+                    ":workload-identity-directory/default",
+                    f"arn:aws:bedrock-agentcore:{region}:{account_id}"
+                    ":workload-identity-directory/default/workload-identity/*",
+                ],
             },
         ],
     }
@@ -332,10 +423,14 @@ def _ensure_harness(control, name: str, role_arn: str, system_prompt: str,
         update = dict(req)
         update.pop("harnessName", None)
         control.update_harness(harnessId=hid, **update)
-        arn = existing.get("harnessArn")
+        # 欄位名稱是 arn，不是 harnessArn。真實 API 的 ListHarnesses 項目與
+        # CreateHarness 回應都只有 arn——寫錯的話 --apply 第一次就 KeyError，
+        # 而那是決賽現場最貴的時段。權威來源是本機 botocore service model，
+        # 見 tests/test_provision_agentcore.py 的 field_names_exist 那條測試。
+        arn = existing.get("arn")
     else:
         resp = control.create_harness(**req)
-        arn = resp["harness"]["harnessArn"]
+        arn = resp["harness"]["arn"]
         hid = resp["harness"]["harnessId"]
         print(f"  建立 Harness：{arn}")
 
