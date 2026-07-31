@@ -75,3 +75,52 @@ def test_rule_based_extract_caps_at_max_entries():
     result = _rule_based_extract(all_keys_text)
 
     assert len(result["entries"]) <= 8
+
+
+def test_rule_based_extract_avoids_substring_false_positive_chinese():
+    """短詞不應因為是長詞的子字串就被誤配（例：水果不應同時導致水被匹配）。"""
+    from server.agents.material import _rule_based_extract
+
+    result = _rule_based_extract("今天我們去看水果。")
+
+    hit_zh = {e["zh"] for e in result["entries"]}
+    # 應該只匹配「水果」不匹配「水」（因為水是水果的子字串）
+    assert "水果" in hit_zh
+    assert "水" not in hit_zh
+
+
+def test_rule_based_extract_avoids_substring_false_positive_english():
+    """英文詞邊界匹配，避免子字串誤配（例：pencil 不應導致 pen 被匹配）。"""
+    from server.agents.material import _rule_based_extract
+
+    result = _rule_based_extract("I have a pencil in my backpack.")
+
+    hit_en = {e["en"] for e in result["entries"]}
+    # 應該只匹配詞邊界內的詞，不應該從 pencil 裡分出 pen
+    # 注意：假設「筆」(pen) 在 VOCAB 裡；若不在則 entries 應為空或不含 pen
+    for entry in result["entries"]:
+        if entry["en"] == "pen":
+            # 如果 pen 被匹配了，代表這個測試用例有問題（實際應只匹配邊界詞）
+            raise AssertionError(f"不應該從 pencil 裡誤配 pen，但卻匹配了：{entry}")
+
+
+def test_rule_based_extract_handles_non_string_inputs():
+    """非字串輸入（int、list、dict、bool、bytes 等）不拋例外，降級成空結果。"""
+    from server.agents.material import _rule_based_extract
+
+    non_string_inputs = [
+        123,                    # int
+        [1, 2, 3],             # list
+        {"key": "value"},      # dict
+        True,                  # bool
+        3.14,                  # float
+        b"bytes",              # bytes
+    ]
+
+    for bad_input in non_string_inputs:
+        result = _rule_based_extract(bad_input)
+        assert result["source"] == "rule", f"Failed for input type: {type(bad_input)}"
+        assert result["entries"] == [], f"Failed for input type: {type(bad_input)}"
+        assert result["accepted_count"] == 0, f"Failed for input type: {type(bad_input)}"
+        assert result["rejected_count"] == 0, f"Failed for input type: {type(bad_input)}"
+        assert isinstance(result["topic"], str), f"Failed for input type: {type(bad_input)}"

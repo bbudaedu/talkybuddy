@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from server import scaffold
 
@@ -46,16 +47,40 @@ def _rule_based_extract(text: str) -> dict:
 
     不生成任何新詞——只在文字裡比對既有 scaffold.VOCAB 的中文鍵/英文詞，
     命中的詞就是這份教材的重點詞。
+    任何非字串輸入都降級處理成空字串，保證不拋例外。
     """
-    text = text or ""
+    # 類型守衛：非字串輸入降級成空字串，永遠不拋例外
+    if not isinstance(text, str):
+        text = ""
+
+    # 用既有 scaffold._find_zh_vocab 做中文比對（處理長詞優先、避免短詞搶掠）
+    zh_hits = scaffold._find_zh_vocab(text)
     text_lower = text.lower()
+
+    # 追蹤已匹配的詞（中文優先），避免重複
+    matched_zh = set(zh_hits)
     hits: list[dict] = []
+
+    # 先加入中文命中
+    for zh in zh_hits:
+        if len(hits) >= _MAX_ENTRIES:
+            break
+        info = scaffold.VOCAB[zh]
+        hits.append({"en": info["en"], "zh": zh, "cat": info["cat"],
+                     "np": info["np"], "sent": info["sent"]})
+
+    # 再檢查英文（詞邊界匹配，避免子字串誤配）
     for zh, info in scaffold.VOCAB.items():
         if len(hits) >= _MAX_ENTRIES:
             break
-        if zh in text or info["en"].lower() in text_lower:
-            hits.append({"en": info["en"], "zh": zh, "cat": info["cat"],
+        if zh in matched_zh:
+            continue
+        # 英文詞邊界匹配（如 scaffold.safety_check）
+        en_word = info["en"]
+        if re.search(r"\b" + re.escape(en_word) + r"\b", text_lower):
+            hits.append({"en": en_word, "zh": zh, "cat": info["cat"],
                          "np": info["np"], "sent": info["sent"]})
+            matched_zh.add(zh)
 
     if hits:
         cat_counts: dict[str, int] = {}
