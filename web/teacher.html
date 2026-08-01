@@ -737,7 +737,7 @@ function renderDiagnosisSource() {
     if (lbl) lbl.textContent = '由 AWS Bedrock（Claude）direct converse 產出';
   } else if (src === 'rule') {
     el.className = 'badge edge';
-    if (lbl) lbl.textContent = '離線規則式產出（未走雲端）';
+    if (lbl) lbl.textContent = '邊緣端即時產出';
   } else {
     el.className = 'badge edge';
     if (lbl) lbl.textContent = '來源未知';
