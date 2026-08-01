@@ -19,9 +19,16 @@ class Lesson:
     # 目標句實際所屬的分類。與 topic 是兩回事，刻意分開兩個欄位：
     # topic 由診斷決定（延伸問句、遊戲出題靠它，見 test_unit_alignment），
     # 而帶讀句優先取老師指定的本週單元，兩者本來就可能不同類。
-    # 學生端的「今天主題」標籤要用這個，否則會出現
-    # 「今天主題：動物」配上「He is eating an apple.」（2026-08-01 線上實測）。
     sentence_topic: str | None = None
+    # 帶讀句來自老師指定的本週單元時，這裡帶單元資訊給畫面當標籤。
+    #
+    # 為什麼不能只靠 sentence_topic：Unit 6「What Are You Doing?」的
+    # "He is eating an apple." 在 VOCAB 裡歸類是 action（因為關鍵字是
+    # eating），畫面就顯示「今天主題：動作」——可是使用者看到的是 apple，
+    # 讀起來還是對不上。詞彙分類本來就不是給孩子看的標籤，單元名稱才是。
+    unit_no: int | None = None
+    unit_title: str | None = None
+    unit_zh: str | None = None
 
 
 def _unit_entries(unit_no=None) -> list[dict]:
@@ -197,8 +204,29 @@ def build_lesson(diagnoses, profile=None) -> Lesson:
             target_form = ls.get("target_form") or default_form
         sent = pick_target_sentence(topic, profile)
         return Lesson(topic, sent, target_form, directive,
-                      sentence_topic=topic_of_sentence(sent) or topic)
+                      sentence_topic=topic_of_sentence(sent) or topic,
+                      **_unit_fields(sent, profile))
     except Exception:
         sent = pick_target_sentence(default_topic, profile)
         return Lesson(default_topic, sent, default_form, None,
-                      sentence_topic=topic_of_sentence(sent) or default_topic)
+                      sentence_topic=topic_of_sentence(sent) or default_topic,
+                      **_unit_fields(sent, profile))
+
+
+def _unit_fields(sent, profile) -> dict:
+    """這句是不是本週單元的句子；是的話回單元編號與名稱，不是就回空欄位。
+
+    畫面拿它當「今天在練什麼」的標籤——單元名稱是老師和孩子都認得的說法，
+    而 VOCAB 的 cat（food/action/…）只是內部分類，直接顯示會出現
+    「今天主題：動作」配「He is eating an apple.」這種讀起來對不上的組合。
+    任何例外都回空欄位，讓畫面退回原本的主題標籤，不擋 live。
+    """
+    try:
+        from server import seed_units
+        if sent and sent in set(unit_sentences(profile, limit=50)):
+            u = seed_units.current_unit() or {}
+            return {"unit_no": u.get("no"), "unit_title": u.get("title"),
+                    "unit_zh": u.get("zh")}
+    except Exception:
+        pass
+    return {}

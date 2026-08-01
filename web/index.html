@@ -56,8 +56,6 @@ header > *{max-width:1320px;margin-left:auto;margin-right:auto;}
 .badge.edge{background:#e6f7f0;color:#0e7a55;border-color:#8fdcbe;}
 .badge.cloud{background:#e8f0fe;color:#1a56b8;border-color:#9dbdf5;}
 .badge .dot{width:12px;height:12px;border-radius:50%;background:currentColor;}
-@keyframes badgePulse{0%{transform:scale(1);}45%{transform:scale(1.18);}100%{transform:scale(1);}}
-.badge.pulse{animation:badgePulse .6s ease-out;}
 .metric{color:var(--ink-soft);font-weight:600;}
 .metric b{color:var(--ink);}
 #connState{font-weight:700;}
@@ -69,22 +67,6 @@ a.teacher-link{
   padding:3px 8px;border-radius:999px;background:#efe9ff;
 }
 .device-note{font-size:10px;color:var(--ink-soft);margin-top:4px;text-align:center;}
-/* 飛航模式開關 */
-.airplane-row{
-  display:flex;align-items:center;justify-content:center;gap:10px;margin-top:6px;
-}
-.airplane-label{font-size:14px;font-weight:800;}
-.switch{
-  position:relative;width:74px;height:36px;border-radius:999px;cursor:pointer;
-  background:#d9cdb4;transition:background .25s;border:none;flex:none;
-}
-.switch::after{
-  content:"";position:absolute;top:4px;left:4px;width:28px;height:28px;border-radius:50%;
-  background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.25);transition:left .25s;
-}
-.switch.on{background:#0e7a55;}
-.switch.on::after{left:42px;}
-.switch:disabled{opacity:.5;cursor:wait;}
 /* ============ 企鵝舞台 ============ */
 .stage{
   display:flex;flex-direction:column;align-items:center;
@@ -183,28 +165,6 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
 .bubble .who{font-size:10px;font-weight:800;color:var(--ink-soft);margin-bottom:2px;}
 .bubble .scores{
   margin-top:6px;font-size:10px;color:var(--ink-soft);display:flex;gap:8px;flex-wrap:wrap;
-}
-/* ============ 開口列（刻意不做打字輸入） ============
- * 這是一個練口說的產品。給了輸入框，孩子就會用打的——那正好繞過
- * 我們要練的能力，也讓發音／流暢度沒有資料可評。所以主要動作只有
- * 一個：開口。麥克風不能用時誠實說明，不提供打字當替代。 */
-.speakbar{
-  display:flex;gap:10px;align-items:center;justify-content:center;
-  padding:12px;border-top:2px dashed #e8d9bd;background:var(--cream-2);
-}
-.speak-btn{
-  flex:1;max-width:420px;font-family:inherit;font-size:17px;font-weight:800;color:#fff;
-  background:linear-gradient(180deg,#ffa176,#ff8f66);
-  border:none;border-radius:999px;padding:15px 22px;cursor:pointer;
-  box-shadow:0 4px 0 #d9714a;transition:transform .08s;
-  display:flex;align-items:center;justify-content:center;gap:9px;
-}
-.speak-btn:active{transform:translateY(4px);box-shadow:none;}
-.speak-btn.rec{background:linear-gradient(180deg,#ff8f5a,#ef6f3c);animation:recPulse 1.1s ease-in-out infinite;}
-@keyframes recPulse{0%,100%{box-shadow:0 4px 0 #c85a2c;}50%{box-shadow:0 4px 0 #c85a2c,0 0 0 10px rgba(255,143,102,.22);}}
-@media (prefers-reduced-motion:reduce){.speak-btn.rec{animation:none;}}
-.speak-btn:disabled{
-  background:#e3d7c0;color:#8a7b6c;box-shadow:none;cursor:default;font-size:14px;
 }
 
 /* ============ 側欄面板（遊戲／作業） ============ */
@@ -437,16 +397,10 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
  * 手機（預設，≤899px）：單欄；作業卡收起來不佔位，遊戲改成橫向捲動列
  * ============================================================ */
 @media (max-width:899px){
-  /* ---- 精簡頁首：原本四行（狀態／教師連結換行／飛航／定位）佔掉近 1/5 螢幕。
+  /* ---- 精簡頁首：原本三行（狀態／教師連結換行／定位）偏鬆。
    * 一個功能都沒拿掉，只是把它們排進兩行，並把開發用的數字縮小。 ---- */
   header{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:6px 10px;}
   header .statusbar{flex:1 1 auto;gap:7px;font-size:11.5px;order:1;}
-  .airplane-row{order:2;flex:none;margin-top:0;gap:6px;}
-  .airplane-label{font-size:12px;}
-  .switch{width:54px;height:27px;}
-  .switch::after{width:21px;height:21px;top:3px;left:3px;}
-  .switch.on::after{left:30px;}
-  #airplaneState{font-size:11px;}
   .device-note{order:3;flex:1 1 100%;margin-top:0;font-size:10px;text-align:center;}
   /* 延遲／待同步是給我們除錯看的，孩子不需要，縮到不搶視線但仍可查 */
   .statusbar .metric{font-size:10.5px;opacity:.72;}
@@ -504,7 +458,6 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
   header{display:flex;align-items:center;gap:18px;padding:7px 20px;}
   header > *{max-width:none;}
   header .statusbar{flex:1;min-width:0;}
-  .airplane-row{margin-top:0;flex:none;}
   .device-note{margin-top:0;flex:none;white-space:nowrap;}
 
   .app-shell{
@@ -534,7 +487,6 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
   }
   main#chat{padding:16px 18px;}
   .bubble{max-width:76%;font-size:15.5px;}
-  .speakbar{background:#fffdf7;border-top:2px dashed #f0e4cc;}
 
   /* 遊戲清單在桌機直排，一眼看完四款 */
   .game-list{flex-direction:column;overflow-x:visible;}
@@ -568,18 +520,13 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
 
 <header>
   <div class="statusbar">
-    <span class="badge edge" id="modeBadge" aria-live="polite"><span class="dot"></span><span id="modeText">edge</span></span>
+    <span class="badge edge" id="modeBadge" aria-live="polite"><span class="dot"></span><span id="modeText">離線</span></span>
     <span class="metric">延遲 <b id="latency">--</b> ms</span>
     <span class="metric">待同步 <b id="pending">0</b> 筆</span>
     <span class="spacer"></span>
     <span id="studentName"></span>
     <span id="connState" class="bad">連線中…</span>
     <a class="teacher-link" href="/teacher">&#128105;&#8205;&#127979; 教師儀表板</a>
-  </div>
-  <div class="airplane-row">
-    <span class="airplane-label">&#9992;&#65039; 飛航模式</span>
-    <button class="switch" id="airplaneSwitch" aria-label="飛航模式開關" type="button"></button>
-    <span id="airplaneState" style="font-size:12px;font-weight:700;color:var(--ink-soft);">邊緣模式</span>
   </div>
   <div class="device-note">同一套學伴：手機 · 平板 · 電腦 · 玩偶</div>
 </header>
@@ -655,7 +602,7 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
     </svg>
   </div>
   <div id="stateHint">待機中，點一下企鵝開始說話</div>
-  <div class="hold-hint" id="holdHint">&#128070; 點一下企鵝開始說話，說完再點一下（或喊喚醒詞）</div>
+  <div class="hold-hint" id="holdHint">&#128070; 點一下企鵝開始說話，說完再點一下</div>
 </div>
 
 <div class="lesson-banner" id="lessonBanner">
@@ -666,11 +613,6 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
 
 <div class="col-chat">
   <main id="chat" aria-live="polite"></main>
-  <div class="speakbar">
-    <button class="speak-btn" id="speakBtn" type="button">
-      <span id="speakIcon">🎤</span><span id="speakLabel">按我開口說話</span>
-    </button>
-  </div>
 </div>
 
 <div class="col-side">
@@ -726,7 +668,7 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
 
   <div class="pnl" data-tab="play" id="gamesPanel">
     <h3>🎲 用講的玩</h3>
-    <div class="hint">四款都不用連網，飛航模式也能玩</div>
+    <div class="hint">四款都不用連網，斷線也能玩</div>
     <div class="game-list" id="gamesBox"></div>
     <div class="game-live" id="gameLive" hidden></div>
   </div>
@@ -789,9 +731,6 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
 /* ---------- DOM 快取 ---------- */
 var body = document.getElementById("body");
 var chatEl = document.getElementById("chat");
-var speakBtn = document.getElementById("speakBtn");
-var speakLabel = document.getElementById("speakLabel");
-var speakIcon = document.getElementById("speakIcon");
 var gamesBox = document.getElementById("gamesBox");
 var gameLive = document.getElementById("gameLive");
 var hwPanel = document.getElementById("hwPanel");
@@ -802,8 +741,6 @@ var latencyEl = document.getElementById("latency");
 var pendingEl = document.getElementById("pending");
 var modeBadge = document.getElementById("modeBadge");
 var modeText = document.getElementById("modeText");
-var airplaneSwitch = document.getElementById("airplaneSwitch");
-var airplaneState = document.getElementById("airplaneState");
 var penguinWrap = document.getElementById("penguinWrap");
 var stateHint = document.getElementById("stateHint");
 var holdHint = document.getElementById("holdHint");
@@ -1118,15 +1055,6 @@ function triggerSpeak() {
   window._wakeController.triggerPush();
 }
 
-function setSpeakAvailable(ok, why) {
-  speakBtn.disabled = !ok;
-  speakLabel.textContent = ok ? "按我開口說話" : (why || "麥克風不可用");
-  speakIcon.textContent = ok ? "🎤" : "🚫";
-}
-
-function initSpeakBar() {
-  speakBtn.addEventListener("click", triggerSpeak);
-}
 
 /* ---------- Push-to-talk（MediaRecorder → WS binary） ---------- */
 function pickMime() {
@@ -1152,9 +1080,8 @@ function initMic() {
   navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
     stream.getTracks().forEach(function (t) { t.stop(); });   /* 只探測權限，不常駐；每輪由 MicRouter 重新取得 */
     micAvailable = true;
-    holdHint.textContent = "👆 點企鵝或下方按鈕開始說話，說完再點一下";
+    holdHint.textContent = "👆 點一下企鵝開始說話，說完再點一下";
     holdHint.classList.remove("disabled");
-    setSpeakAvailable(true);
   }).catch(function () {
     micDisabled();
   });
@@ -1164,7 +1091,6 @@ function micDisabled() {
   micAvailable = false;
   holdHint.textContent = "🎤 找不到麥克風，請接上麥克風或允許瀏覽器使用";
   holdHint.classList.add("disabled");
-  setSpeakAvailable(false, "需要麥克風才能練口說");
 }
 
 /* pointer 事件：tap-to-toggle（點一下開始、再點結束）；防長按選單 */
@@ -1197,11 +1123,16 @@ function fetchLesson() {
     .then(function (r) { if (!r.ok) { throw new Error("no lesson"); } return r.json(); })
     .then(function (lp) {
       if (!lp || !lp.target_sentence) { return; }
-      /* 用 sentence_topic：帶讀句可能來自老師指定的本週單元，跟 topic
-       * （診斷輪替出來、供延伸問句與遊戲出題）不同類。拿 topic 當標籤會出現
-       * 「今天主題：動物」配「He is eating an apple.」。 */
-      var labelKey = lp.sentence_topic || lp.topic;
-      lessonTopicEl.textContent = TOPIC_LABELS[labelKey] || ("今天主題：" + (labelKey || ""));
+      /* 標籤優先序：本週單元 → 詞彙分類 → 編排器主題。
+       * 單元名稱是老師和孩子都認得的說法；VOCAB 的 cat 只是內部分類，
+       * 直接顯示會出現「今天主題：動作」配「He is eating an apple.」
+       * 這種讀起來對不上的組合。 */
+      if (lp.unit_zh) {
+        lessonTopicEl.textContent = "📘 本週單元 " + (lp.unit_no || "") + "・" + lp.unit_zh;
+      } else {
+        var labelKey = lp.sentence_topic || lp.topic;
+        lessonTopicEl.textContent = TOPIC_LABELS[labelKey] || ("今天主題：" + (labelKey || ""));
+      }
       lessonTargetEl.textContent = lp.target_sentence;
       lessonBanner.style.display = "block";
     })
@@ -1548,7 +1479,7 @@ var BADGES = [
   { id: "ten",     ico: "🗣️", nm: "十句達人",  cond: "說滿 10 句英文", test: function (s) { return s.spoken >= 10; } },
   { id: "fifty",   ico: "🎤", nm: "五十句",    cond: "說滿 50 句英文", test: function (s) { return s.spoken >= 50; } },
   { id: "words20", ico: "📚", nm: "單字獵人",  cond: "用過 20 個單字", test: function (s) { return s.words >= 20; } },
-  { id: "acc80",   ico: "🎯", nm: "神準",      cond: "說對率 80%（10 句以上）", test: function (s) { return s.spoken >= 10 && s.acc >= 80; } },
+  { id: "acc80",   ico: "🎯", nm: "神準",      cond: "說對率 8 成（10 句以上）", test: function (s) { return s.spoken >= 10 && s.acc >= 80; } },
   { id: "streak3", ico: "🔥", nm: "連三天",    cond: "連續 3 天開口", test: function (s) { return s.streak >= 3; } },
   { id: "promote", ico: "🚀", nm: "升階了",    cond: "AI 判定可以升一階", test: function (s) { return s.promoted; } },
   { id: "min15",   ico: "⏱️", nm: "專心 15 分", cond: "今天上線滿 15 分鐘", test: function (s) { return s.minutes >= 15; } }
@@ -1581,7 +1512,7 @@ function renderBadges(stats) {
   }
 }
 
-function renderStreak(days) {
+function renderStreak(days, last7) {
   var row = document.getElementById("streakRow");
   if (!row) { return; }
   row.textContent = "";
@@ -1589,12 +1520,16 @@ function renderStreak(days) {
   var b = document.createElement("b"); b.textContent = days + " 天";
   row.appendChild(b);
   var dots = document.createElement("span"); dots.className = "dots";
-  for (var i = 0; i < 7; i++) {
+  dots.title = "最近七天，有開口的日子";
+  /* 星星畫的是「最近七天各天有沒有開口」，不是把連續天數截到 7。
+   * 原本用 min(days,7) 填星，連續 8 天時會出現「8 天」配 7 顆星，
+   * 數字跟圖對不起來。 */
+  (last7 || []).forEach(function (on) {
     var d = document.createElement("span");
-    d.className = "d" + (i < Math.min(days, 7) ? " on" : "");
-    d.textContent = i < Math.min(days, 7) ? "★" : "";
+    d.className = "d" + (on ? " on" : "");
+    d.textContent = on ? "★" : "";
     dots.appendChild(d);
-  }
+  });
   row.appendChild(dots);
   row.hidden = false;
 }
@@ -1612,7 +1547,14 @@ function calcStreak(rows) {
     if (days[key]) { n++; } else if (i > 0) { break; }
     cur.setDate(cur.getDate() - 1);
   }
-  return n;
+  /* 最近七天（舊→新）各天有沒有開口，給星星用 */
+  var last7 = [], d2 = new Date();
+  d2.setDate(d2.getDate() - 6);
+  for (var j = 0; j < 7; j++) {
+    last7.push(!!days[d2.toISOString().slice(0, 10)]);
+    d2.setDate(d2.getDate() + 1);
+  }
+  return { streak: n, last7: last7 };
 }
 
 function refreshTapStats() {
@@ -1639,8 +1581,9 @@ function refreshTapStats() {
       document.getElementById("ptsTotal").textContent = pts + " 分";
       renderMinutes(mins);
 
-      var streak = calcStreak(rows);
-      renderStreak(streak);
+      var st = calcStreak(rows);
+      var streak = st.streak;
+      renderStreak(streak, st.last7);
       renderBadges({
         spoken: en.length, words: Object.keys(words).length, acc: acc,
         streak: streak, minutes: mins,
@@ -1962,51 +1905,12 @@ function refreshStatus() {
 
 function applyMode(mode) {
   networkMode = mode;
-  modeText.textContent = mode;
+  /* 顯示給孩子看的是中文。原本直接印 "edge"／"cloud"，在一整頁中文裡
+   * 是開發術語，孩子看不懂、評審也得多解釋一句。 */
+  modeText.textContent = mode === "cloud" ? "雲端" : "離線";
   modeBadge.className = "badge " + (mode === "cloud" ? "cloud" : "edge");
-  /* 飛航模式開 = edge（斷雲端）；關 = cloud */
-  if (mode === "edge") {
-    airplaneSwitch.classList.add("on");
-    airplaneState.textContent = "邊緣模式";
-  } else {
-    airplaneSwitch.classList.remove("on");
-    airplaneState.textContent = "雲端連線";
-  }
 }
 
-/* ---------- 飛航模式開關 ---------- */
-airplaneSwitch.addEventListener("click", function () {
-  var target = networkMode === "edge" ? "cloud" : "edge";
-  airplaneSwitch.disabled = true;
-  fetch("/api/network_mode", {
-    method: "POST",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ mode: target })
-  }).then(function (r) { return r.json(); }).then(function (res) {
-    applyMode(target);
-    modeBadge.classList.remove("pulse");
-    void modeBadge.offsetWidth;
-    modeBadge.classList.add("pulse");
-    modeBadge.addEventListener("animationend", function () {
-      modeBadge.classList.remove("pulse");
-    }, { once: true });
-    if (target === "cloud") {
-      if (res && res.new_diagnosis) {
-        playSyncFx();
-        showToast("☁️ 已同步 " + (res.synced != null ? res.synced : 0) + " 筆｜Hermes Agent 已產出最新診斷", 4200);
-      } else {
-        showToast("☁️ 已切回雲端連線");
-      }
-    } else {
-      showToast("✈️ 飛航模式開啟，雲端已斷線 — 邊緣運算持續對話");
-    }
-    refreshStatus();
-  }).catch(function () {
-    showToast("切換失敗，請再試一次");
-  }).finally(function () {
-    airplaneSwitch.disabled = false;
-  });
-});
 
 /* ---------- A1 喚醒層接線 ---------- */
 function playWakeCue() {
@@ -2130,7 +2034,7 @@ function initWakeLayer() {
       });
     }).catch(function () {
       /* wake-config 讀取或 sherpa WASM 建置失敗：維持既有 noopEngine controller，push 仍可用。 */
-      showToast("語音喚醒詞暫不可用，仍可點企鵝或下方按鈕開口");
+      showToast("點一下企鵝就可以開始說話");
     });
   }).catch(function () {
     /* 三個 /static 模組本身載入失敗才會走到這裡：push 也無法運作，需明確提示可行動作。 */
@@ -2158,14 +2062,12 @@ function initModes() {
 
 function startHalfDuplex() {
   liveMode = false;
-  setSpeakAvailable(micAvailable, "麥克風不可用");
   connectWS();
   initWakeLayer();
 }
 
 function enterLiveMode() {
   liveMode = true;
-  setSpeakAvailable(micAvailable, "麥克風不可用");
   /* 停半雙工喚醒常駐麥（若已建、吞例外）；live 模式改用 sherpa KWS + 協調器 */
   try {
     if (window._wakeController && window._wakeController.engine && window._wakeController.engine.stop) {
@@ -2269,7 +2171,6 @@ var _booted = false;
 function boot() {
   if (_booted) { return; }
   _booted = true;
-  initSpeakBar();
   setVisualState("idle");
   initMic();
   initModes();   /* 取代 connectWS + initWakeLayer：依 live_s2s 決定 live 或半雙工（半雙工分支仍走 sherpa KWS） */
@@ -2287,7 +2188,7 @@ function boot() {
   initTabs();
   setInterval(refreshStatus, 5000);
   /* 開場招呼 */
-  addBubble("penguin", "嘿！我是你的說說學伴！點一下我的肚子開始說話，或喊喚醒詞叫我。大聲說出來，我在聽～", {});
+  addBubble("penguin", "嘿！我是你的說說學伴！點一下我的肚子，我就開始聽你說。大聲說出來，我在聽～", {});
 }
 
 /* ---------- 登入流程 ---------- */

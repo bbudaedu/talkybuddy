@@ -554,9 +554,12 @@ async def api_lesson(student: str | None = None,
     lp = lesson.build_lesson(store.list_diagnoses(student_id=sid), store.get_profile(student_id=sid))
     return {
         "topic": lp.topic,
-        # 學生端「今天主題」標籤要用這個：帶讀句可能來自本週單元，
-        # 與 topic（診斷輪替、供延伸問句與遊戲出題）不同類。
+        # 學生端「今天在練什麼」的標籤優先序：單元名稱 → sentence_topic → topic。
+        # topic 是編排器內部輪到哪一類，不是給孩子看的說法。
         "sentence_topic": lp.sentence_topic or lp.topic,
+        "unit_no": lp.unit_no,
+        "unit_title": lp.unit_title,
+        "unit_zh": lp.unit_zh,
         "target_sentence": lp.target_sentence,
         "target_form": lp.target_form,
     }
