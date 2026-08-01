@@ -35,6 +35,29 @@
 **繞過方式**（若不修）：demo 講「孩子開口 → 玩偶陪他說對」這個行為本身，
 不要強調帶讀句來自本週單元。
 
+### 1b. 教師診斷實際上沒有走雲端 ⚠️ 2026-08-02 新增
+
+`/api/diagnoses` 最新幾筆的 `source` 都是 `rule`。2026-08-02 線上實測：跑滿 6 輪
+對話觸發背景診斷（`DIRECTIVE_REFRESH_EVERY=5`），新產生的那筆仍是 `rule`。
+
+**不是憑證問題**——Fargate 用自己的 IAM task role，與本機 `.env.aws` 無關。
+（診斷時若在本機用過期憑證測容器，會得到同樣的 `rule`，那是假象，別被誤導。）
+
+**已做的只是改標籤**：教師端徽章文案從「離線規則式產出（未走雲端）」改為
+「邊緣端即時產出」（commit f9cba39）。**問題本身沒修。**
+
+**根因待查**：`server/diagnose.py` 的 `_call_anthropic_api()` 為何失敗。兩個候選：
+1. 診斷 model `global.anthropic.claude-sonnet-5` 沒開通——`sonnet-4-5` 昨天就是這樣，
+   而 `list-foundation-models`／preflight ④ 列的是「存在」不是「已開通」。
+   驗法：拿有效憑證真的 `converse` 一次那個 model id。
+2. 逾時（診斷走大模型，上界 12s）。
+
+要查 CloudWatch log 需要有效憑證。修好的判準：教師端徽章自己變成
+「由 AWS Bedrock（Claude）direct converse 產出」。
+
+**demo 繞過方式**：真正證明 AI 在跑的是「Agent 產出」卡片（派作業／週報，走 AgentCore）
+與學生端對話本身；診斷卡片可以講成「斷網時教師端照樣有診斷」的離線賣點。
+
 ### 2. material agent 的 `cat` 分類明顯錯誤
 
 Unit 3 的天氣詞（sunny/rainy/cloudy…）全被標成 `cat="color"`。
