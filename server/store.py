@@ -326,13 +326,23 @@ def mark_synced(seqs) -> int:
 
 
 def add_diagnosis(d: dict) -> None:
-    """新增（或覆寫同日期的）一筆診斷。"""
-    date = str(d["date"])
+    """新增（或覆寫同日期的）一筆診斷。
+
+    與 ``add_interaction`` 一樣補上 ``student_id``：``list_diagnoses`` 是拿
+    payload 裡的這個鍵在篩學生的，寫入端不補、讀取端就一筆都篩不到。
+    這兩支本來不對稱——interactions 有 ``setdefault("student_id", ...)``、
+    diagnoses 直接把 dict 原樣塞進去——症狀是**教師儀表板的診斷與 14 天趨勢
+    整片空白**：種子的 14 筆診斷確實在 DB 裡，但教師端（tutor 角色）一律要帶
+    ``?student=``，帶了就篩不到任何一筆。
+    """
+    body = dict(d)
+    body.setdefault("student_id", _student_id())
+    date = str(body["date"])
     with _lock:
         conn = _get_conn()
         conn.execute(
             "INSERT OR REPLACE INTO diagnoses (date, payload) VALUES (?, ?)",
-            (date, json.dumps(d, ensure_ascii=False)),
+            (date, json.dumps(body, ensure_ascii=False)),
         )
         conn.commit()
 
@@ -341,13 +351,19 @@ def list_diagnoses(student_id: str | None = None) -> list[dict]:
     """列出所有診斷，依 date 升冪。
 
     student_id 省略時回全部（舊行為）；指定時只回該生。
+
+    payload 沒有 ``student_id`` 的舊資料一律算成預設學生：``diagnoses`` 用
+    ``date`` 當 PRIMARY KEY，本來就是單一學生的表，裡面的每一列都只可能屬於
+    這個 demo 學生。這條讓 ``add_diagnosis`` 補欄位之前寫進去的資料不必搬遷
+    也看得到——正式的多學生支援要改主鍵，那是另一件事（見 demo_class.py）。
     """
     with _lock:
         conn = _get_conn()
         rows = conn.execute("SELECT payload FROM diagnoses ORDER BY date ASC").fetchall()
     items = [json.loads(p) for (p,) in rows]
     if student_id is not None:
-        items = [d for d in items if d.get("student_id") == student_id]
+        items = [d for d in items
+                 if d.get("student_id", default_student_id()) == student_id]
     return items
 
 

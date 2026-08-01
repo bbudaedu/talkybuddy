@@ -179,7 +179,6 @@ class VoicePipeline:
   - `cloud_llm_detail` / `cloud_tts_detail`：一句話說明狀態與依據（未啟用／尚未驗證／可用 Nms／設定齊全但上次失敗＋原因）。
 - `POST /api/network_mode` body `{"mode":"edge"|"cloud"}`；切到 cloud 時：mark_all_synced() → 以近 10 筆互動 generate_diagnosis → add_diagnosis → 回 `{"synced":n,"new_diagnosis":{...}}`
 - `GET /api/interactions?limit=50`、`GET /api/diagnoses`
-- `POST /api/seed_reset` → 清空重種子（demo 重置）
 - `WS /ws/talk`：
   - client→server 文字 frame：`{"type":"text_input","text":"..."}`（快速語句）或 `{"type":"audio_end"}`；binary frame = 一段完整 webm/ogg 錄音（push-to-talk 放開後整包送）
   - server→client：`{"type":"state","state":"asr|thinking|tts|idle"}`、`{"type":"asr_result","text","confidence"}`、`{"type":"reply","text","scores","latency_ms","fallback":bool,"seq":int}`、`{"type":"tts_audio","wav_b64":"..."}`（無 TTS 時 `{"type":"tts_unavailable"}`）、`{"type":"busy"}`

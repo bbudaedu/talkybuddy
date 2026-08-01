@@ -66,7 +66,10 @@ bash scripts/run.sh
 | 2:00–3:00 | 再點一次「✈️ 飛航模式」關閉（切回雲端） | `POST /api/network_mode {"mode":"cloud"}` → `mark_all_synced()` + `generate_diagnosis()` | Toast「☁️ 已同步 N 筆｜Hermes Agent 已產出最新診斷」、待同步筆數歸零 |
 | 3:00–4:00 | 切到教師端 `/teacher` | `GET /api/diagnoses`、`GET /api/interactions`（5 秒輪詢） | 四維能力雷達圖（最新 vs 14 天前）、14 天四線趨勢折線圖、最新 AI 診斷卡（strengths/weaknesses/emotional_status/instructions，標示 Hermes Agent + Bedrock Claude）、互動紀錄表（分數 meter、edge/cloud badge） |
 
-需要重新展示時可在教師端點「重置示範資料」（`POST /api/seed_reset`）清空重灌種子資料。
+需要重新展示時就重啟服務：容器沒有持久儲存，重啟即空表並重新灌入種子資料
+（本機則先刪掉 `data/talkybuddy.db` 再啟動）。教師端原本的「重置示範資料」按鈕
+已於 2026-08-01 移除——它就在「重新整理」旁邊，按錯一次會當場清光整場 demo 的
+互動紀錄，而現場沒有第二次機會。
 
 ## 測試
 

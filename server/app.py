@@ -1,7 +1,7 @@
 """FastAPI 入口（CONTRACTS.md app.py 契約）。
 
 - HTTP：/、/teacher、/api/status、/api/network_mode、/api/interactions、
-  /api/diagnoses、/api/seed_reset；web/ 另掛 /static。
+  /api/diagnoses；web/ 另掛 /static。
 - WS /ws/talk：文字 frame（text_input / audio_end）與 binary frame（完整
   webm/ogg 錄音）。binary 相容兩種觸發方式：
   1. binary 之後跟 {"type":"audio_end"} → 收到 audio_end 立即整包處理；
@@ -252,6 +252,37 @@ async def api_curriculum():
         },
         "our_vocab_coverage": cov,
     }
+
+
+@app.get("/api/vocab")
+async def api_vocab(cat: str | None = None,
+                    limit: int = Query(default=200, ge=1, le=_MAX_LIST_LIMIT)):
+    """題庫詞條（中文／英文／分類／名詞片語／例句），給網頁端的點擊小遊戲出題。
+
+    刻意**不設 JWT**，與 /api/curriculum 同級：回的是教育部課綱對照過的公開
+    題庫，不含任何學生資訊。**不要在這裡夾帶 SRS 到期詞**——那是該生的學習
+    弱項，屬個資，要走 /api/game 那條已授權的路。
+
+    前端自己硬編一份詞表也能做出遊戲，但那份複本會跟 scaffold.VOCAB 漂開，
+    孩子在遊戲裡練的字最後對不上玩偶會教的字。單一真相來源比省一個端點重要。
+    """
+    from server import scaffold
+
+    want = (cat or "").strip().lower() or None
+    out = []
+    for zh, v in scaffold.VOCAB.items():
+        if want and str(v.get("cat", "")).lower() != want:
+            continue
+        out.append({
+            "zh": zh,
+            "en": v.get("en", ""),
+            "cat": v.get("cat", ""),
+            "np": v.get("np", ""),
+            "sent": v.get("sent", ""),
+        })
+        if len(out) >= limit:
+            break
+    return {"words": out, "total": len(out)}
 
 
 class GameBody(BaseModel):
@@ -610,24 +641,12 @@ async def api_sync(body: SyncBody, authorization: str | None = Header(default=No
     return {"accepted": accepted, "skipped": skipped}
 
 
-@app.post("/api/seed_reset")
-async def api_seed_reset():
-    """清空示範資料表並重灌（demo 重置）。
-
-    `agent_outputs` 也要清。這張表是後來才加的，重置卻一直漏掉它，
-    結果是：互動與診斷回到種子狀態，教師儀表板上卻還掛著**上一場 demo**
-    產生的派作業／週報卡片——那些卡片引用的互動紀錄已經不存在了。
-    重置就該是重置，留一張表在原地只會讓現場看到說不通的畫面。
-    """
-    store.init_db()
-    with store._lock:  # 借用 store 模組的共用連線與鎖
-        conn = store._get_conn()
-        conn.execute("DELETE FROM interactions")
-        conn.execute("DELETE FROM diagnoses")
-        conn.execute("DELETE FROM agent_outputs")
-        conn.commit()
-    store.seed_demo()
-    return {"ok": True}
+# 這裡原本有 `POST /api/seed_reset`：清空 interactions／diagnoses／agent_outputs
+# 再重灌種子。2026-08-01 移除——它是一個只會傷到自己的按鈕。教師儀表板上
+# 「重置示範資料」就放在「重新整理」旁邊，按錯的代價是**當場清光整場 demo 的
+# 互動紀錄**，而 demo 現場沒有第二次機會。它要解決的問題（重跑一次乾淨的
+# demo）在 Fargate 上本來就自動發生：容器沒有持久儲存，重啟即空表、
+# lifespan 會重新 seed。本機要重來就刪掉 data/talkybuddy.db 再啟動。
 
 
 # ---------------------------------------------------------------------------

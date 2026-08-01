@@ -290,7 +290,6 @@
     </div>
     <div class="spacer"></div>
     <button class="btn" id="btnRefresh" type="button">重新整理</button>
-    <button class="btn danger" id="btnReset" type="button">重置示範資料</button>
     <a class="backlink" href="/">🐧 回學生端</a>
   </header>
 
@@ -988,12 +987,9 @@ function init() {
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') closeStudent();
   });
-  document.getElementById('btnReset').addEventListener('click', function () {
-    if (!confirm('確定要重置示範資料嗎？現有互動與診斷將全部清空並重新灌入示範資料。')) return;
-    fetch('/api/seed_reset', { method: 'POST', headers: authHeaders() })
-      .then(function () { return refresh(); })
-      .catch(function () { document.getElementById('offline').classList.add('show'); });
-  });
+  /* 「重置示範資料」按鈕已於 2026-08-01 移除：它就放在「重新整理」旁邊，
+     按錯一次就當場清光整場 demo 的互動紀錄，而現場沒有第二次機會。
+     要重跑乾淨的 demo 就重啟服務（Fargate 無持久儲存，重啟即重新 seed）。 */
   refresh();
   setInterval(refresh, 5000); /* 每 5 秒輪詢重繪 */
 }
