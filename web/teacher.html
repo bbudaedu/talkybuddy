@@ -303,6 +303,7 @@
         <span class="cls-kpis">
           <span class="cls-kpi"><div class="lb">全班</div><div class="v" id="clsSize">–</div></span>
           <span class="cls-kpi"><div class="lb">跟上進度</div><div class="v" id="clsDone">–</div></span>
+          <span class="cls-kpi"><div class="lb">需關注</div><div class="v warn" id="clsAttn">–</div></span>
           <span class="cls-kpi"><div class="lb">最多落後</div><div class="v warn" id="clsBehind">–</div></span>
           <span class="cls-kpi"><div class="lb">本週全班開口</div><div class="v" id="clsSpoken">–</div>
             <div class="kpi-sub" id="clsSpokenSub">–</div></span>
@@ -971,10 +972,14 @@ function refresh() {
     state.interactions = Array.isArray(res[1]) ? res[1] : [];
     state.agentOutputs = Array.isArray(res[2]) ? res[2] : [];
     state.profile = res[3] && res[3].student_id ? res[3] : null;
-    renderClass(res[4]);
+    /* 班級卡自成一格：它掛掉不該把下面所有卡片一起帶走。2026-08-01 就是這樣整片空白的
+       ——renderClass 少一個 DOM 節點就拋 TypeError，renderAll 從此再也沒被呼叫過。 */
+    try { renderClass(res[4]); } catch (e) { console.error('[teacher] renderClass 失敗', e); }
     document.getElementById('offline').classList.remove('show');
     renderAll();
-  }).catch(function () {
+  }).catch(function (e) {
+    /* 一定要留痕：靜默的 catch 讓「畫面空白」看起來像後端沒資料，查錯方向會整個歪掉。 */
+    console.error('[teacher] refresh 失敗', e);
     document.getElementById('offline').classList.add('show');
   });
 }
