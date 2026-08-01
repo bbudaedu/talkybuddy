@@ -7,18 +7,18 @@
 <style>
   /* ============ 深色專業系設計權杖 ============ */
   :root{
-    --page:#0d0d0d;          /* 頁底 */
-    --surface:#1a1a19;       /* 卡片表面 */
-    --ink:#ffffff;           /* 主文字 */
-    --ink-2:#c3c2b7;         /* 次文字 */
-    --ink-3:#898781;         /* 弱文字 */
-    --grid:#2c2c2a;          /* 圖表格線 */
-    --axis:#383835;          /* 圖表軸線 */
-    --hairline:rgba(255,255,255,.10);
-    --c-pron:#3987e5;        /* 發音 */
-    --c-flu:#199e70;         /* 流暢度 */
-    --c-voc:#c98500;         /* 詞彙 */
-    --c-gra:#9085e9;         /* 句型 */
+    --page:#f6f6f3;          /* 頁底 */
+    --surface:#ffffff;       /* 卡片表面 */
+    --ink:#17170f;           /* 主文字 */
+    --ink-2:#4c4a42;         /* 次文字 */
+    --ink-3:#84817a;         /* 弱文字 */
+    --grid:#e6e5e0;          /* 圖表格線 */
+    --axis:#cfcdc6;          /* 圖表軸線 */
+    --hairline:rgba(0,0,0,.12);
+    --c-pron:#2c6fc4;        /* 發音 */
+    --c-flu:#12805a;         /* 流暢度 */
+    --c-voc:#a86e00;         /* 詞彙 */
+    --c-gra:#6f63cf;         /* 句型 */
     --radius:14px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -37,12 +37,12 @@
   .btn{appearance:none;border:1px solid var(--hairline);background:var(--surface);
     color:var(--ink);font:inherit;font-size:13.5px;padding:8px 14px;border-radius:10px;
     cursor:pointer;transition:border-color .15s,background .15s}
-  .btn:hover{border-color:rgba(255,255,255,.28)}
-  .btn.danger{color:#f0b8a8;border-color:rgba(240,140,110,.35)}
+  .btn:hover{border-color:rgba(0,0,0,.3)}
+  .btn.danger{color:#b03a1a;border-color:rgba(240,140,110,.35)}
   .btn.danger:hover{border-color:rgba(240,140,110,.6)}
   a.backlink{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;
     border:1px solid var(--hairline);border-radius:10px;padding:8px 14px;background:var(--surface)}
-  a.backlink:hover{border-color:rgba(255,255,255,.28)}
+  a.backlink:hover{border-color:rgba(0,0,0,.3)}
 
   /* ============ 卡片 & 版面 ============ */
   .card{background:var(--surface);border:1px solid var(--hairline);
@@ -51,6 +51,110 @@
     letter-spacing:.03em}
   .card .note{font-size:11.5px;color:var(--ink-3);margin-bottom:12px}
   .grid{display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
+  .col-class{grid-column:span 12}
+  /* 本週教材 · 全班進度 */
+  .cls-top{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+  .cls-topic{font-size:17px;font-weight:800;color:var(--ink)}
+  .cls-words{display:flex;gap:6px;flex-wrap:wrap}
+  .cls-word{font-size:12px;padding:3px 9px;border-radius:999px;
+    background:rgba(57,135,229,.13);border:1px solid rgba(57,135,229,.38);color:#1f5fae}
+  .cls-kpis{display:flex;gap:22px;margin-left:auto}
+  .cls-kpi .lb{font-size:11px;color:var(--ink-3)}
+  .cls-kpi .v{font-size:20px;font-weight:800;color:var(--ink)}
+  .cls-kpi .v.warn{color:#a86e00}
+  .cls-kpi .kpi-sub{font-size:10.5px;color:var(--ink-3);margin-top:1px}
+  .cls-kpi .v.up{color:var(--c-flu)}
+  /* 班級視角與單一學生視角的分隔：兩種尺度混在同一頁最難懂 */
+  .sect-split{grid-column:span 12;display:flex;align-items:center;gap:14px;margin:10px 2px 0}
+  .sect-split .line{flex:1;height:1px;background:var(--hairline)}
+  .sect-split .txt{font-size:12px;color:var(--ink-3);letter-spacing:.06em;white-space:nowrap}
+  .sect-split .txt b{color:var(--ink-2);margin-left:6px;font-size:13px}
+  /* 全班表欄位標題：沒有標題使用者得自己猜每欄是什麼 */
+  .cls-head{display:grid;grid-template-columns:42px minmax(52px,.5fr) 84px 126px 74px 114px 66px 50px;
+    gap:12px;padding:0 10px 6px;font-size:11px;color:var(--ink-3);letter-spacing:.04em;
+    border-bottom:1px solid var(--hairline);margin-bottom:6px}
+  .cls-head span:last-child{text-align:right}
+  .cls-row{display:grid;grid-template-columns:42px minmax(52px,.5fr) 84px 126px 74px 114px 66px 50px;
+    align-items:center;gap:12px;padding:9px 10px;border-radius:10px;border:1px solid transparent}
+  .cls-row + .cls-row{margin-top:4px}
+  .cls-row.attn{background:rgba(224,80,60,.09);border-color:rgba(224,80,60,.34)}
+  .cls-seat{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .cls-name{font-weight:700;color:var(--ink)}
+  .cls-bar{height:7px;border-radius:999px;background:var(--grid);overflow:hidden}
+  .cls-bar > i{display:block;height:100%;border-radius:999px;background:var(--c-flu)}
+  .cls-bar.low > i{background:#d0402c}
+  .cls-pct{font-size:11px;color:var(--ink-3);margin-top:3px}
+  .cls-weak{font-size:12.5px;color:var(--ink-2)}
+  .cls-path{font-size:12px;padding:4px 8px;border-radius:8px;line-height:1.25;
+    background:#fafaf7;border:1px solid var(--hairline)}
+  .cls-path b{display:block;font-size:12.5px;color:var(--ink)}
+  .cls-path span{color:var(--ink-3);font-size:11px}
+  .cls-path.p-oneone{background:rgba(224,80,60,.14);border-color:rgba(224,80,60,.4)}
+  .cls-path.p-oneone b{color:#b03a1a}
+  .cls-path.p-extend{background:rgba(25,158,112,.12);border-color:rgba(25,158,112,.38)}
+  .cls-path.p-extend b{color:#12805a}
+  .cls-unit{font-size:12px;font-variant-numeric:tabular-nums}
+  .cls-unit b{display:block;color:var(--ink);font-size:13px}
+  .cls-behind{font-size:11px;padding:2px 7px;border-radius:999px;white-space:nowrap;
+    border:1px solid var(--hairline);color:var(--ink-3)}
+  .cls-behind.w0{background:rgba(18,128,90,.10);border-color:rgba(18,128,90,.35);color:#0f6f4e}
+  .cls-behind.w1{background:rgba(168,110,0,.10);border-color:rgba(168,110,0,.32);color:#8a5c00}
+  .cls-behind.w2{background:rgba(208,64,44,.10);border-color:rgba(208,64,44,.30);color:#a8341f}
+  .cls-behind.w3{background:rgba(208,64,44,.18);border-color:rgba(208,64,44,.5);color:#8f2a17;font-weight:700}
+  .cls-row{cursor:pointer;transition:background .12s}
+  .cls-row:hover{background:rgba(0,0,0,.035)}
+  .dlg-back{position:fixed;inset:0;background:rgba(20,20,19,.42);backdrop-filter:blur(3px);
+    display:none;align-items:center;justify-content:center;z-index:9998;padding:20px}
+  .dlg-back.on{display:flex}
+  .dlg{background:var(--surface);border:1px solid var(--hairline);border-radius:16px;
+    width:min(96vw,720px);max-height:86vh;overflow:auto;padding:22px 24px;
+    box-shadow:0 18px 50px rgba(0,0,0,.22)}
+  .dlg h3{font-size:21px;font-weight:800;margin-bottom:2px}
+  .dlg .sub{font-size:12.5px;color:var(--ink-3);margin-bottom:16px}
+  .dlg-close{float:right;border:1px solid var(--hairline);background:transparent;
+    border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--ink-2);font-size:16px}
+  .dlg-sec{margin-top:16px}
+  .dlg-sec .lb{font-size:11.5px;color:var(--ink-3);letter-spacing:.04em;margin-bottom:6px}
+  .wchip{display:inline-block;font-size:12.5px;padding:4px 10px;border-radius:999px;margin:0 5px 5px 0;
+    border:1px solid var(--hairline);color:var(--ink-2)}
+  .wchip.done{background:rgba(18,128,90,.10);border-color:rgba(18,128,90,.34);color:#0f6f4e}
+  .dlg-kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px}
+  .dlg-kv .box{border:1px solid var(--hairline);border-radius:10px;padding:9px 12px}
+  .dlg-kv .box .k{font-size:11px;color:var(--ink-3)}
+  .dlg-kv .box .v{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}
+  .dlg-note{font-size:13.5px;color:var(--ink-2);border-left:3px solid var(--c-pron);
+    padding:6px 0 6px 12px;background:rgba(44,111,196,.05);border-radius:0 8px 8px 0}
+  .cls-avg{font-size:15px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums}
+  @media (max-width:760px){
+    .cls-row{grid-template-columns:40px 1fr 78px;row-gap:6px}
+    .cls-path{grid-column:1/-1}
+    .cls-weak{grid-column:1/-1}
+    .cls-kpis{margin-left:0;gap:16px}
+  }
+  /* 學習成果卡：能力面（四維分數）之外的「學會了多少」 */
+  .col-outcome{grid-column:span 12}
+  .oc-band{display:flex;gap:26px;flex-wrap:wrap;padding:12px 14px;margin-bottom:14px;
+    border:1px solid var(--hairline);border-radius:12px;background:#fafaf7}
+  .oc-band .lb{font-size:11.5px;color:var(--ink-3)}
+  .oc-band .v{font-size:22px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums}
+  .oc-band .v.up{color:#12805a}
+  .oc-band .sub{font-size:11.5px;color:var(--ink-3)}
+  .oc-grid{width:100%;border-collapse:collapse;font-size:13px}
+  .oc-grid th{font-size:11.5px;color:var(--ink-3);font-weight:600;text-align:center;
+    padding:6px 8px;border-bottom:1px solid var(--hairline);white-space:nowrap}
+  .oc-grid th.nm,.oc-grid td.nm{text-align:left}
+  .oc-grid td{padding:8px;border-bottom:1px solid rgba(0,0,0,.07);text-align:center}
+  .oc-grid tr:last-child td{border-bottom:0}
+  .pips{display:inline-flex;gap:4px}
+  .pip{width:9px;height:9px;border-radius:50%;background:var(--grid);display:inline-block}
+  .pip.on{background:var(--c-flu)}
+  .pip.on.lo{background:#e0a33a}
+  .oc-vocab{font-variant-numeric:tabular-nums;color:var(--ink-2);font-size:12.5px}
+  .oc-vocab b{color:var(--ink);font-size:14px}
+  .oc-spoke{font-variant-numeric:tabular-nums}
+  .oc-spoke b{font-size:15px}
+  .oc-spoke i{font-style:normal;font-size:11.5px;color:#12805a;margin-left:4px}
+  @media (max-width:760px){ .oc-grid{font-size:12px} .oc-band{gap:16px} }
   .col-student{grid-column:span 4}
   .col-radar{grid-column:span 4}
   .col-trend{grid-column:span 4}
@@ -72,7 +176,7 @@
   .stu-class{font-size:13px;color:var(--ink-2)}
   .stu-ids{font-size:12px;color:var(--ink-3);margin-bottom:14px;line-height:1.8}
   .stu-ids code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;
-    background:rgba(255,255,255,.06);padding:1px 6px;border-radius:6px;color:var(--ink-2)}
+    background:rgba(0,0,0,.05);padding:1px 6px;border-radius:6px;color:var(--ink-2)}
   .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
   .stat{border:1px solid var(--hairline);border-radius:10px;padding:10px 12px}
   .stat .lb{font-size:11.5px;color:var(--ink-3);margin-bottom:2px}
@@ -85,9 +189,9 @@
   .legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:12px;color:var(--ink-2)}
   .legend .li{display:inline-flex;align-items:center;gap:6px}
   .dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
-  .tip{position:absolute;pointer-events:none;background:#242422;border:1px solid rgba(255,255,255,.16);
+  .tip{position:absolute;pointer-events:none;background:#ffffff;border:1px solid rgba(0,0,0,.14);
     border-radius:10px;padding:8px 11px;font-size:12px;color:var(--ink-2);z-index:5;
-    box-shadow:0 6px 18px rgba(0,0,0,.5);min-width:130px}
+    box-shadow:0 6px 18px rgba(0,0,0,.14);min-width:130px}
   .tip .d{font-weight:600;color:var(--ink);margin-bottom:4px}
   .tip .row{display:flex;align-items:center;gap:6px;justify-content:space-between}
   .tip .row .nm{display:inline-flex;align-items:center;gap:6px}
@@ -154,25 +258,27 @@
   }
 
   .empty{color:var(--ink-3);font-size:13px;padding:16px 0;text-align:center}
-  .offline{display:none;font-size:12.5px;color:#f0b8a8;margin-left:4px}
+  .offline{display:none;font-size:12.5px;color:#b03a1a;margin-left:4px}
   .offline.show{display:inline}
 </style>
 </head>
 <body>
 
 <!-- 登入遮罩：導師登入後才載入學生資料 -->
-<div id="loginOverlay" style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(20,20,19,.82);backdrop-filter:blur(4px);">
-  <form id="loginForm" style="background:#1a1a19;border:1px solid #2c2c2a;border-radius:18px;padding:28px 26px;width:min(88vw,340px);box-shadow:0 12px 40px rgba(0,0,0,.5);color:#fff;font-family:inherit;">
+<div id="loginOverlay" style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(20,20,19,.45);backdrop-filter:blur(4px);">
+  <form id="loginForm" style="background:#ffffff;border:1px solid #e2e0da;border-radius:18px;padding:28px 26px;width:min(88vw,340px);box-shadow:0 12px 40px rgba(0,0,0,.18);color:#17170f;font-family:inherit;">
     <div style="font-size:20px;font-weight:800;margin-bottom:4px;">教師儀表板 登入</div>
     <div style="font-size:13px;color:#898781;margin-bottom:16px;">請用導師帳號登入查看學生資料</div>
     <label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;color:#c3c2b7;">帳號 (email)</label>
-    <input id="loginEmail" type="text" autocomplete="username" value="tutor@demo" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #383835;border-radius:10px;margin-bottom:12px;font-size:15px;background:#111;color:#fff;">
+    <input id="loginEmail" type="text" autocomplete="username" value="tutor@demo" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #cfcdc6;border-radius:10px;margin-bottom:12px;font-size:15px;background:#fbfbf9;color:#17170f;">
     <label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;color:#c3c2b7;">密碼</label>
-    <input id="loginPassword" type="password" autocomplete="current-password" value="demo1234" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #383835;border-radius:10px;margin-bottom:8px;font-size:15px;background:#111;color:#fff;">
-    <div id="loginError" style="min-height:18px;font-size:12px;color:#e57373;font-weight:700;margin-bottom:8px;"></div>
+    <input id="loginPassword" type="password" autocomplete="current-password" value="demo1234" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #cfcdc6;border-radius:10px;margin-bottom:8px;font-size:15px;background:#fbfbf9;color:#17170f;">
+    <div id="loginError" style="min-height:18px;font-size:12px;color:#c0392b;font-weight:700;margin-bottom:8px;"></div>
     <button id="loginBtn" type="submit" style="width:100%;padding:12px;border:0;border-radius:12px;background:#3987e5;color:#fff;font-size:16px;font-weight:800;cursor:pointer;">登入</button>
   </form>
 </div>
+
+<div class="dlg-back" id="dlgBack"><div class="dlg" id="dlg"></div></div>
 
 <div class="wrap" id="app">
   <header class="topbar">
@@ -189,6 +295,37 @@
   </header>
 
   <div class="grid">
+    <!-- 0. 本週教材 · 全班進度（老師第一眼要看到的：誰卡住了） -->
+    <section class="card col-class">
+      <h2>本週教材 · 全班進度<span style="font-size:12px;font-weight:600;color:var(--ink-3);margin-left:10px">同一份教材，每個孩子走不同的路</span></h2>
+      <div class="cls-top">
+        <span class="cls-topic" id="clsTopic">–</span>
+        <span class="cls-words" id="clsWords"></span>
+        <span class="cls-kpis">
+          <span class="cls-kpi"><div class="lb">全班</div><div class="v" id="clsSize">–</div></span>
+          <span class="cls-kpi"><div class="lb">跟上進度</div><div class="v" id="clsDone">–</div></span>
+          <span class="cls-kpi"><div class="lb">最多落後</div><div class="v warn" id="clsBehind">–</div></span>
+          <span class="cls-kpi"><div class="lb">本週全班開口</div><div class="v" id="clsSpoken">–</div>
+            <div class="kpi-sub" id="clsSpokenSub">–</div></span>
+          <span class="cls-kpi"><div class="lb">落後群平均</div><div class="v up" id="clsLag">–</div>
+            <div class="kpi-sub">目標是讓落後的追上來</div></span>
+          <span class="cls-kpi"><div class="lb">班平均</div><div class="v" id="clsAvg">–</div></span>
+        </span>
+      </div>
+      <div class="cls-head">
+        <span>座號</span><span>姓名</span><span>目前單元</span><span>本單元進度</span>
+        <span>進度差</span><span>AI 給的路徑</span><span>本週開口</span><span>均分</span>
+      </div>
+      <div id="clsRows"></div>
+      <div style="font-size:11.5px;color:var(--ink-3);margin-top:10px">點任一列看該生的字彙、四單元句型掌握與 AI 建議</div>
+    </section>
+
+    <section class="sect-split">
+      <span class="line"></span>
+      <span class="txt">單一學生深入分析<b id="splitName">：阿明</b></span>
+      <span class="line"></span>
+    </section>
+
     <!-- 1. 學生卡 -->
     <section class="card col-student">
       <h2>學生檔案</h2>
@@ -277,7 +414,8 @@ var MINI_DIMS = [
   { key: 'vocabulary', label: '詞', color: '#c98500' },
   { key: 'grammar',    label: '句', color: '#9085e9' }
 ];
-var SURFACE = '#1a1a19', GRID = '#2c2c2a', AXIS = '#383835';
+// 圖表用色跟著亮色主題走；改主題時這行要一起改，否則格線會在白底變黑塊。
+var SURFACE = '#ffffff', GRID = '#e6e5e0', AXIS = '#cfcdc6';
 var INK = '#ffffff', INK2 = '#c3c2b7', INK3 = '#898781';
 
 /* ---------- 工具 ---------- */
@@ -711,18 +849,130 @@ function bindTrendPointer(box) {
 }
 
 /* ---------- 資料抓取與輪詢 ---------- */
+/* 全班進度卡。資料來自 /api/class_overview（server/demo_class.py 的概念展示資料）。
+   需關注的孩子由後端排在最前面，這裡不再重排——排序邏輯只有一份。 */
+var CLASS = null;   // 全班資料快取，細節面板要用
+
+function renderClass(d) {
+  if (!d || !Array.isArray(d.students)) return;
+  CLASS = d;
+  document.getElementById('clsTopic').textContent =
+    '第 ' + d.week_no + ' 週 · ' + d.unit + '（' + d.unit_zh + '）';
+  document.getElementById('clsSize').textContent = d.class_size;
+  document.getElementById('clsDone').textContent = d.on_track_count;
+  document.getElementById('clsBehind').textContent = d.max_weeks_behind + ' 週';
+  document.getElementById('clsAttn').textContent = d.attention_count;
+  document.getElementById('clsAvg').textContent = d.class_average;
+  // 開口量與落後群進步是價值主張本身，放頂部而不是埋在下面的表格
+  var dt = d.spoken_week_total - d.spoken_prev_total;
+  document.getElementById('clsSpoken').textContent = d.spoken_week_total + ' 句';
+  document.getElementById('clsSpokenSub').textContent =
+    '上週 ' + d.spoken_prev_total + '（' + (dt >= 0 ? '+' : '') + dt + '）';
+  document.getElementById('clsLag').textContent =
+    d.lagging_avg_before + ' → ' + d.lagging_avg_now +
+    '（' + (d.lagging_gain >= 0 ? '+' : '') + d.lagging_gain + '）';
+
+  document.getElementById('clsWords').innerHTML = (d.words || []).map(function (x) {
+    return '<span class="cls-word">' + esc(x) + '</span>';
+  }).join('');
+
+  var box = document.getElementById('clsRows');
+  box.innerHTML = d.students.map(function (s, i) {
+    var attn = s.status === 'needs_attention';
+    var behind = s.weeks_behind ? '落後 ' + s.weeks_behind + ' 週' : '跟上進度';
+    return '' +
+      '<div class="cls-row' + (attn ? ' attn' : '') + '" data-i="' + i + '" title="點一下看細節">' +
+        '<div class="cls-seat">' + esc(String(s.seat)) + '號</div>' +
+        '<div class="cls-name">' + esc(s.name) + '</div>' +
+        '<div class="cls-unit"><b>' + esc(s.unit_title) + '</b>' +
+          '<span style="color:var(--ink-3)">' + s.progress + '/' + s.progress_total + ' 字</span></div>' +
+        '<div>' +
+          '<div class="cls-bar' + (attn ? ' low' : '') + '">' +
+            '<i style="width:' + s.progress_pct + '%"></i></div>' +
+          '<div class="cls-pct">' + esc(s.weakness) + '</div></div>' +
+        '<div><span class="cls-behind w' + s.weeks_behind + '">' + behind + '</span></div>' +
+        '<div class="cls-path p-' + esc(s.path || '') + '">' +
+          '<b>' + esc(s.path_label || '—') + '</b>' +
+          '<span>' + esc(s.path_why || '') + '</span></div>' +
+        '<div class="oc-spoke"><b>' + s.spoken_week + '</b>' +
+          (s.spoken_delta_pct ? '<i>+' + s.spoken_delta_pct + '%</i>' : '') + '</div>' +
+        '<div class="cls-avg">' + s.average + '</div>' +
+      '</div>';
+  }).join('');
+
+  // 事件委派：列是動態產生的，綁在容器上才不會每次 render 都要重綁
+  box.onclick = function (ev) {
+    var row = ev.target.closest ? ev.target.closest('.cls-row') : null;
+    if (row) openStudent(parseInt(row.getAttribute('data-i'), 10));
+  };
+}
+
+/* 學生細節面板：點全班進度任一列打開。 */
+function openStudent(i) {
+  var d = CLASS, s = d && d.students[i];
+  if (!s) return;
+  var labels = d.pattern_level_label || [];
+  var pats = (s.patterns || []).map(function (p) {
+    var pips = '';
+    for (var k = 0; k < 3; k++) {
+      pips += '<span class="pip' + (k < p.level ? ' on' + (p.level === 1 ? ' lo' : '') : '') + '"></span>';
+    }
+    return '<tr><td class="nm">Unit ' + p.unit + '　' + esc(p.pat) + '</td>' +
+           '<td style="text-align:center"><span class="pips">' + pips + '</span></td>' +
+           '<td style="color:var(--ink-3);font-size:12px">' + esc(labels[p.level] || '') + '</td></tr>';
+  }).join('');
+  var done = (s.words_done || []).map(function (w) {
+    return '<span class="wchip done">' + esc(w) + '</span>'; }).join('');
+  var todo = (s.words_todo || []).map(function (w) {
+    return '<span class="wchip">' + esc(w) + '</span>'; }).join('');
+  var v = s.vocab || {};
+
+  document.getElementById('dlg').innerHTML =
+    '<button class="dlg-close" id="dlgX" type="button">\u00d7</button>' +
+    '<h3>' + esc(s.name) + '<span style="font-size:13px;font-weight:600;color:var(--ink-3);margin-left:8px">' +
+      s.seat + ' 號</span></h3>' +
+    '<div class="sub">目前在 ' + esc(s.unit_title) + '：' + esc(s.unit_name) +
+      '（' + esc(s.unit_zh) + '） · ' +
+      (s.weeks_behind ? '落後 ' + s.weeks_behind + ' 週' : '跟上進度') + '</div>' +
+    '<div class="dlg-kv">' +
+      '<div class="box"><div class="k">本單元進度</div><div class="v">' + s.progress + '/' + s.progress_total + '</div></div>' +
+      '<div class="box"><div class="k">本週開口</div><div class="v">' + s.spoken_week +
+        (s.spoken_delta_pct ? ' <span style="font-size:12px;color:var(--c-flu)">+' + s.spoken_delta_pct + '%</span>' : '') + '</div></div>' +
+      '<div class="box"><div class="k">已掌握字彙</div><div class="v">' + (v.mastered || 0) + '</div></div>' +
+      '<div class="box"><div class="k">四維平均</div><div class="v">' + s.average + '</div></div>' +
+    '</div>' +
+    '<div class="dlg-sec"><div class="lb">AI 給這個孩子的路徑</div>' +
+      '<div class="dlg-note"><b>' + esc(s.path_label) + '</b>　' + esc(s.note) + '</div></div>' +
+    '<div class="dlg-sec"><div class="lb">本單元已學會（' + (s.words_done || []).length + '）</div>' +
+      (done || '<span style="color:var(--ink-3);font-size:13px">還沒開始</span>') + '</div>' +
+    '<div class="dlg-sec"><div class="lb">還沒練到（' + (s.words_todo || []).length + '）</div>' +
+      (todo || '<span style="color:var(--ink-3);font-size:13px">全部完成</span>') + '</div>' +
+    '<div class="dlg-sec"><div class="lb">四個單元的句型掌握</div>' +
+      '<table class="oc-grid"><tbody>' + pats + '</tbody></table></div>';
+
+  document.getElementById('dlgBack').classList.add('on');
+  document.getElementById('dlgX').onclick = closeStudent;
+}
+
+function closeStudent() {
+  document.getElementById('dlgBack').classList.remove('on');
+}
+
 function refresh() {
   var q = encodeURIComponent(STUDENT_QUERY);
   return Promise.all([
     fetch('/api/diagnoses?student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); }),
     fetch('/api/interactions?limit=20&student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); }),
     fetch('/api/agent_outputs?limit=10&student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); }),
-    fetch('/api/student_profile?student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); })
+    fetch('/api/student_profile?student=' + q, { headers: authHeaders() }).then(function (r) { return r.json(); }),
+    // 班級總覽：概念展示資料（server/demo_class.py），不帶個資、失敗不影響其他卡片
+    fetch('/api/class_overview').then(function (r) { return r.json(); }).catch(function () { return null; })
   ]).then(function (res) {
     state.diagnoses = Array.isArray(res[0]) ? res[0] : [];
     state.interactions = Array.isArray(res[1]) ? res[1] : [];
     state.agentOutputs = Array.isArray(res[2]) ? res[2] : [];
     state.profile = res[3] && res[3].student_id ? res[3] : null;
+    renderClass(res[4]);
     document.getElementById('offline').classList.remove('show');
     renderAll();
   }).catch(function () {
@@ -732,6 +982,12 @@ function refresh() {
 
 function init() {
   document.getElementById('btnRefresh').addEventListener('click', refresh);
+  document.getElementById('dlgBack').addEventListener('click', function (e) {
+    if (e.target.id === 'dlgBack') closeStudent();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeStudent();
+  });
   document.getElementById('btnReset').addEventListener('click', function () {
     if (!confirm('確定要重置示範資料嗎？現有互動與診斷將全部清空並重新灌入示範資料。')) return;
     fetch('/api/seed_reset', { method: 'POST', headers: authHeaders() })
