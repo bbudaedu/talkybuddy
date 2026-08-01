@@ -16,6 +16,12 @@ class Lesson:
     target_sentence: str
     target_form: str | None
     directive: str | None
+    # 目標句實際所屬的分類。與 topic 是兩回事，刻意分開兩個欄位：
+    # topic 由診斷決定（延伸問句、遊戲出題靠它，見 test_unit_alignment），
+    # 而帶讀句優先取老師指定的本週單元，兩者本來就可能不同類。
+    # 學生端的「今天主題」標籤要用這個，否則會出現
+    # 「今天主題：動物」配上「He is eating an apple.」（2026-08-01 線上實測）。
+    sentence_topic: str | None = None
 
 
 def _unit_entries(unit_no=None) -> list[dict]:
@@ -149,8 +155,31 @@ def topic_sentences(topic, profile=None, limit: int = 5, unit_no=None) -> list[s
         return []
 
 
+def topic_of_sentence(sent) -> str | None:
+    """這句目標句實際屬於哪一類（scaffold.VOCAB 的 cat）；查不到回 None。"""
+    from server import scaffold
+    try:
+        for info in scaffold.VOCAB.values():
+            if info.get("sent") == sent:
+                return info.get("cat") or None
+    except Exception:
+        pass
+    return None
+
+
 def build_lesson(diagnoses, profile=None) -> Lesson:
-    """由最新診斷 + profile 組本場教材。全程安全退化，永不擋 live。"""
+    """由最新診斷 + profile 組本場教材。全程安全退化，永不擋 live。
+
+    ⚠️ **topic 與 sentence_topic 是兩個欄位，不要合併。**
+    - ``topic``：由診斷決定，延伸問句與遊戲出題靠它（見
+      ``tests/test_unit_alignment.py``，那是刻意的契約）。
+    - ``sentence_topic``：目標句實際所屬的分類。帶讀句優先取老師指定的本週
+      單元，所以它跟 ``topic`` 本來就可能不同類。
+
+    2026-08-01 線上 Unit 6（What Are You Doing?）實測：學生端同時顯示
+    「今天主題：動物」與「He is eating an apple.」。那不是資料錯，是畫面拿
+    錯欄位——標籤該講的是「這句話在教什麼」，而不是編排器內部輪到哪一類。
+    """
     from server import curriculum, diagnose
     default_topic = curriculum.TOPIC_ORDER[0]
     default_form = curriculum._TARGET_FORM[1]
@@ -166,8 +195,10 @@ def build_lesson(diagnoses, profile=None) -> Lesson:
                 directive = diagnose.format_directive_for_prompt(cd, ls) or None
             topic = ls.get("topic") or default_topic
             target_form = ls.get("target_form") or default_form
-        return Lesson(topic, pick_target_sentence(topic, profile),
-                      target_form, directive)
+        sent = pick_target_sentence(topic, profile)
+        return Lesson(topic, sent, target_form, directive,
+                      sentence_topic=topic_of_sentence(sent) or topic)
     except Exception:
-        return Lesson(default_topic, pick_target_sentence(default_topic, profile),
-                      default_form, None)
+        sent = pick_target_sentence(default_topic, profile)
+        return Lesson(default_topic, sent, default_form, None,
+                      sentence_topic=topic_of_sentence(sent) or default_topic)

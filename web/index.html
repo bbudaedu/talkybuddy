@@ -110,17 +110,44 @@ a.teacher-link{
 .st-listen #ledGlow{fill:var(--led-listen);animation:blinkFast .55s linear infinite;}
 .st-think  #ledGlow{fill:var(--led-think);animation:pulseThink 1.1s ease-in-out infinite;}
 .st-talk   #ledGlow{fill:var(--led-talk);animation:talkBeat .5s ease-in-out infinite;}
-/* 眨眼：聆聽時 */
+/* ---- 企鵝待機／各狀態的身體動作 ----
+ * 只有 LED 在閃的話，畫面上企鵝其實是一張靜止圖，孩子看不出「它在等我」。
+ * 每個狀態給一個對得上語意的動作：待機微微呼吸、聆聽向前傾、思考輕輕搖、
+ * 說話時翅膀打拍子。 */
+@keyframes pengIdle{0%,100%{transform:translateY(0) scale(1);}50%{transform:translateY(-5px) scale(1.012);}}
+@keyframes pengListen{0%,100%{transform:translateY(0) rotate(0);}50%{transform:translateY(-2px) rotate(-1.6deg);}}
+@keyframes pengThink{0%,100%{transform:rotate(-1.8deg);}50%{transform:rotate(1.8deg);}}
+@keyframes pengTalk{0%,100%{transform:translateY(0);}30%{transform:translateY(-4px);}60%{transform:translateY(-1px);}}
+.st-idle   #penguinWrap svg{animation:pengIdle 3.4s ease-in-out infinite;}
+.st-listen #penguinWrap svg{animation:pengListen 1.5s ease-in-out infinite;}
+.st-think  #penguinWrap svg{animation:pengThink 2.1s ease-in-out infinite;}
+.st-talk   #penguinWrap svg{animation:pengTalk .52s ease-in-out infinite;}
+/* 翅膀：待機小幅擺、說話時打拍子 */
+#wingL,#wingR{transform-box:fill-box;transform-origin:50% 12%;}
+@keyframes flapL{0%,100%{transform:rotate(0);}50%{transform:rotate(-13deg);}}
+@keyframes flapR{0%,100%{transform:rotate(0);}50%{transform:rotate(13deg);}}
+.st-idle #wingL{animation:flapL 3.4s ease-in-out infinite;}
+.st-idle #wingR{animation:flapR 3.4s ease-in-out infinite;}
+.st-talk #wingL{animation:flapL .52s ease-in-out infinite;}
+.st-talk #wingR{animation:flapR .52s ease-in-out infinite;}
+/* 眨眼：待機偶爾眨、聆聽時眨得勤 */
 @keyframes blinkEyes{0%,88%,100%{transform:scaleY(1);}92%,96%{transform:scaleY(.08);}}
+@keyframes blinkSlow{0%,94%,100%{transform:scaleY(1);}96%,98%{transform:scaleY(.08);}}
 .eye{transform-origin:center;transform-box:fill-box;}
+.st-idle   .eye{animation:blinkSlow 5s ease-in-out infinite;}
 .st-listen .eye{animation:blinkEyes 1.6s ease-in-out infinite;}
+@media (prefers-reduced-motion:reduce){
+  #penguinWrap svg,#wingL,#wingR,.eye{animation:none !important;}
+}
 /* 嘴巴開合：說話時 */
 @keyframes mouthTalk{0%,100%{transform:scaleY(.35);}50%{transform:scaleY(1);}}
 #mouthOpen{transform-origin:center;transform-box:fill-box;transform:scaleY(.25);opacity:0;transition:opacity .15s;}
 .st-talk #mouthOpen{opacity:1;animation:mouthTalk .34s ease-in-out infinite;}
 .st-talk #beak{opacity:0;}
 /* 按住肚子時輕微縮放 */
-#penguinWrap.pressing svg{transform:scale(.96);}
+/* 按壓回饋要蓋過待機動畫：CSS animation 會鎖住 transform，
+ * 不先把 animation 關掉，按下去的縮放根本不會出現。 */
+#penguinWrap.pressing svg{animation:none !important;transform:scale(.96);}
 #penguinWrap svg{transition:transform .12s;display:block;width:100%;height:auto;}
 .hold-hint{
   font-size:15px;font-weight:800;color:#b45309;background:#fff3d6;
@@ -410,13 +437,47 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
  * 手機（預設，≤899px）：單欄；作業卡收起來不佔位，遊戲改成橫向捲動列
  * ============================================================ */
 @media (max-width:899px){
+  /* ---- 精簡頁首：原本四行（狀態／教師連結換行／飛航／定位）佔掉近 1/5 螢幕。
+   * 一個功能都沒拿掉，只是把它們排進兩行，並把開發用的數字縮小。 ---- */
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:6px 10px;}
+  header .statusbar{flex:1 1 auto;gap:7px;font-size:11.5px;order:1;}
+  .airplane-row{order:2;flex:none;margin-top:0;gap:6px;}
+  .airplane-label{font-size:12px;}
+  .switch{width:54px;height:27px;}
+  .switch::after{width:21px;height:21px;top:3px;left:3px;}
+  .switch.on::after{left:30px;}
+  #airplaneState{font-size:11px;}
+  .device-note{order:3;flex:1 1 100%;margin-top:0;font-size:10px;text-align:center;}
+  /* 延遲／待同步是給我們除錯看的，孩子不需要，縮到不搶視線但仍可查 */
+  .statusbar .metric{font-size:10.5px;opacity:.72;}
+  a.teacher-link{font-size:11px;padding:2px 7px;}
+
   .col-side{
-    flex:none;max-height:34vh;overflow-y:auto;
-    padding:8px 10px 6px;border-top:2px dashed #e8d9bd;background:var(--cream-2);
+    flex:none;max-height:38vh;
+    display:flex;flex-direction:column;
+    border-top:2px dashed #e8d9bd;background:var(--cream-2);
   }
-  .col-side .pnl{
-    background:transparent;border:none;border-radius:0;padding:0;margin-bottom:0;
+  /* 分頁列：手機一次只看一件事，六張卡疊在一起捲不完也看不懂 */
+  .tabbar{
+    display:flex;gap:0;flex:none;
+    border-bottom:1px solid rgba(0,0,0,.07);background:var(--cream-2);
   }
+  .tab{
+    flex:1;font-family:inherit;font-size:17px;line-height:1;cursor:pointer;
+    background:transparent;border:none;border-bottom:3px solid transparent;
+    padding:7px 2px 6px;color:var(--ink-soft);
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+  }
+  .tab span{font-size:10.5px;font-weight:800;}
+  .tab.on{color:var(--ink);border-bottom-color:var(--accent);}
+  /* 只顯示選到的那一頁 */
+  .col-side .pnl{display:none;}
+  .col-side .pnl.show{
+    display:block;background:transparent;border:none;border-radius:0;
+    padding:8px 12px 10px;margin-bottom:0;
+  }
+  .col-side .pnl.show + .pnl.show{padding-top:0;}
+  .col-side > .pnl{overflow-y:auto;}
   /* 對話是主角：先保住它的高度，遊戲列才依剩餘空間縮。
    * 少了這道 min-height，企鵝＋遊戲列會把 flex:1 的對話區壓成 0 高度。 */
   .col-chat{min-height:240px;}
@@ -437,6 +498,8 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
  * 桌機（≥1180px）：三欄 — 企鵝側欄 + 對話 + 遊戲／作業面板
  * ============================================================ */
 @media (min-width:900px){
+  .tabbar{display:none;}
+  .col-side .pnl{display:block;}
   /* 桌機把三段併成一行，省下一整條的高度留給對話 */
   header{display:flex;align-items:center;gap:18px;padding:7px 20px;}
   header > *{max-width:none;}
@@ -556,8 +619,8 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
       <ellipse cx="72" cy="200" rx="20" ry="9" fill="#f2a444"/>
       <ellipse cx="128" cy="200" rx="20" ry="9" fill="#f2a444"/>
       <!-- 翅膀 -->
-      <ellipse cx="26" cy="128" rx="16" ry="36" fill="url(#bodyGrad)" transform="rotate(14 26 128)"/>
-      <ellipse cx="174" cy="128" rx="16" ry="36" fill="url(#bodyGrad)" transform="rotate(-14 174 128)"/>
+      <ellipse id="wingL" cx="26" cy="128" rx="16" ry="36" fill="url(#bodyGrad)" transform="rotate(14 26 128)"/>
+      <ellipse id="wingR" cx="174" cy="128" rx="16" ry="36" fill="url(#bodyGrad)" transform="rotate(-14 174 128)"/>
       <!-- 身體 -->
       <path d="M100 14 C150 14 168 60 168 118 C168 172 140 202 100 202 C60 202 32 172 32 118 C32 60 50 14 100 14 Z" fill="url(#bodyGrad)"/>
       <path d="M100 14 C150 14 168 60 168 118 C168 172 140 202 100 202 C60 202 32 172 32 118 C32 60 50 14 100 14 Z" fill="url(#knit)"/>
@@ -611,7 +674,15 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
 </div>
 
 <div class="col-side">
-  <div class="pnl" id="tapPanel">
+  <!-- 手機專用：底部分頁。桌機三欄放得下全部面板，這條就不出現 -->
+  <div class="tabbar" id="tabBar" role="tablist">
+    <button type="button" class="tab on" data-tab="play"  role="tab">🎮<span>遊戲</span></button>
+    <button type="button" class="tab"    data-tab="score" role="tab">🏅<span>成果</span></button>
+    <button type="button" class="tab"    data-tab="ai"    role="tab">🧠<span>難度</span></button>
+    <button type="button" class="tab"    data-tab="rank"  role="tab">🏆<span>排行</span></button>
+  </div>
+
+  <div class="pnl" data-tab="play" id="tapPanel">
     <h3>🐧 企鵝聽聽看</h3>
     <div class="hint">聽企鵝唸英文，點出正確的字。題目會跟著你的等級變難或變簡單。</div>
     <button class="tap-launch" id="tapLaunch" type="button">
@@ -620,7 +691,7 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
     </button>
   </div>
 
-  <div class="pnl" id="scorePanel">
+  <div class="pnl" data-tab="score" id="scorePanel">
     <h3>🏅 我的學習成果<span class="pts" id="ptsTotal">0 分</span></h3>
     <div class="stat-grid">
       <div class="stat-box"><div class="n" id="statSpoken">–</div><div class="k">說了幾句英文</div></div>
@@ -632,7 +703,7 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
     <div class="badges" id="badgeBox"></div>
   </div>
 
-  <div class="pnl" id="loopPanel" hidden>
+  <div class="pnl" data-tab="ai" id="loopPanel" hidden>
     <h3>🧠 AI 怎麼調整你的難度</h3>
     <div class="loop-step">
       <div class="lb">感知 · 從你的表現讀到什麼</div>
@@ -647,20 +718,20 @@ main{flex:1;overflow-y:auto;padding:10px 14px 8px;display:flex;flex-direction:co
       <div class="val" id="loopAct"></div>
     </div>
   </div>
-  <div class="pnl" id="rankPanel" hidden>
+  <div class="pnl" data-tab="rank" id="rankPanel" hidden>
     <h3>🏆 這禮拜開口排行</h3>
     <div class="hint">比誰敢開口，不是比誰考得高</div>
     <div id="rankBox"></div>
   </div>
 
-  <div class="pnl" id="gamesPanel">
+  <div class="pnl" data-tab="play" id="gamesPanel">
     <h3>🎲 用講的玩</h3>
     <div class="hint">四款都不用連網，飛航模式也能玩</div>
     <div class="game-list" id="gamesBox"></div>
     <div class="game-live" id="gameLive" hidden></div>
   </div>
 
-  <div class="pnl" id="hwPanel" hidden>
+  <div class="pnl" data-tab="score" id="hwPanel" hidden>
     <h3>📒 玩偶幫你出的作業</h3>
     <div id="hwBox"></div>
   </div>
@@ -1126,7 +1197,11 @@ function fetchLesson() {
     .then(function (r) { if (!r.ok) { throw new Error("no lesson"); } return r.json(); })
     .then(function (lp) {
       if (!lp || !lp.target_sentence) { return; }
-      lessonTopicEl.textContent = TOPIC_LABELS[lp.topic] || ("今天主題：" + (lp.topic || ""));
+      /* 用 sentence_topic：帶讀句可能來自老師指定的本週單元，跟 topic
+       * （診斷輪替出來、供延伸問句與遊戲出題）不同類。拿 topic 當標籤會出現
+       * 「今天主題：動物」配「He is eating an apple.」。 */
+      var labelKey = lp.sentence_topic || lp.topic;
+      lessonTopicEl.textContent = TOPIC_LABELS[labelKey] || ("今天主題：" + (labelKey || ""));
       lessonTargetEl.textContent = lp.target_sentence;
       lessonBanner.style.display = "block";
     })
@@ -1620,6 +1695,7 @@ function renderRank() {
     box.appendChild(row);
   });
   document.getElementById("rankPanel").hidden = false;
+  refreshTabs();
 }
 
 /* ---- AI 學習迴圈卡：感知 → 決策 → 行動（全部來自後端 level_state） ---- */
@@ -1690,6 +1766,7 @@ function renderLoopCard(diag) {
   act.appendChild(rest);
 
   document.getElementById("loopPanel").hidden = false;
+  refreshTabs();
   document.getElementById("tapLaunchSub").textContent =
     "難度 " + tapDifficulty().label + " · 依等級 " + (ls.level || "") + " 出題";
 }
@@ -1701,6 +1778,40 @@ function fetchLoopState() {
       if (Array.isArray(rows) && rows.length) { renderLoopCard(rows[rows.length - 1]); }
     })
     .catch(function () { /* 沒有診斷就維持預設難度 */ });
+}
+
+/* ---- 手機底部分頁：一次只看一件事 ----
+ * 桌機三欄放得下六張卡，手機把它們疊在一個 38vh 的捲動區裡誰都看不完。
+ * 分頁只切「顯示哪一張」，資料照常在背景更新，切回來就是最新的。 */
+function initTabs() {
+  var bar = document.getElementById("tabBar");
+  if (!bar) { return; }
+  function apply(name) {
+    Array.prototype.forEach.call(bar.querySelectorAll(".tab"), function (b) {
+      b.classList.toggle("on", b.getAttribute("data-tab") === name);
+      b.setAttribute("aria-selected", b.getAttribute("data-tab") === name ? "true" : "false");
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".col-side .pnl"), function (p) {
+      /* hidden 的面板（還沒有資料）即使被選到也不該露出來 */
+      p.classList.toggle("show", p.getAttribute("data-tab") === name && !p.hidden);
+    });
+    try { localStorage.setItem("tb_tab", name); } catch (e) { /* 忽略 */ }
+  }
+  bar.addEventListener("click", function (e) {
+    var b = e.target.closest ? e.target.closest(".tab") : null;
+    if (b) { apply(b.getAttribute("data-tab")); }
+  });
+  var saved = "play";
+  try { saved = localStorage.getItem("tb_tab") || "play"; } catch (e) { /* 忽略 */ }
+  apply(saved);
+  window.__applyTab = apply;   /* 面板從 hidden 變可見時要重新套一次 */
+}
+/* 面板解除 hidden 之後（例如作業／排行資料才剛回來）重新套用目前分頁 */
+function refreshTabs() {
+  try {
+    var cur = localStorage.getItem("tb_tab") || "play";
+    if (window.__applyTab) { window.__applyTab(cur); }
+  } catch (e) { /* 忽略 */ }
 }
 
 document.getElementById("tapLaunch").addEventListener("click", tapOpen);
@@ -1826,6 +1937,7 @@ function fetchHomework() {
       src.textContent = hw.source === "cloud" ? "雲端 agent 出題" : "離線規則出題";
       hwBox.appendChild(src);
       hwPanel.hidden = false;
+      refreshTabs();
     })
     .catch(function () { /* 還沒有作業就不顯示 */ });
 }
@@ -2172,6 +2284,7 @@ function boot() {
   refreshTapStats();
   fetchClassRank();
   initOnlineTimer();
+  initTabs();
   setInterval(refreshStatus, 5000);
   /* 開場招呼 */
   addBubble("penguin", "嘿！我是你的說說學伴！點一下我的肚子開始說話，或喊喚醒詞叫我。大聲說出來，我在聽～", {});
