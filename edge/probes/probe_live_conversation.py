@@ -443,9 +443,22 @@ def _build_llm(lesson=None, progress=None):
             child_brief=brief,
         )
 
+    def _last_resort(current_target: str | None) -> str | None:
+        # 雲端跟 edge 都沒回覆時的最後一道保底——2026-08-01 拔網實測抓到，
+        # 斷網瞬間 EdgeLLM 冷啟動可能自己也逾時（見 server/llm.py 的
+        # _CALL_TIMEOUT_S），兩層都落空時原本會完全沉默 10 秒以上。
+        # 不呼叫 scaffold.respond()：那需要本輪 ASR 逐字稿/turn_index 等這裡
+        # 沒有的狀態，而且這裡要的只是「別讓玩偶啞掉」，不是教學品質最佳化。
+        from server import guardrails, scaffold
+
+        if not current_target:
+            return None
+        return f"{scaffold.FALLBACK_LINES[0]} {guardrails.ensure_readalong('', current_target)}"
+
     service = CloudLLMService(
         cloud=cloud,
         fallback=edge.generate_from_prompt,
+        last_resort=_last_resort,
         target_provider=lambda: (progress.current if progress else None) or target,
         system_provider=_live_system,
         warmup=False,

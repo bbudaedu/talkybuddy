@@ -6,7 +6,7 @@
   帶 ``status`` 鍵的 JSON 物件才回 True（光看 200 會把佔用同一埠的其他服務
   誤判成 llama-server）；連線被拒/逾時/任何例外一律回 False，絕不拋出。
 - ``generate(student_text, scaffold) -> str | None``：
-  逾時（>8 秒）、例外、未載入、或輸出命中 ``scaffold.safety_check`` 一律回 None；
+  逾時（>10.5 秒）、例外、未載入、或輸出命中 ``scaffold.safety_check`` 一律回 None；
   pipeline 以 scaffold.reply_text 為準，LLM 只是加值。
 
 llama-server 為交叉編譯出的獨立 OS 行程（非 in-process Python 模型物件），
@@ -28,14 +28,19 @@ from server import guardrails
 _log = logging.getLogger(__name__)
 
 # LLM 生成逾時上限（秒），超過即放棄並回 None
-_GENERATE_TIMEOUT_S = 8.0
+#
+# 2026-08-01 拔網實測（EDGE_TURN_LOOP_VALIDATION.md）：llama-server 冷啟動
+# （斷網瞬間從雲端切回來、KV cache 未熱）量到 llm=7522ms，比舊值 7.5s 只剩
+# 22ms 餘裕——這正是拔網橋段沉默 10.5 秒的成因之一（EdgeLLM 自己也逾時，見
+# PIPECAT_HANDOFF.md §8.4）。調高到有實測最壞情況（7522ms）約 2.5-3s 餘裕。
+_GENERATE_TIMEOUT_S = 10.5
 
 # available() /health 探測逾時（秒）；短逾時因 pipeline 每輪都呼叫一次
 _HEALTH_TIMEOUT_S = 0.5
 
 # _call_llama_server /v1/chat/completions 逾時（秒）；略小於 _GENERATE_TIMEOUT_S，
 # 為外層 time.monotonic() 逾時檢查留餘裕。
-_CALL_TIMEOUT_S = 7.5
+_CALL_TIMEOUT_S = 10.0
 
 
 def _llama_server_base_url() -> str:

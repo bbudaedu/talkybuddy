@@ -135,6 +135,7 @@ class CloudLLMService(LLMService):
         *,
         cloud=None,
         fallback: GenerateFromPrompt | None = None,
+        last_resort: Callable[[str | None], str | None] | None = None,
         policy: FailoverPolicy | None = None,
         target_provider: TargetProvider | None = None,
         system_provider: Callable[[], str] | None = None,
@@ -149,6 +150,13 @@ class CloudLLMService(LLMService):
             fallback: Same-shaped callable used when the cloud fails **this
                 turn**. Pass ``EdgeLLM().generate_from_prompt`` in production.
                 When omitted, a failed turn simply produces no reply.
+            last_resort: ``(target) -> str | None``, tried only when **both**
+                cloud and ``fallback`` fail this turn. 2026-08-01 拔網實測：
+                斷網瞬間 EdgeLLM 冷啟動也可能逾時（見 ``server/llm.py`` 的
+                ``_CALL_TIMEOUT_S``），兩層都空手而回時，這裡是唯一還能讓
+                玩偶不完全沉默的地方。對齊 ``server/pipeline.py`` 的
+                scaffold-first 保底設計。省略時維持原行為：兩層都失敗＝
+                這一輪沒有回覆。
             policy: Cross-turn routing policy. Defaults to a fresh
                 :class:`FailoverPolicy`.
             target_provider: Returns the current target sentence. Should read
@@ -187,6 +195,7 @@ class CloudLLMService(LLMService):
             cloud = CloudLLM()
         self._cloud = cloud
         self._fallback = fallback
+        self._last_resort = last_resort
         self._policy = policy or FailoverPolicy()
         self._target_provider = target_provider
         self._system_provider = system_provider
@@ -307,9 +316,17 @@ class CloudLLMService(LLMService):
                 "雲端這一輪沒有回覆，改用本機降級（route={}）", self._policy.route.value
             )
 
-        if self._fallback is None:
-            return None
-        return await asyncio.to_thread(self._fallback, prompt, target=target)
+        text = None
+        if self._fallback is not None:
+            text = await asyncio.to_thread(self._fallback, prompt, target=target)
+        if text:
+            return text
+        # edge 也沒給——連降級都掛了。這裡是唯一還能發聲的地方，不能再往下
+        # 傳一個 None：process_frame 收到 falsy text 就什麼都不推，孩子聽到
+        # 的會是完全沉默（2026-08-01 拔網實測抓到的 10.5 秒那個症狀）。
+        if self._last_resort is not None:
+            return self._last_resort(target)
+        return None
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Process frames, running an inference for each LLMContextFrame.

@@ -70,7 +70,11 @@
    `is_near_field()` 近場門檻、按鍵觸發。**pipecat 版兩個都沒接。**
 2. **閘門死區 2.6s** — 玩偶講完後上行仍聾（2.0 緩衝 + 0.6 tail），
    話音剛落就講會被吃掉開頭。keepalive 已加但**未驗證降緩衝後的效果**。
-3. `fallback_text` 未接 `scaffold.reply_text`；VAD params 未調。
+3. ~~`fallback_text` 未接 `scaffold.reply_text`~~——**2026-08-01 已修**：
+   `CloudLLMService` 新增 `last_resort` 保底（cloud 與 edge 都失敗時觸發），
+   `probe_live_conversation.py` 接上 `scaffold.FALLBACK_LINES[0]` +
+   `guardrails.ensure_readalong`。詳見 `HANDOFF-2026-08-01-pipecat-board-night.md`
+   第八節。VAD params 未調仍待處理。
 
 ---
 

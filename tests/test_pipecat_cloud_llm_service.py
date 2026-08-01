@@ -156,7 +156,11 @@ async def test_recovers_when_cloud_comes_back():
 
 @pytest.mark.asyncio
 async def test_no_fallback_configured_pushes_nothing_but_does_not_crash():
-    """沒設降級來源時，失敗就是這一輪沒回覆——但 pipeline 不可以炸掉。"""
+    """沒設降級來源時，失敗就是這一輪沒回覆——但 pipeline 不可以炸掉。
+
+    這是 last_resort 也沒設時的行為，維持原樣（向後相容，probe/測試可能
+    刻意要看「乾淨的沒回覆」而不是被保底蓋掉）。
+    """
     cloud = _FakeCloud([None])
     svc = CloudLLMService(cloud=cloud, target_provider=lambda: TARGET)
 
@@ -164,6 +168,53 @@ async def test_no_fallback_configured_pushes_nothing_but_does_not_crash():
 
     assert _texts(down) == []
     assert any(isinstance(f, LLMFullResponseEndFrame) for f in down)
+
+
+@pytest.mark.asyncio
+async def test_cloud_and_fallback_both_fail_uses_last_resort():
+    """雲端跟 edge 都掛時，絕對不能沉默——這正是 2026-08-01 拔網實測抓到的
+    10.5 秒沉默（CloudLLM 失敗 → EdgeLLM 冷啟動也逾時 → 沒有第三層，孩子
+    什麼都聽不到）。last_resort 就是補上的那一層，效果對齊
+    server/pipeline.py 的 scaffold-first 設計：至少給孩子一句可跟讀的話。
+    """
+    cloud = _FakeCloud([None])
+    seen_targets: list[str | None] = []
+
+    def _fallback(user_prompt: str, *, target: str | None):
+        return None
+
+    def _last_resort(target: str | None):
+        seen_targets.append(target)
+        return f"沒關係！跟我說一遍：{target}"
+
+    svc = CloudLLMService(
+        cloud=cloud,
+        fallback=_fallback,
+        last_resort=_last_resort,
+        target_provider=lambda: TARGET,
+    )
+    down = await _run(svc)
+
+    assert _texts(down) == [f"沒關係！跟我說一遍：{TARGET}"]
+    assert seen_targets == [TARGET]
+
+
+@pytest.mark.asyncio
+async def test_last_resort_not_called_when_fallback_succeeds():
+    """edge 有回覆時不該去吵 last_resort——那是真正走投無路才用的東西。"""
+    cloud = _FakeCloud([None])
+    calls: list[str | None] = []
+
+    svc = CloudLLMService(
+        cloud=cloud,
+        fallback=lambda p, *, target: "edge 罐頭回覆",
+        last_resort=lambda target: calls.append(target) or "不該被用到",
+        target_provider=lambda: TARGET,
+    )
+    down = await _run(svc)
+
+    assert _texts(down) == ["edge 罐頭回覆"]
+    assert calls == []
 
 
 @pytest.mark.asyncio
