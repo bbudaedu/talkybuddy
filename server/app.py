@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from server import (
-    auth, config, diagnose, guardrails, lesson, nova_sonic, profile,
+    auth, config, demo_class, diagnose, guardrails, lesson, nova_sonic, profile,
     pronunciation, scaffold, store, sync_client,
 )
 from server.asr import ASREngine
@@ -34,6 +34,7 @@ from server.llm import EdgeLLM
 from server.cloud_tts import CloudTTS
 from server.cloud_llm import CloudLLM
 from server.pipeline import VoicePipeline
+from server.polly_tts import PollyTTS
 from server.tts import TTSEngine
 
 WEB_DIR: Path = config.BASE_DIR / "web"
@@ -58,9 +59,13 @@ llm_engine = EdgeLLM()
 tts_engine = TTSEngine()
 cloud_tts_engine = CloudTTS()
 cloud_llm_engine = CloudLLM()
+# Polly 童聲：英文段用 Ivy(女童)，中文段它自己交回 tts_engine（Polly 沒有 zh-TW）。
+# 需 TALKYBUDDY_POLLY_TTS=1 才啟用；沒開或失敗都靜默退回既有 TTS 鏈。
+polly_tts_engine = PollyTTS(local_engine=tts_engine)
 pipeline = VoicePipeline(
     asr_engine, llm_engine, tts_engine,
     cloud_tts=cloud_tts_engine, cloud_llm=cloud_llm_engine,
+    polly_tts=polly_tts_engine,
 )
 # 承接佈署 profile 預設：cloud profile → 全語音走雲端管線；edge → 邊緣本地。
 pipeline.network_mode = config.default_network_mode()
@@ -94,6 +99,18 @@ def _prewarm_engines() -> None:
             tts_engine._get_voice("en")
     except Exception:
         pass
+    # 雲端 LLM 也要預熱。雲端容器裡 edge llm_engine 不可用（上面那段直接跳過），
+    # 所以第一次真實對話才會現場建 boto3 client + TLS 連線，而 CLOUD_LLM_TIMEOUT_S
+    # 只有 1.5 秒——2026-08-01 實測第一輪穩定 ReadTimeout，孩子講的第一句沒有回應。
+    # 這一發本身很可能逾時，沒關係：目的是把連線建起來，後續就在預算內了。
+    try:
+        if cloud_llm_engine.available():
+            cloud_llm_engine.generate_chat(
+                [{"role": "user", "content": "hi"}],
+                system="只回一個字：好", target=None, enforce_readalong=False,
+            )
+    except Exception:
+        pass
 
 
 def _replay_materials() -> None:
@@ -122,6 +139,7 @@ async def lifespan(app: FastAPI):
     auth.assert_secret_is_safe()
     store.init_db()
     store.seed_demo()
+    store.seed_units()      # 課本教材要在 _replay_materials 之前進 DB
     _replay_materials()
     threading.Thread(target=_prewarm_engines, daemon=True).start()
     yield
@@ -519,6 +537,18 @@ async def api_diagnoses(student: str | None = None,
     return store.list_diagnoses(student_id=sid)
 
 
+@app.get("/api/class_overview")
+async def api_class_overview():
+    """全班總覽（本週教材、每位學生進度與弱項）。
+
+    **這是概念展示資料**，回傳的 ``source`` 固定為 ``"demo"``。核心 schema 是
+    單學生設計（interactions 無 student_id、diagnoses 以 date 為主鍵），真正的
+    班級支援需要改主鍵並連動讀取端，見 server/demo_class.py 的模組說明。
+    不掛驗證：demo 現場要能直接開，且回傳不含任何真實個資。
+    """
+    return demo_class.class_overview()
+
+
 @app.get("/api/agent_outputs")
 async def api_agent_outputs(kind: str | None = None,
                             limit: int = Query(default=20, ge=1, le=_MAX_LIST_LIMIT),
@@ -628,6 +658,7 @@ async def ws_talk(websocket: WebSocket):
     conn_pipe = VoicePipeline(
         asr_engine, llm_engine, tts_engine,
         cloud_tts=cloud_tts_engine, cloud_llm=cloud_llm_engine, student_id=sid,
+        polly_tts=polly_tts_engine,
     )
     conn_pipe.network_mode = pipeline.network_mode  # 承接目前模式
 

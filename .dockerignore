@@ -1,0 +1,21 @@
+# 白名單制：先排除一切，再放行 deploy/aws/Dockerfile 真正 COPY 的東西。
+#
+# 為什麼是白名單：repo 根目錄有 9.4G（models 5.3G、third_party 2.9G、edge 812M），
+# 沒有這個檔案的話 docker build 會把整包送進 daemon，在決賽現場等於直接卡死。
+# 白名單也順帶保證 .env / .env.aws 這類憑證檔永遠不會被打進 image。
+#
+# 容器內的模型不是從這裡複製的——Dockerfile 用 deploy/aws/fetch_models.py
+# 在 build 時下載（~580MB），所以 models/ 不必進 context。
+*
+
+!server
+!web
+!data
+!deploy
+
+# 上面放行的目錄裡仍要剔除的東西
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.env
+**/.env.*

@@ -62,8 +62,12 @@ MEMORY_NAME = "TalkyBuddyStudentMemory"
 # 事件保留天數（API 限制 3–365）。demo 用不到長期保存，取下限以縮小個資暴露窗口。
 MEMORY_EXPIRY_DAYS = 30
 
-# 帳號確實有的模型。放行後要換成 Sonnet 5 只需改這裡再跑一次（冪等會走 update）。
-MODEL_ID = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+# 換帳號要重驗這一行。list-foundation-models 會列出「存在」的模型，不等於「已開通」——
+# 2026-08-01 主辦帳號 953089054952 就把 sonnet-4-5 列在清單裡，實打卻是 AccessDenied
+# （缺 aws-marketplace:Subscribe）。唯一可信的驗法是真的 converse 一次：
+#   aws bedrock-runtime converse --model-id <id> --messages '[{"role":"user","content":[{"text":"hi"}]}]'
+# 下面這顆是 2026-08-01 在該帳號實打通過的。
+MODEL_ID = "global.anthropic.claude-sonnet-4-6"
 
 # 執行上限——**必須顯式設定**。官方明列這三個是成本與濫用護欄；
 # 微 VM 每次呼叫都帶 shell 存取，不設上限等於開放資源耗盡。
@@ -278,6 +282,11 @@ def harness_request(name: str, role_arn: str, system_prompt: str,
         "maxIterations": MAX_ITERATIONS,
         "maxTokens": max_tokens,
         "timeoutSeconds": TIMEOUT_SECONDS,
+        # **必須顯式設空**。不設時 AgentCore 預設是 ["*"]，模型會拿到微 VM 的內建
+        # 工具；2026-08-01 實測 orchestrator 因此不輸出決策 JSON，改去呼叫
+        # file_operations 想寫 /tmp/decision.json，等於契約被工具繞過。
+        # 這四個 harness 都只做「文字進、JSON 出」，不需要任何工具。
+        "allowedTools": [],
     }
     if memory_arn:
         req["memory"] = {"agentCoreMemoryConfiguration": {"arn": memory_arn}}
@@ -367,7 +376,9 @@ def _ensure_role(iam, account_id: str, region: str, apply: bool) -> str:
         iam.create_role(
             RoleName=ROLE_NAME,
             AssumeRolePolicyDocument=json.dumps(trust),
-            Description="TalkyBuddy AgentCore Harness 執行角色",
+            # IAM Description 只接受 ASCII 與 Latin-1，中文會被 CreateRole 以
+            # ValidationError 擋下，所以這行必須是英文。
+            Description="TalkyBuddy AgentCore Harness execution role",
         )
     iam.put_role_policy(
         RoleName=ROLE_NAME,
@@ -424,6 +435,17 @@ def _ensure_harness(control, name: str, role_arn: str, system_prompt: str,
         print(f"  已存在 → 更新 Harness：{hid}（完整重傳所有欄位）")
         update = dict(req)
         update.pop("harnessName", None)
+        # UpdateHarness 與 CreateHarness 形狀**不同**：這三個欄位在 update 是
+        # optionalValue wrapper（union），直接沿用 create 的形狀會 ParamValidationError。
+        # 2026-08-01 決賽現場踩到：換 MODEL_ID 後第一次走 update 分支才爆出來，
+        # 因為在那之前沒有人跑過第二次 --apply。
+        for _k in ("memory", "environmentArtifact", "authorizerConfiguration"):
+            if _k in update:
+                update[_k] = {"optionalValue": update[_k]}
+        problems = validate_shape("bedrock-agentcore-control", "UpdateHarness",
+                                  {"harnessId": hid, **update})
+        if problems:
+            raise SystemExit(f"UpdateHarness({name}) 形狀不符：\n  " + "\n  ".join(problems))
         control.update_harness(harnessId=hid, **update)
         # 欄位名稱是 arn，不是 harnessArn。真實 API 的 ListHarnesses 項目與
         # CreateHarness 回應都只有 arn——寫錯的話 --apply 第一次就 KeyError，
