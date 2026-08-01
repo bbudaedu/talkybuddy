@@ -19,37 +19,15 @@
 """
 from __future__ import annotations
 
-# 課程進度：一週一個單元，本週是第 4 週（Unit 6）。
+# 單元定義（編號、週次、句型、單字表）是**教材事實**，住在 server/seed_units.py，
+# 與 lesson.py 選帶讀句時看的是同一份——單元一旦搬到別的一課，玩偶帶讀的句子
+# 與教師端「本週教材」會一起跟著動，不會各說各話。這裡只 re-export，讓本模組
+# 既有的讀取端維持原樣。
 #
-# 這是整個 demo 最有衝擊力的設定：**老師上到第 4 課，有孩子還停在第 1 課。**
-# 進度落差用「週」為單位，比用分數更痛也更真實——那正是痛點研究說的
-# 「學習成就雙峰化」。
-#
-# 單字取自 hackathon/課程Unit 3~6.md。Unit 3 那份跑過
-# server.agents.material.extract_vocab()（走 AgentCore）驗證 agent 讀得懂課本，
-# 且它從對話裡多抓到課本單字表沒有的 warm。
-UNITS = [
-    {"no": 3, "week": 1, "title": "How's the Weather?", "zh": "天氣如何？",
-     "pattern": "How's the weather today?",
-     "words": ["sunny", "rainy", "cloudy", "windy", "snowy", "cold", "hot", "warm"]},
-    {"no": 4, "week": 2, "title": "Where Are You?", "zh": "你在哪裡？",
-     "pattern": "Where are you?",
-     "words": ["living room", "dining room", "bedroom", "kitchen", "bathroom",
-               "in", "on", "under"]},
-    {"no": 5, "week": 3, "title": "What Time Is It?", "zh": "現在幾點了？",
-     "pattern": "What time is it?",
-     "words": ["time", "thirty", "get up", "breakfast", "lunch", "dinner", "late"]},
-    {"no": 6, "week": 4, "title": "What Are You Doing?", "zh": "你在做什麼？",
-     "pattern": "What are you doing?",
-     "words": ["eating", "drinking", "reading", "writing", "sleeping",
-               "singing", "dancing"]},
-]
-CURRENT_UNIT_NO = 6          # 老師本週在教的單元
-_UNIT_BY_NO = {u["no"]: u for u in UNITS}
-
-
-def _unit(no: int) -> dict:
-    return _UNIT_BY_NO.get(no, UNITS[0])
+# 這個模組真正編造的是底下那十個學生。整個 demo 最有衝擊力的設定就在他們身上：
+# **老師上到第 4 課，有孩子還停在第 1 課。** 進度落差用「週」為單位，比用分數
+# 更痛也更真實——那正是痛點研究說的「學習成就雙峰化」。
+from server.seed_units import CURRENT_UNIT_NO, UNITS, unit as _unit  # noqa: F401
 
 
 # ``path``＝同一份教材下，系統為這個孩子選的**練習路徑**。

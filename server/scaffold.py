@@ -216,9 +216,12 @@ _ZH_KEYS_BY_LEN = sorted(VOCAB.keys(), key=len, reverse=True)
 # 把它們放進來會把 "two rice" 改成 "two rices"，教錯比不教更糟。
 # 用 np 的冠詞當判準而不是另外維護一張清單——資料已經在詞條裡了，
 # 兩份清單遲早會不同步。
+# place 也在名單內：房間名（bedroom / kitchen…）是可數名詞，該吃到複數修正。
+# weather / time / action / color 刻意不列——那三類多是形容詞、數詞與動名詞
+# （sunny / thirty / eating），加 s 是教錯。
 _EN_NOUNS = {
     v["en"] for v in VOCAB.values()
-    if v["cat"] in ("food", "school", "animal", "family")
+    if v["cat"] in ("food", "school", "animal", "family", "place")
     and not v["np"].startswith("some ")
 }
 
@@ -337,6 +340,24 @@ _EXTENSION_QUESTIONS = {
         "Is it red or blue?",
         "What color is your bag?",
     ],
+    # 以下三類對應 _MATERIAL_CATS 新增的教材分類。沒有這幾組的話，孩子講對了
+    # 天氣/地點/時間的英文句，延伸問句會落到 _EXTENSION_DEFAULT 的通用句
+    # （"Can you tell me more?"），等於本週單元練到一半被拉回泛泛而談。
+    "weather": [
+        "How is the weather today?",
+        "Do you like rainy days?",
+        "Is it hot or cold now?",
+    ],
+    "place": [
+        "Where are you now?",
+        "What is in your bedroom?",
+        "Is your mom in the kitchen?",
+    ],
+    "time": [
+        "What time is it?",
+        "What time do you get up?",
+        "Is it time for lunch?",
+    ],
 }
 _EXTENSION_DEFAULT = [
     "Can you tell me more?",
@@ -387,7 +408,21 @@ def _article_for(word: str) -> str:
 # 教材提煉 agent 用：驗證並合併老師上傳教材提煉出的詞條（子專案 F）
 # ---------------------------------------------------------------------------
 
-_MATERIAL_CATS = {"food", "school", "animal", "family", "action", "color"}
+# 教材詞條可用的分類。前 6 類與 curriculum.TOPIC_ORDER 一致（診斷輪替的主題庫）；
+# 後 3 類是 2026-08-01 補的**教材專用分類**，不進 TOPIC_ORDER。
+#
+# 為什麼要補：課本 Unit 3「How's the Weather?」的 sunny/rainy/cloudy… 沒有任何一個
+# 既有分類對得上，agent 只好全部塞進 color，於是 profile.build_profile() 依 cat 聚合
+# 的「興趣主題」會把天氣算成顏色偏好——教師端看到的興趣是錯的。同理 Unit 4 的
+# living room/bedroom 被塞進 school（那是學校用品）、Unit 5 的 time/o'clock/thirty
+# 無處可去。curriculum.py 的 TOPIC_ORDER 註解本來就寫著「space/weather 待擴詞條」，
+# 這是原訂方向而不是臨時開洞。
+#
+# 為什麼**不**一併加進 TOPIC_ORDER：那條清單驅動的是診斷升降級的主題輪替與
+# TOPIC_UNLOCK 的解鎖 band，動它會改變既有學生的診斷行為。分類與主題庫本來就
+# 該解耦——教材可以帶進課綱沒有的主題，不代表診斷要立刻拿它出題。
+_MATERIAL_CATS = {"food", "school", "animal", "family", "action", "color",
+                  "weather", "place", "time"}
 _MATERIAL_ENTRY_KEYS = ("en", "zh", "cat", "np", "sent")
 
 # 單次 register_material_vocab 呼叫最多接受幾條——跟 material.py 規則式路徑
@@ -398,10 +433,25 @@ MATERIAL_MAX_ENTRIES = 8
 
 
 def _article_is_consistent(np: str) -> bool:
-    """只驗證 a/an 這條有明確規則的冠詞；其餘開頭（some/my/the…）不強制檢查。"""
+    """只驗證 a/an 這條有明確規則的冠詞；其餘開頭（some/my/the…）不強制檢查。
+
+    單字 np（``late``／``thirty``／``eating``）**沒有冠詞可驗，一律視為合格**。
+    這裡原本回 False，等於「np 只有一個詞就判定不合法」——那是把「名詞片語」
+    的預期偷渡成硬規則，對形容詞、數詞、動名詞全部誤殺：2026-08-01 拿課本
+    Unit 6 實測，agent 正確提出 7 個 action 詞卻 accepted=0 rejected=7；當時的
+    處置是在 ``_is_valid_material_entry`` 為 ``cat == "action"`` 開特例直接放行，
+    只擋住了症狀的一半——同一天 Unit 5 的 ``late``／``thirty``（形容詞與數詞，
+    同樣寫不出名詞片語，但分類不是 action）依舊被這關擋掉，成了
+    「Unit 5 只提煉出 4 個詞」的真正原因。
+
+    改在這裡回 True 才是根因修法：冠詞檢查只該對「真的有冠詞」的片語生效。
+    連帶讓 ``_is_valid_material_entry`` 可以撤掉 action 的整條早退——那條早退
+    順手跳過了 zh/en/sent 重複檢查，包括「zh 已存在一律拒絕」這道防止覆蓋
+    課綱詞條的保護。
+    """
     parts = np.split()
     if len(parts) < 2:
-        return False
+        return True
     article = parts[0].lower()
     if article not in ("a", "an"):
         return True
@@ -427,13 +477,13 @@ def _is_valid_material_entry(
             return False
     if entry["cat"] not in _MATERIAL_CATS:
         return False
-    # action 類（動名詞：eating / sleeping…）沒有冠詞可檢查，np 就是動詞本身。
-    # _article_is_consistent 對單字 np 一律回 False——那條規則是為名詞片語寫的，
-    # 套到動作詞上是誤判：2026-08-01 拿課本 Unit 6「What are you doing?」實測，
-    # agent 正確提出 7 個 action 詞，卻**全部**被這關擋掉（accepted=0 rejected=7）。
-    # 課綱一直都有 action 分類，只是在此之前沒有人用動作詞跑過教材提煉。
-    if entry["cat"] == "action":
-        return True
+    # 這裡曾有一條 `if entry["cat"] == "action": return True` 的早退，用來讓
+    # 動名詞（eating / sleeping…）繞過對單字 np 的冠詞檢查。那條早退有兩個問題：
+    # 只救了 action 一類（形容詞 late、數詞 thirty 照樣被誤殺），而且它是
+    # **整條** return True，連下面 zh/en/sent 的重複檢查也一併跳過——等於 action
+    # 詞條可以無聲覆蓋既有課綱詞條，正是本函式 docstring 說絕不能少的那道保護。
+    # 根因已改在 _article_is_consistent（單字 np 沒有冠詞可驗 → 合格），
+    # 所以這裡不再需要任何分類特例。
     if entry["zh"] in existing_zh:
         return False
     if entry["en"].lower() in existing_en:
@@ -590,6 +640,40 @@ def _find_zh_vocab(text: str) -> list[str]:
     return [k for _, k in found]
 
 
+def _find_en_vocab(text: str) -> str | None:
+    """找出文字中出現的**英文**詞庫詞，回傳它的中文鍵；找不到回 None。
+
+    為什麼需要這個：詞庫查詢原本只有中文方向（``_find_zh_vocab``），於是孩子
+    講出教材裡的英文字、但整句英文不夠成形時，系統認得那個字卻用不上它。
+    2026-08-01 線上實測的逐字稿就是這樣壞掉的——
+
+        孩子：今天天氣 sunny
+        玩偶：…一起來練習：I see a dog.
+
+    ``sunny`` 明明已經隨 Unit 3 教材進了 VOCAB，但這句被判為中英夾雜後，
+    剝掉中文只剩一個英文詞、``_respond_mixed`` 退回純中文路徑，而那裡只查
+    中文鍵、「天氣」不在詞庫 → 整句視為沒命中，直接落到今日目標句。
+
+    比對用詞邊界（同 ``safety_check``／``material._rule_based_extract``），
+    避免 ``in`` 去命中 ``living room`` 裡的子字串。多個命中取**英文最長**的那個：
+    ``living room`` 應該贏過同句出現的 ``in``，長詞資訊量高、也才是孩子真正
+    講出來的那個教材詞。
+
+    每次呼叫都重掃 VOCAB 而不做 module-level 快取：``register_material_vocab``
+    會在執行期原地新增詞條（老師上傳教材），快取住等於新教材永遠比對不到自己。
+    """
+    low = (text or "").lower()
+    best_zh: str | None = None
+    best_len = 0
+    for zh, info in VOCAB.items():
+        en = str(info.get("en") or "").lower()
+        if not en or len(en) <= best_len:
+            continue
+        if re.search(r"\b" + re.escape(en) + r"\b", low):
+            best_zh, best_len = zh, len(en)
+    return best_zh
+
+
 def _strip_zh(text: str) -> str:
     """移除殘餘中文字元並整理空白。"""
     s = "".join(" " if _is_zh_char(ch) else ch for ch in text)
@@ -743,6 +827,15 @@ def _respond_pure_zh(
         key = max(matches, key=len)
         entry = VOCAB[key]
         praise = f"你說到「{key}」！它的英文是 {entry['en']} 喔。" + _pick(_PRAISE_ZH, turn_index)
+        return praise, entry["sent"], True
+    # 中文沒命中，再往英文方向查一次：孩子可能已經把教材裡的英文字講出來了
+    # （「今天天氣 sunny」），只是句子還不成形。這種情況帶讀的應該是**那個字的
+    # 例句**，而不是今日目標句——他已經開口說對了一個字，接住它才是鷹架。
+    en_key = _find_en_vocab(text)
+    if en_key:
+        entry = VOCAB[en_key]
+        praise = (f"你說對了 {entry['en']}，就是「{en_key}」！"
+                  + _pick(_PRAISE_ZH, turn_index))
         return praise, entry["sent"], True
     if stuck_hint:
         return _pick(_PRAISE_STUCK, turn_index), stuck_hint, False

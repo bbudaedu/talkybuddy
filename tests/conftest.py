@@ -44,6 +44,38 @@ def tmp_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolate_vocab():
+    """每個測試後把全域 ``scaffold.VOCAB`` 還原成測試前的樣子。
+
+    ``VOCAB`` 是模組層級的 dict，``register_material_vocab`` 刻意原地 mutate 它
+    （homework/games/profile 都 ``from server.scaffold import VOCAB`` 拿同一個
+    參照，原地改才不用動那些模組）。代價是它會**跨測試檔殘留**——只要有一條
+    測試載入了 Unit 3~6 的教材種子，之後所有測試看到的詞庫就多出二十幾個
+    課綱外的字。``tmp_db`` 只管 SQLite，管不到這個 dict。
+
+    症狀是一批「單獨跑會過、整套跑就紅」的測試（test_curriculum_data 斷言
+    詞庫幾乎全是官方字表、test_scaffold_vocab 斷言每個字都在官方清單裡），
+    紅的原因與被測程式無關，純粹是前面某個檔案留下的殘留。
+
+    連 ``_ZH_KEYS_BY_LEN`` 與 ``guardrails._safe_en_words`` 一起還原：
+    register_material_vocab 會重建這兩份衍生快取，只還原 VOCAB 會讓它們
+    停在含教材詞的版本，比沒還原更難察覺。
+    """
+    from server import guardrails, scaffold
+
+    snapshot = {zh: dict(v) for zh, v in scaffold.VOCAB.items()}
+    zh_keys = list(scaffold._ZH_KEYS_BY_LEN)
+    yield
+    scaffold.VOCAB.clear()
+    scaffold.VOCAB.update(snapshot)
+    scaffold._ZH_KEYS_BY_LEN[:] = zh_keys
+    try:
+        guardrails._safe_en_words.cache_clear()
+    except AttributeError:  # 不是 lru_cache 包的版本，沒有快取要清
+        pass
+
+
+@pytest.fixture(autouse=True)
 def clear_active_game():
     """清掉裝置級的遊戲狀態（``server.pipeline._active_game``）。
 

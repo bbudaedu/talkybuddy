@@ -40,6 +40,11 @@ _CAT_LABEL: dict[str, str] = {
     "family": "家庭",
     "action": "動作",
     "color": "顏色",
+    # 教材專用分類（見 scaffold._MATERIAL_CATS）。老師上傳的課本可以帶進課綱
+    # 沒有的主題，興趣統計要叫得出它的名字，否則教師端會顯示英文 key。
+    "weather": "天氣",
+    "place": "地點",
+    "time": "時間",
 }
 
 # 錯點類型 → 中文標籤（§3.3）

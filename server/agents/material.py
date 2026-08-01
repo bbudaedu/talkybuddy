@@ -40,10 +40,28 @@ _log = logging.getLogger(__name__)
 # 也用它做上限）。這裡不重複寫死 8，避免兩處常數各自改各自漂移。
 _MAX_ENTRIES = scaffold.MATERIAL_MAX_ENTRIES
 
+# 分類 → 中文語意。同時餵給 prompt（見 _CAT_CHOICES），所以措辭要能**分辨**，
+# 不能只是翻譯：school 寫「學校」時，模型會把所有跟上學有關的字都丟進來；
+# 寫「學校用品」才對得上這個分類實際收的東西（書包、鉛筆、課本）。
 _CAT_ZH = {
-    "food": "食物", "school": "學校", "animal": "動物",
-    "family": "家庭", "action": "動作", "color": "顏色",
+    "food": "食物與飲料", "school": "學校用品", "animal": "動物",
+    "family": "家人稱謂", "action": "動作與動詞", "color": "顏色",
+    "weather": "天氣與氣候", "place": "地點、房間與位置",
+    "time": "時間、時刻與作息",
 }
+
+# 送進 prompt 的合法分類字串。**從 scaffold._MATERIAL_CATS 生成，不手寫。**
+# 這兩者一旦漂移，agent 會被要求輸出驗證關卡不收的分類（或反過來，明明可以用
+# 的分類從沒被告知），而症狀是「詞條莫名被 reject」或「分類明顯亂標」——
+# 2026-08-01 Unit 3 天氣詞全被標成 color，就是因為 prompt 裡沒有 weather 可選。
+#
+# 每個分類都附中文語意：只給英文 key 不夠。補上 weather/place/time 後第一次
+# 重跑，Unit 5 的 time／o'clock／thirty 仍被標成 school——分類名稱本身沒有告訴
+# 模型 school 指的是「學校用品」而不是「跟上學有關的字」。附上中文後才選得準。
+# 排序固定：prompt 內容要能重現，否則同一份教材每次跑出的結果不好比對。
+_CAT_CHOICES = "、".join(
+    f"{cat}（{_CAT_ZH[cat]}）" for cat in sorted(scaffold._MATERIAL_CATS)
+)
 
 
 def _rule_based_extract(text: str) -> dict:
@@ -126,8 +144,21 @@ _SYSTEM_PROMPT = (
     "你是台灣國小英語教材分析專家。從老師提供的教材文字中，"
     "挑出最多 8 個適合國小生學習的詞彙。"
     "每個詞附：英文（en）、繁體中文（zh）、分類（cat，只能是 "
-    "food/school/animal/family/action/color 之一）、"
-    "含正確冠詞的名詞片語（np）、一句用到這個詞的目標英文例句（sent）。"
+    f"{_CAT_CHOICES} 之一，請挑語意最貼近的，不要硬塞不相關的分類）、"
+    "名詞片語（np，名詞才加冠詞；形容詞、數詞、動名詞沒有冠詞就直接寫該詞本身）、"
+    "一句用到這個詞的目標英文例句（sent）。"
+    # sent 不是「示範用法」而是**孩子等一下要跟著唸的那一句**，難度必須壓在 A1。
+    # 2026-08-01 重跑時 agent 產出 "It is sunny today, so we can play outside."
+    # 與 "It is sunny and warm, so let's ride bikes to the park."（12 詞），
+    # 文法沒問題但對正在學開口的孩子太長，玩偶帶讀時他跟不完；
+    # curriculum._TARGET_FORM 的 band 2 也只到「固定框架短句 3–4 詞」。
+    #
+    # 關鍵是**課本自己的例句本來就是短的**（該單元原文寫的是 "It is sunny
+    # today."），長句是 agent 自行擴寫出來的。所以第一順位不是「寫短一點」而是
+    # 「照抄教材」——既忠於老師指定的教材，長度問題也一併消失。
+    "sent 優先**直接採用教材原文裡該詞的例句**，不要自行改寫或加長；"
+    "教材沒有例句時才自己造一句，且必須是 A1 難度：8 個英文詞以內、單一子句，"
+    "不要用 so／because／and 把兩件事串成長句。"
     "同時給這份教材一個簡短的主題描述（topic，繁體中文）。"
     "只輸出一個 JSON 物件，不得有 markdown 圍欄或額外文字。"
 )
@@ -145,7 +176,13 @@ def _build_user_prompt(text: str) -> str:
     return (
         f"教材內容：\n{text[:_MAX_TEXT_LEN]}\n\n"
         "請從上述教材挑出最多 8 個適合國小生的詞彙。"
-        "cat 只能是 food/school/animal/family/action/color 之一。"
+        f"cat 只能是 {_CAT_CHOICES} 之一。"
+        # 長度約束在 system prompt 已經寫過一次，這裡再寫一次不是贅述：
+        # 2026-08-01 只寫在 system prompt 時，Unit 3 連跑四次都自行把
+        # "It is sunny today." 擴寫成 9~13 詞的長句（Unit 4~6 都守規矩）。
+        # user prompt 是模型最後讀到的內容，關鍵約束放這裡才壓得住。
+        "**sent 是孩子要跟著唸的句子**：教材原文有例句就直接用，"
+        "沒有才自己造，一律 8 個英文詞以內、不得用 so／because／and 串成長句。"
         "僅輸出符合以下 schema 的 JSON 物件（source 固定為 \"cloud\"）：\n"
         + json.dumps(schema_example, ensure_ascii=False)
     )
