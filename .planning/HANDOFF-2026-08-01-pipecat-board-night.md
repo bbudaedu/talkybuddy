@@ -385,3 +385,42 @@ edge 只用對話模型，不受影響，但雲端那條路要知道。
 
 **驗收一律看 `verified_backend()` 或 log 的實際 `🗣`，不要看設定讀數**——
 這個專案被「以為在跑雲端、其實沒有」咬過三次。
+
+---
+
+## 九、8.4 那 10.5 秒沉默 — 已在開發機修完，等真機驗證（2026-08-01 深夜）
+
+**根因查證結果（在 `talkybuddy-pipecat` worktree，未合併回這支）**：兩個問題疊加，
+不是單純調一個逾時值就夠：
+
+1. `server/llm.py` 的 `_CALL_TIMEOUT_S=7.5s`，而 `EDGE_TURN_LOOP_VALIDATION.md:33`
+   實測**冷啟動 llm=7522ms**——只剩 22ms 餘裕，斷網瞬間 llama-server 剛切上來
+   時 EdgeLLM 自己也會逾時、回 `None`。
+2. **更嚴重**：`cloud_llm_service.py` 的 `process_frame` 在 `text` 為 falsy 時
+   直接跳過、不推任何 frame——pipecat 這條路**從來沒有第三層 scaffold 罐頭
+   回覆兜底**（`PIPECAT_HANDOFF.md:73` 早就記過這個缺口，但先前被裁定「可
+   接受」，那是在不知道它會跟 EdgeLLM 冷啟動逾時疊加、變成拔網橋段完全沉默
+   之前的裁定）。
+
+**已做的修改**（`talkybuddy-pipecat` worktree，尚未 commit，尚未部署到板子）：
+
+| 檔案 | 改什麼 |
+|---|---|
+| `server/llm.py` | `_CALL_TIMEOUT_S` 7.5→10.0、`_GENERATE_TIMEOUT_S` 8.0→10.5（比實測最壞情況 7522ms 留 2.5-3s 餘裕） |
+| `edge/runtime/pipecat_adapters/cloud_llm_service.py` | 新增建構子參數 `last_resort`：cloud **與** fallback 都失敗時才觸發，省略時行為不變（向後相容，舊測試不動） |
+| `edge/probes/probe_live_conversation.py` | 接上 `last_resort=`，內容是 `scaffold.FALLBACK_LINES[0] + guardrails.ensure_readalong("", target)`，例如「我沒有聽清楚，可以再說一次嗎？跟我說一遍：I see a dog.」——不呼叫 `scaffold.respond()`，因為那需要本輪逐字稿/turn_index 等這條路徑沒有的狀態，這裡只求「別啞掉」 |
+| `tests/test_pipecat_cloud_llm_service.py` | 新增兩個測試：雙重失敗時吃到 last_resort、edge 有回覆時 last_resort 不該被打擾 |
+
+**開發機驗證**：新測試 TDD 紅→綠、`test_llm.py`+`test_pipecat_cloud_llm_service.py`
+29 個全綠、全專案 1544 個通過（`server/streaming/tests/` 那 11 個失敗是**修改前
+就有**的既存失敗，已用 `git stash` 對照過，跟這次改動無關，像是開發機沒錄音
+裝置那類環境限制，不是這次引入的迴歸）。
+
+**還沒做，需要你在真機上做**：
+1. 這三個檔案還沒 commit，也還沒 scp 到板子——先看過這份 diff 覺得可以再說。
+2. 部署後**重演 8.4 的拔網測試**：對話中拔網路線，確認｛CloudLLM 失敗→
+   EdgeLLM 失敗｝那一輪不再是完全沉默，至少會聽到保底那句帶讀話術。
+3. 若要更貼真：找一個板子剛從雲端切回 edge、context 未熱的時間點量一次
+   `llm=` 那個數字，確認新的 10s/10.5s 真的夠、不是又踩線。
+
+**未做**：沒有動 §8.7 Polly TTS、§三.3 憑證過期靜默降級。
