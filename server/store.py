@@ -587,6 +587,32 @@ def save_profile(d: dict) -> None:
         conn.commit()
 
 
+def seed_units() -> None:
+    """把 Unit 3~6 教材灌進 materials 表（僅當該表為空）。
+
+    **必須在啟動時跑，不能靠現場手動上傳。** Fargate 沒有持久儲存，容器每次
+    重啟 SQLite 就重置；教材沒進 materials 表，``app._replay_materials()`` 就
+    無從 replay，``scaffold.VOCAB`` 會完全不認得課本的字——2026-08-01 實測
+    四單元 23 個字裡系統只認得 3 個，孩子照著儀表板講 "It's sunny" 會比對不到。
+
+    詞條來自 server/seed_units.py，是 material agent 對課本的實際產出。
+    """
+    init_db()
+    if list_materials():
+        return
+    from server.seed_units import UNIT_MATERIALS
+    for no in sorted(UNIT_MATERIALS):
+        d = UNIT_MATERIALS[no]
+        add_material({
+            "title": f"Unit {no}",
+            "topic": d["topic"],
+            "entries": d["entries"],
+            "accepted_count": len(d["entries"]),
+            "rejected_count": 0,
+            "source": "cloud",
+        })
+
+
 def seed_demo() -> None:
     """首次啟動灌示範資料：14 天診斷 + 20 筆歷史互動。
 

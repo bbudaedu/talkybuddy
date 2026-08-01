@@ -19,10 +19,15 @@ FROM python:3.12-slim
 
 # ffmpeg：pipeline 把瀏覽器 webm 轉 16k mono wav（有 RIFF fast path，但
 # 瀏覽器來源一律需要它）。libsndfile1：soundfile 讀 wav 的系統相依。
+# espeak-ng-data：sherpa-onnx 載 Piper voice 時要用它做音素化。少了這 19MB，
+# TTSEngine.available() 仍回 True，但每次 synth() 都靜靜回 None——玩偶啞掉而且
+# 沒有任何錯誤訊息。2026-08-01 決賽當天就是這樣才發現的（fetch_models.py 只抓
+# SenseVoice 與 piper 的 .onnx，從來沒處理過 espeak 資料）。
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         libsndfile1 \
         curl \
+        espeak-ng-data \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -38,6 +43,16 @@ RUN pip install --no-cache-dir huggingface_hub \
     && python /app/deploy/aws/fetch_models.py --models-dir /app/models \
     && pip uninstall -y huggingface_hub \
     && rm -rf /root/.cache/huggingface
+
+# config.ESPEAK_NG_DATA_DIR 寫死在 models/ 底下，所以把 apt 裝的那份接過來。
+# 用 find 而不是寫死路徑：Debian 的位置隨架構不同（x86_64 在
+# /usr/lib/x86_64-linux-gnu/，aarch64 在 /usr/lib/aarch64-linux-gnu/）。
+# 找不到就讓 build 失敗——這比執行期靜默啞掉好得多。
+RUN ESP="$(find /usr/lib /usr/share -maxdepth 3 -type d -name espeak-ng-data | head -1)" \
+    && test -n "$ESP" \
+    && ln -sfn "$ESP" /app/models/espeak-ng-data \
+    && test -f /app/models/espeak-ng-data/phontab \
+    && echo "espeak-ng-data -> $ESP"
 
 # 應用程式碼放最後：改 code 只重建這層
 COPY server/ /app/server/

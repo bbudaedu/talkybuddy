@@ -200,7 +200,16 @@ _active_game = None
 class VoicePipeline:
     """單一 session 的語音對話狀態機（半雙工）。"""
 
-    def __init__(self, asr, llm, tts, cloud_tts=None, cloud_llm=None, student_id=None):
+    # 即時陪聊要保留的對話輪數（user+assistant 各算一則）。
+    # 太短玩偶會忘記剛問過什麼——那正是「你喜歡什麼動物→你有 rabbit 嗎→
+    # 又問你喜歡什麼動物」這種鬼打牆的成因。太長則每輪都在燒 token。
+    _HISTORY_MAX = 12
+    # 每則回覆字數上限。玩偶講話時孩子的麥克風是關著的，講越久孩子越沒機會開口。
+    # 靜態框架寫「不超過兩句話」管不住，實測會寫成 76 字；具體數字才有效。
+    _LIVE_MAX_CHARS = 60
+
+    def __init__(self, asr, llm, tts, cloud_tts=None, cloud_llm=None, student_id=None,
+                 polly_tts=None):
         """依賴注入 ASR / LLM / TTS 引擎實例（測試可傳 stub）。
 
         cloud_tts：選填的雲端 TTS（CloudTTS，同 available()/synth() 契約）；
@@ -208,11 +217,15 @@ class VoicePipeline:
         student_id：本連線綁定的學生身份；None（預設）→ 寫互動時退回
         config.STUDENT_ID（邊緣單機相容）。
         """
+        # 即時陪聊的對話歷史（只餵雲端引擎；edge 的 llama-server 只有 512 ctx，
+        # 塞歷史會擠掉 system prompt，所以那條路徑維持單輪回合式契約）。
+        self._chat_history: list[dict] = []
         self.asr = asr
         self.llm = llm
         self.tts = tts
         self.cloud_tts = cloud_tts
         self.cloud_llm = cloud_llm
+        self.polly_tts = polly_tts
         # 本連線身份（每連線一個 pipeline 實例，解單例污染）
         self.student_id = student_id
         # "edge" | "cloud"，由 app.py 切換
@@ -585,18 +598,47 @@ class VoicePipeline:
             engines.append(self.cloud_llm)
         if self.llm is not None and self.llm.available():
             engines.append(self.llm)
+        target_sentence = getattr(sc, "target_sentence", None)
         for engine in engines:
             try:
-                candidate = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        engine.generate, result.asr_text, sc, self._directive
-                    ),
-                    timeout=LLM_TIMEOUT_S,
-                )
+                if engine is self.cloud_llm:
+                    # 雲端走**即時陪聊契約**：多輪歷史 + 教練企鵝 prompt + 不強制帶讀。
+                    # engine.generate() 會轉進 generate_from_prompt()，那是單輪且
+                    # 寫死「每輪硬帶讀」的回合式契約——玩偶因此不記得上一輪問過
+                    # 什麼，對話會繞回原點。雲端 context 沒有 512 的限制，不需要
+                    # 忍受那個契約。放寬的只有帶讀格式，安全護欄與簡轉繁照跑。
+                    messages = self._chat_history + [
+                        {"role": "user", "content": result.asr_text}
+                    ]
+                    candidate = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            engine.generate_chat, messages,
+                            system=scaffold.build_live_system_prompt(
+                                target_sentence, self._directive,
+                                max_chars=self._LIVE_MAX_CHARS,
+                            ),
+                            target=target_sentence,
+                            enforce_readalong=False,
+                        ),
+                        timeout=LLM_TIMEOUT_S,
+                    )
+                else:
+                    candidate = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            engine.generate, result.asr_text, sc, self._directive
+                        ),
+                        timeout=LLM_TIMEOUT_S,
+                    )
             except Exception:
                 candidate = None
             if candidate and isinstance(candidate, str) and candidate.strip():
                 llm_text = candidate
+                if engine is self.cloud_llm:
+                    self._chat_history.append(
+                        {"role": "user", "content": result.asr_text})
+                    self._chat_history.append(
+                        {"role": "assistant", "content": candidate})
+                    del self._chat_history[:-self._HISTORY_MAX]
                 # 記下真正生出這句話的引擎（不是「打算用哪個」）
                 result.reply_source = (
                     "cloud" if engine is self.cloud_llm else "edge"
@@ -809,8 +851,20 @@ class VoicePipeline:
         wav: bytes | None = None
         try:
             if segments:
+                # Polly 童聲優先：英文段用 Ivy(女童)，中文段它自己交回本地引擎。
+                # 排在 CloudTTS 之前是因為它是 AWS 服務（ElevenLabs 被 aws_only 擋掉），
+                # 而且英文童聲對「兒童英語玩偶」的說服力遠高於現在的成人男聲 lessac。
+                # 合規：送出去的是文字、收回來才是音訊，不涉及生物識別資料。
                 if (
                     self.network_mode == "cloud"
+                    and self.polly_tts is not None
+                    and self.polly_tts.available()
+                    and guardrails.consent_granted()
+                ):
+                    wav = await asyncio.to_thread(self.polly_tts.synth, segments)
+                if (
+                    wav is None
+                    and self.network_mode == "cloud"
                     and self.cloud_tts is not None
                     and self.cloud_tts.available()
                     and guardrails.consent_granted()

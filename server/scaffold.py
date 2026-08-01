@@ -427,6 +427,13 @@ def _is_valid_material_entry(
             return False
     if entry["cat"] not in _MATERIAL_CATS:
         return False
+    # action 類（動名詞：eating / sleeping…）沒有冠詞可檢查，np 就是動詞本身。
+    # _article_is_consistent 對單字 np 一律回 False——那條規則是為名詞片語寫的，
+    # 套到動作詞上是誤判：2026-08-01 拿課本 Unit 6「What are you doing?」實測，
+    # agent 正確提出 7 個 action 詞，卻**全部**被這關擋掉（accepted=0 rejected=7）。
+    # 課綱一直都有 action 分類，只是在此之前沒有人用動作詞跑過教材提煉。
+    if entry["cat"] == "action":
+        return True
     if entry["zh"] in existing_zh:
         return False
     if entry["en"].lower() in existing_en:
@@ -871,8 +878,13 @@ _LIVE_STATIC_FRAME = (
     "關著的，你多講一句，他就多一句話的時間不能開口。寧可講太少讓他多說，"
     "也不要一口氣講完好幾輪。問完問題、或請他跟讀之後，就安靜等他，不要自己"
     "接著往下講、不要自己替他回答、也不要在他還沒開口前就稱讚他。"
-    "六、務必明顯放慢說話速度，比平常慢很多：一個字一個字清楚地說，"
-    "字與字、詞與詞之間都稍微停頓，像對三、四歲小小孩慢慢講話一樣。寧可太慢也不要快。"
+    "六、語氣要像對三、四歲小小孩講話那樣輕柔清楚。"
+    # 這裡刻意**不**寫「一個字一個字說、字與字之間停頓」。2026-08-01 線上實測，
+    # 模型會把那句當成「文字格式」照做，輸出 "What... an... i... mal... do... you... like?"
+    # ——連 animal 都被拆成三段，畫面上像壞掉，唸出來也不對。
+    # 放慢語速是 TTS 層的事（見 server/timestretch.py 的 WSOLA），不是 LLM 該用
+    # 標點模擬的東西。
+    "英文句請寫成正常、完整的句子，**不要**用點點點、破折號或空格把單字拆開。"
 )
 
 
