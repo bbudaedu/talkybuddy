@@ -567,6 +567,17 @@ def list_due_word_reviews(student_id: str, *, now: str | None = None,
     return [_row_to_word_review(r) for r in rows]
 
 
+def list_word_reviews(student_id: str) -> list[dict]:
+    """該學生全部詞彙複習紀錄，不篩到期——供聚合統計（已掌握/練習中）用。"""
+    with _lock:
+        conn = _get_conn()
+        rows = conn.execute(
+            f"SELECT {', '.join(_WORD_REVIEW_COLS)} FROM word_reviews WHERE student_id = ?",
+            (student_id,),
+        ).fetchall()
+    return [_row_to_word_review(r) for r in rows]
+
+
 def get_profile(student_id: str | None = None) -> dict | None:
     """取回某學生的長期 profile；尚未存過回 None。
 

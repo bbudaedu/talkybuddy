@@ -173,7 +173,9 @@ flowchart TB
 
 ## 視圖 03 — 雲端目標：Bedrock AgentCore
 
-> **這是目標架構，不是現況。**
+> **佈建現況（2026-08-01 更新）：客戶端／Orchestrator／Memory 已在主辦方 workshop
+> 帳號完成佈建並收到真實 `InvokeHarness` 回應，不再是純目標架構。**
+> Gateway／Identity／Policy／Evaluations 幾格仍是設計、沒有實作，見下方〈元件狀態〉。
 > 完整版與逐項對應表見 [`AGENTCORE_ARCHITECTURE.md`](AGENTCORE_ARCHITECTURE.md) §3，
 > 那份是權威來源；本節是精簡版，兩者衝突時以該檔為準。
 
@@ -236,18 +238,19 @@ flowchart TB
 | 元件 | 狀態 | 憑據 |
 |---|---|---|
 | 客戶端已接線 | 已實作 | `server/agentcore.py`；三個 agent 的降級鏈第一層 |
-| API 契約已對齊 | 離線驗證 | `InvokeHarness` 回 EventStream 已修正，用本機 botocore service model 釘住欄位名（`tests/test_agentcore_client.py`） |
-| 佈建腳本 | `--dry-run` 過 | 形狀全過；`arn` 欄位與執行角色權限已修正並有測試 |
-| **實際佈建** | **未驗證** | 沒跑過 `--apply`，沒建立過 Harness，沒收過一次真實 `InvokeHarness` 回應 |
-| 自建 orchestrator | 可用回退 | `server/agents/`，決策/執行分離、schema 驗證、白名單投影、規則式保底 |
+| API 契約已對齊 | 已驗證（非僅離線） | 2026-08-01 08:57 收到真實 `InvokeHarness` 回應，`stopReason=end_turn`，可 `json.loads` 出決策 JSON；離線驗證仍在（`tests/test_agentcore_client.py`） |
+| 佈建腳本 | `--apply` 已成功 | 於主辦方 workshop 帳號（`953089054952`／`WSParticipantRole`、`us-west-2`）實際跑通，非僅 `--dry-run`；三個只有真跑才會暴露的坑已修（IAM Description 限 ASCII、`UpdateHarness`/`CreateHarness` 形狀不同、`allowedTools` 需顯式設 `[]`），見 commit `f9f6f88`（2026-08-01 14:40） |
+| **實際佈建** | **已佈建、已驗證** | Memory（`TalkyBuddyStudentMemory-iQqstO61N0`）+ Harness ×4（Orchestrator／Homework／Report／Material）+ IAM role（`TalkyBuddyAgentCoreExecution`）全部 READY；`orchestrator.decide_next_actions()` 端到端驗證回傳 `source:"cloud"`、內容引用 profile 真實興趣欄位，非僅裸 boto3 呼叫 |
+| 自建 orchestrator | 可用回退 | `server/agents/`，決策/執行分離、schema 驗證、白名單投影、規則式保底——AgentCore 失敗時的第二層，不是備胎 |
 
 ### 已知邊界
 
-- **不能宣稱「跑在 AgentCore 上」。** 到 2026-08-01 為止全部是離線推導
-  與 service model 比對的結果。
-- Memory / Gateway / Identity / Policy / Evaluations 都是**設計**，沒有實作。
-- `deploy/aws/AGENTCORE_RESOURCES.md` 記的是自有帳號手建的 ARN，
-  **帳號綁定、現已失效**，不要照抄。
+- **可以宣稱「跑在 AgentCore 上」，但要留兩個但書**：
+  1. `source` 欄位只有 `"cloud"`／`"rule"` 兩值，**區分不出這一輪走的是 AgentCore 還是純 Bedrock**——降級鏈第一層失敗會靜默摔到第二層，畫面上看不出來。要證明「這一輪確實是 AgentCore」，得回頭比對 CloudWatch/日誌，不能只看 API 回應。
+  2. 這是**佈建當下**驗證過的狀態，不是持續保證——IAM 角色傳播延遲、workshop 帳號憑證效期、配額都可能讓它在幾小時後又失敗。**現場／錄影前務必重新驗證一次**，不要沿用這份文件記錄的時間點當作「現在也一定通」的證據。
+- Gateway／Identity／Policy／Evaluations 幾格**仍是設計，沒有實作**——只有 Memory 與四個 Harness 本身已佈建。
+- `deploy/aws/AGENTCORE_RESOURCES.md` 記的是**另一組**、自有帳號手建的 ARN，
+  **帳號綁定、現已失效，跟本節說的 workshop 帳號資源是兩回事**，不要混用或照抄。
 
 ---
 

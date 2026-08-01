@@ -12,12 +12,20 @@
     student_id、班級與學生做成一對多。**不要把這個模組當成那條路的起點。**
 
 契約：
-    class_overview() -> dict     # 全班總覽，確定性、不需 DB、不觸網
+    class_overview() -> dict     # 全班總覽，不觸網；除阿明那一列外皆確定性、不需 DB
 
-資料是刻意寫死的：demo 最怕重跑一次數字就變。彩排看到什麼，現場就是什麼。
-學生姓名用化名，不對應真實個案（隱私：痛點研究的個案不得原樣搬上台）。
+九位虛構同學的資料是刻意寫死的：demo 最怕重跑一次數字就變，而且沒有做多學生
+高併發，沒必要做真實實作。姓名用化名，不對應真實個案（隱私：痛點研究的個案
+不得原樣搬上台）。
+
+**阿明是例外**：他是決賽現場實際操作的帳號（``config.STUDENT_ID``），這一列
+不能寫死——他的分數、開口量、字彙量、弱項全部即時算自真實 DB，見
+``_aming_live_row()``。也因此本模組**不再是**「不需 DB」：呼叫
+``class_overview()`` 會讀一次真實學生資料。
 """
 from __future__ import annotations
+
+import datetime
 
 # 單元定義（編號、週次、句型、單字表）是**教材事實**，住在 server/seed_units.py，
 # 與 lesson.py 選帶讀句時看的是同一份——單元一旦搬到別的一課，玩偶帶讀的句子
@@ -44,8 +52,7 @@ _PATH_LABEL = {
 
 # 阿明的 student_id 刻意用 config.STUDENT_ID 的真實值（STUDENT-AMING-004），
 # 不是 demo-0xx：教師端下半部的「單一學生深入分析」查的就是他，兩邊指同一個
-# 孩子才說得通——全班列表是展示資料，但阿明那一列對應的是 DB 裡真的有診斷、
-# 有 14 天趨勢的那個學生。
+# 孩子才說得通。
 # unit＝這孩子**現在實際在練的單元**（不是老師教到哪）。
 # levels＝四個單元代表句型的掌握度 0-3，順序同 UNITS。
 _STUDENTS = [
@@ -70,12 +77,15 @@ _STUDENTS = [
      "spoken_week": 44, "spoken_prev": 33,
      "vocab": {"mastered": 41, "learning": 10, "new_week": 6}, "levels": [3, 3, 2, 0]},
 
-    {"seat": 7,  "name": "阿明", "student_id": "STUDENT-AMING-004", "unit": 5, "progress": 4,
-     "scores": {"pronunciation": 68, "fluency": 67, "vocabulary": 66, "grammar": 64},
-     "weakness": "冠詞 a/an 遺漏", "status": "improving", "path": "drill",
-     "note": "兩週內四維全面上升，冠詞仍是主要失分點。",
-     "spoken_week": 42, "spoken_prev": 31,
-     "vocab": {"mastered": 34, "learning": 11, "new_week": 5}, "levels": [3, 2, 1, 0]},
+    # 阿明是決賽現場實際操作的帳號，這一列**不寫死**——scores/weakness/note/
+    # spoken_week/vocab/levels/progress 全部由 _aming_live_row() 即時算自真實
+    # DB，這裡只留 class_overview() 拿來比對、替換用的座位錨點。任何欄位改到
+    # 這裡都不會生效，改 _aming_live_row()。
+    {"seat": 7,  "name": "阿明", "student_id": "STUDENT-AMING-004", "unit": 5, "progress": 0,
+     "scores": {"pronunciation": 60, "fluency": 60, "vocabulary": 60, "grammar": 60},
+     "weakness": "尚無資料", "status": "needs_attention", "path": "oneone",
+     "note": "尚無資料", "spoken_week": 0, "spoken_prev": 0,
+     "vocab": {"mastered": 0, "learning": 0, "new_week": 0}, "levels": [0, 0, 0, 0]},
 
     {"seat": 18, "name": "思妤", "student_id": "demo-005", "unit": 5, "progress": 3,
      "scores": {"pronunciation": 66, "fluency": 63, "vocabulary": 69, "grammar": 62},
@@ -130,11 +140,136 @@ def _avg(scores: dict) -> float:
     return round(sum(scores.values()) / len(scores), 1)
 
 
+def _zh_keys_for_words(en_words: list[str]) -> set[str]:
+    """英文教材詞（seed_units 的 words）→ scaffold.VOCAB 中文鍵。
+
+    srs 用中文鍵記錄複習狀態（見 srs.grade_interaction），教材詞表存的是
+    英文，兩邊對得上才能算「這個孩子這個單元練了幾個字」。
+    """
+    from server.scaffold import VOCAB
+    en_set = set(en_words)
+    return {zh for zh, info in VOCAB.items() if info.get("en") in en_set}
+
+
+def _aming_live_row() -> dict:
+    """阿明那一列的即時版本——取代 _STUDENTS 裡的座位錨點。
+
+    任何一步讀取失敗都退回保守預設（0 分/0 次/needs_attention），不讓全班
+    總覽被一個人的資料壞掉；但**不靜默吞掉例外去湊假數字**，失敗時的樣子
+    就是「這孩子還沒有資料」，跟真實狀況一致。
+    """
+    from server import config, lesson, store
+    from server.agents import report as report_agent
+
+    sid = config.STUDENT_ID
+    try:
+        diagnoses = store.list_diagnoses(sid) or []
+    except Exception:
+        diagnoses = []
+    try:
+        interactions = store.list_interactions(limit=2000, student_id=sid) or []
+    except Exception:
+        interactions = []
+    try:
+        profile = store.get_profile(sid) or {}
+    except Exception:
+        profile = {}
+    try:
+        reviews = store.list_word_reviews(sid) or []
+    except Exception:
+        reviews = []
+
+    dim_scores = report_agent._extract_dim_scores(diagnoses)
+    latest = report_agent._latest_scores(dim_scores)
+    weakest = report_agent._weakest_dim(latest)
+    trend = report_agent._trend(dim_scores.get(weakest, []))
+    average = round(sum(latest.values()) / len(latest), 1) if latest else 0.0
+
+    # status/path：demo_class 自創的分類，其他真人路徑沒算過，這裡用平均分數
+    # ＋趨勢寫一條清楚的判斷式（不是編出來的數字，門檻可依需求調整）。
+    if not diagnoses:
+        status, path = "needs_attention", "oneone"
+    elif average >= 80:
+        status, path = "steady", "extend"
+    elif average < 55:
+        status, path = "needs_attention", "oneone" if trend != "improving" else "echo"
+    elif trend == "improving":
+        status, path = "improving", "drill"
+    elif trend == "declining":
+        status, path = "needs_attention", "echo"
+    else:
+        status, path = "steady", "drill"
+
+    latest_diag = diagnoses[-1] if diagnoses else {}
+    weaknesses = latest_diag.get("weaknesses") or []
+    weak_zh = report_agent._DIM_ZH.get(weakest, weakest)
+    note = weaknesses[0] if weaknesses else f"{weak_zh}尚在累積練習資料，還看不出明確弱項"
+
+    lp = lesson.build_lesson(diagnoses, profile)
+    unit_no = lp.unit_no or CURRENT_UNIT_NO
+    u = _unit(unit_no)
+
+    mastered_zh = {r["word"] for r in reviews if r.get("reps", 0) >= 3}
+    learning_zh = {r["word"] for r in reviews if 0 < r.get("reps", 0) < 3}
+    week_ago = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
+    new_week_zh = {r["word"] for r in reviews
+                   if r.get("reps", 0) <= 1 and str(r.get("last_seen") or "")[:10] >= week_ago}
+
+    unit_zh_keys = _zh_keys_for_words(u["words"])
+    progress = len(unit_zh_keys & (mastered_zh | learning_zh))
+
+    def _spoken_count(days_from: int, days_to: int) -> int:
+        lo = (datetime.date.today() - datetime.timedelta(days=days_to)).isoformat()
+        hi = (datetime.date.today() - datetime.timedelta(days=days_from)).isoformat()
+        return sum(
+            1 for it in interactions
+            if (it.get("student_text") or "").strip()
+            and lo <= str(it.get("ts") or "")[:10] < hi
+        )
+
+    spoken_week = _spoken_count(0, 7)
+    spoken_prev = _spoken_count(7, 14)
+
+    # 已練過的單元用平均分數估掌握度；還沒教到的單元一律 0——
+    # 跟其他九位同學的 levels 語意一致（0-3，見 PATTERN_LEVEL_LABEL）。
+    levels = []
+    for u2 in UNITS:
+        if u2["no"] > unit_no:
+            levels.append(0)
+        elif average >= 80:
+            levels.append(3)
+        elif average >= 65:
+            levels.append(2)
+        elif average >= 50:
+            levels.append(1)
+        else:
+            levels.append(0)
+
+    return {
+        "seat": 7, "name": "阿明", "student_id": sid,
+        "unit": unit_no, "progress": progress,
+        "scores": {d: round(v) for d, v in latest.items()} if latest else
+                  {d: 0 for d in ("pronunciation", "fluency", "vocabulary", "grammar")},
+        "weakness": note, "status": status, "path": path, "note": note,
+        "spoken_week": spoken_week, "spoken_prev": spoken_prev,
+        "vocab": {"mastered": len(mastered_zh), "learning": len(learning_zh),
+                  "new_week": len(new_week_zh)},
+        "levels": levels,
+    }
+
+
+def _raw_students() -> list[dict]:
+    """全班原始資料：阿明即時算自真實 DB，其餘九位是固定展示資料。"""
+    from server import config
+    return [_aming_live_row() if s["student_id"] == config.STUDENT_ID else s
+            for s in _STUDENTS]
+
+
 def class_overview() -> dict:
-    """全班總覽。確定性、無副作用。"""
+    """全班總覽。阿明那一列即時讀真實 DB，其餘九位固定——見模組說明。"""
     cur = _unit(CURRENT_UNIT_NO)
     students = []
-    for s in _STUDENTS:
+    for s in _raw_students():
         u = _unit(s["unit"])
         total = len(u["words"])
         label, why = _PATH_LABEL.get(s.get("path", ""), ("\u2014", ""))
