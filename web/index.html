@@ -2315,6 +2315,13 @@ loginForm.addEventListener("submit", function (e) {
     if (!r.ok) { throw new Error("登入失敗"); }
     return r.json();
   }).then(function (res) {
+    /* 學生端只吃 student 身分。老師帳號登進來也能拿到 token，但之後每一支
+     * 需要 ?student= 的 API 都會 400，畫面會安靜地空掉——與其那樣，不如
+     * 當場講清楚該用哪個帳號。 */
+    if (res.role !== "student") {
+      loginError.textContent = "這是學生端，請用學生帳號登入（老師請到教師儀表板）";
+      return;
+    }
     authToken = res.token;
     localStorage.setItem("tb_token", res.token);
     localStorage.setItem("tb_role", res.role);
@@ -2327,8 +2334,15 @@ loginForm.addEventListener("submit", function (e) {
   });
 });
 
-/* 已有 token → 直接啟動；否則等使用者登入 */
-if (authToken) {
+/* 已有 token → 直接啟動；否則等使用者登入。
+ *
+ * ⚠️ **必須連角色一起檢查。** token 存在 localStorage，教師儀表板與學生端
+ * 共用同一個 key。老師在教室電腦開過 /teacher 之後，孩子接著開學生端，
+ * 這裡會拿 tutor 的 token 直接啟動，然後 /api/lesson、/api/diagnoses、
+ * /api/agent_outputs 全部 400（tutor 角色需帶 ?student=），而畫面**不會
+ * 報錯**：今日主題空白、成果卡空白、遊戲題庫空白，看起來像功能壞掉。
+ * 2026-08-01 線上實測撞到。 */
+if (authToken && localStorage.getItem("tb_role") === "student") {
   hideLoginAndBoot();
 }
 </script>
