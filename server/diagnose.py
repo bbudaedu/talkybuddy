@@ -27,12 +27,15 @@ JSON；任何失敗（網路、逾時、格式錯誤）一律 fallback 回上述
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
 from server import anthropic_relay, bedrock_converse, guardrails
+
+_log = logging.getLogger(__name__)
 
 # Asia/Taipei 固定 UTC+8（無日光節約，直接用 timedelta 最穩）
 _TAIPEI_TZ = timezone(timedelta(hours=8))
@@ -55,7 +58,21 @@ _DIM_ZH = {
 }
 
 # Anthropic Messages API 呼叫逾時（端點/認證/model 見 server.anthropic_relay）
-_API_TIMEOUT_SEC = 12
+#
+# **2026-08-02 由 12s 放寬到 25s。** 12s 是用小樣本估出來的假綠燈：拿兩筆假
+# 互動（prompt ~1100 字元）量到 7.1s，看起來很安全；但呼叫端真正送進來的是
+# `store.list_interactions(limit=10)` ——線上真實資料 prompt 2547 字元、輸出
+# 1500 字元的中文 JSON，實測 11.0s / 15.3s，正好跨在 12s 兩邊。
+#
+# 症狀極具誤導性：間歇逾時 + botocore `max_attempts: 2` 會讓 /api/network_mode
+# 一路等到 38s 才回，而 generate_diagnosis 內部把例外吞掉，最後只留下一個
+# source="rule" ——跟「沒有憑證」「模型沒開通」看起來一模一樣。
+#
+# 25s 的依據是實測上界 15.3s 加約 60% 餘裕。**要調整這個值就得拿真實筆數的
+# prompt 重量一次**，用假資料量到的數字對這條路徑沒有意義。
+# 這條路徑不在即時對話上（背景 _refresh_directive 走 asyncio.to_thread，
+# /api/network_mode 亦然），放寬逾時不會卡住玩偶講話。
+_API_TIMEOUT_SEC = 25
 
 
 # ---------------------------------------------------------------------------
@@ -696,16 +713,25 @@ def generate_diagnosis(interactions: list[dict], prev: dict | None,
         # 降級鏈：原生 Bedrock Converse → Anthropic relay → 規則式 mock。
         # Bedrock 只在 TALKYBUDDY_CLOUD_PROVIDER=bedrock 時才有 cfg，
         # 未切換時整段跳過，既有 relay 行為零變更。
+        # 每個 except 都留 log.warning（含 exc_info）。**降級照舊靜默——
+        # 不拋錯、不阻塞是既有的韌性設計，這裡沒有改變**——但 2026-08-02 之前
+        # 這兩個 except 是徹底的黑洞：先是 model 沒開通（AccessDenied）、
+        # 接著是逾時，連續兩個 bug 讓雲端診斷從 8/1 上線起沒有一次成功，
+        # 而唯一的症狀只是教師端徽章寫著 rule。查根因時完全無跡可循，
+        # 只能靠本機重打 API 才發現。日誌是這條路徑唯一的浮出管道。
         if bedrock_cfg:
             try:
                 result = _call_bedrock_api(interactions, prev, bedrock_cfg)
             except Exception:
+                _log.warning("雲端診斷 Bedrock 失敗（model=%s），續試下一層",
+                             bedrock_cfg.get("model_id"), exc_info=True)
                 result = None
         if result is None and cfg:
             try:
                 result = _call_anthropic_api(interactions, prev, cfg)
             except Exception:
                 # 雲端層失敗：不拋錯、不阻塞，改用邊緣端規則式診斷
+                _log.warning("雲端診斷 relay 失敗，降級回規則式", exc_info=True)
                 result = None
         if result is not None:
             # 雲端分支（Bedrock 或 relay）成功回傳才標 cloud。
