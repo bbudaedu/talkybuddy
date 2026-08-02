@@ -1,0 +1,28 @@
+flowchart TB
+  IN(["arecord 上行 16k"]) --> PG["PlaybackGateFilter<br/>玩偶講話時上行換靜音"]
+  PG --> VAD["VAD<br/>silero"]
+  VAD --> STT["SenseVoiceSTT<br/>板上 ASR"]
+  STT --> LP["LessonProgress<br/>唸對就換下一句"]
+  LP --> LPI["LessonPromptInjector<br/>注入目標句 + 教學策略"]
+  LPI --> CTX["StatelessContext<br/>僅 edge：ctx 512 塞不下歷史"]
+  CTX --> LLM{{"LLM 服務"}}
+  LLM -->|雲端| CLS["CloudLLMService<br/>→ Bedrock"]
+  LLM -->|離線| ELL["llama.cpp<br/>Qwen2.5-1.5B"]
+  CLS -.當輪失敗.-> ELL
+  CLS --> SG["SafetyGate<br/>兒童安全過濾"]
+  ELL --> SG
+  SG --> OC["OpenCC<br/>簡→繁台灣用詞"]
+  OC --> RG["ReadalongGuard<br/>確保帶讀正確目標句"]
+  RG --> TTS["EdgeVitsTTS<br/>sherpa-onnx 22.05k"]
+  TTS --> TR["TurnRecorder<br/>落地，讓「上次」有東西可記"]
+  TR --> OUT(["aplay 下行"])
+  TR --> MEM[("SQLite<br/>跨輪記憶")]
+
+  classDef e fill:#b4622d,stroke:#8f4d21,color:#fff
+  classDef c fill:#2e5f8a,stroke:#24496b,color:#fff
+  classDef g fill:#8a6d1f,stroke:#6b5418,color:#fff
+  classDef io fill:#3f4a52,stroke:#2c343a,color:#fff
+  class PG,VAD,STT,ELL,TTS,OC e
+  class CLS c
+  class LP,LPI,CTX,SG,RG,TR g
+  class IN,OUT,MEM io

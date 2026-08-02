@@ -1,0 +1,63 @@
+flowchart LR
+  subgraph DEV["Genio 520 裝置（aarch64 / 4GB）"]
+    MIC(["USB 麥克風<br/>實體靜音鍵"])
+    KEY(["Power 鍵短按<br/>= 開始說話"])
+    SPK(["3.5mm 喇叭"])
+    LC["local_client<br/>逐輪對話"]
+    LIVE["live_client<br/>S2S 串流"]
+    PC["pipecat pipeline<br/>全雙工 + barge-in"]
+  end
+
+  subgraph SRV["FastAPI 伺服器（板上 loopback:8787）"]
+    WT["/ws/talk"]
+    WL["/ws/live"]
+    PIPE["pipeline.py<br/>回合狀態機"]
+    SCAF["scaffold 鷹架<br/>+ 教育部課綱 136 詞"]
+    GAMES["games 四款<br/>純規則、離線判定"]
+    SRS["srs 間隔重複"]
+    DB[("SQLite<br/>互動 / 診斷 / 詞彙排程")]
+  end
+
+  subgraph ENG["本地推論引擎（零出境）"]
+    ASR["SenseVoice ASR<br/>sherpa-onnx"]
+    LLM["Qwen2.5-1.5B<br/>llama.cpp · 12.35 t/s"]
+    TTS["VITS TTS<br/>sherpa-onnx 22.05k"]
+  end
+
+  subgraph GATE["合規閘門 aws_only.py"]
+    G{{"AWS_ONLY<br/>預設開"}}
+  end
+
+  subgraph CL["雲端"]
+    BR["Bedrock Converse<br/>us-west-2 · ≤1 RPS"]
+    AG["agents ×3<br/>作業 / 週報 / 編排"]
+    X1["Gemini"]
+    X2["ElevenLabs TTS"]
+    X3["Anthropic 直連"]
+  end
+
+  MIC --> LC & LIVE & PC
+  KEY --> LC
+  LC --> WT --> PIPE
+  LIVE --> WL
+  PC --> ENG
+  PIPE --> SCAF & GAMES & SRS
+  PIPE --> ASR & LLM & TTS
+  PIPE --> DB
+  PIPE --> G
+  PC --> G
+  G -->|允許| BR --> AG --> DB
+  G -.擋下.-> X1 & X2 & X3
+  TTS --> SPK
+  BR -.失敗降級.-> LLM
+
+  classDef e fill:#b4622d,stroke:#8f4d21,color:#fff
+  classDef c fill:#2e5f8a,stroke:#24496b,color:#fff
+  classDef g fill:#8a6d1f,stroke:#6b5418,color:#fff
+  classDef x fill:#a03e2f,stroke:#7d3025,color:#fff,stroke-dasharray:4 3
+  classDef io fill:#3f4a52,stroke:#2c343a,color:#fff
+  class LC,LIVE,PC,ASR,LLM,TTS e
+  class BR,AG c
+  class G g
+  class X1,X2,X3 x
+  class MIC,KEY,SPK io

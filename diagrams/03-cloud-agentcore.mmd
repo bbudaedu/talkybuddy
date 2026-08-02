@@ -1,0 +1,48 @@
+flowchart TB
+  subgraph EDGE["裝置端（離線必須能活）"]
+    ASR2["SenseVoice ASR"]
+    ELLM2["llama.cpp<br/>Qwen2.5-1.5B"]
+    ETTS2["VITS TTS"]
+    SQL2[("本地 SQLite")]
+    SCAF2["鷹架 + 課綱題庫"]
+  end
+
+  subgraph B["信任與連線邊界"]
+    KILL{{"network_mode<br/>kill-switch"}}
+    AWSO{{"aws_only<br/>合規閘門"}}
+    CONS{{"家長同意"}}
+    DEID["去識別化"]
+  end
+
+  subgraph AC["AgentCore（us-west-2 Oregon）"]
+    ORCH["編排 agent<br/>決策判斷"]
+    TUTOR["導師 agent<br/>四維診斷"]
+    HW["派作業 agent"]
+    RPT["家長週報 agent"]
+    MEM2[("AgentCore Memory<br/>短期 + 跨 session")]
+    GW["Gateway → MCP 工具"]
+    FM["Bedrock 模型<br/>Sonnet 5 / Haiku 4.5"]
+    OBS["Observability<br/>+ Evaluations"]
+  end
+
+  ASR2 --> KILL
+  KILL -->|edge| ELLM2 --> ETTS2
+  SCAF2 --> ELLM2
+  KILL -->|cloud| AWSO --> CONS --> DEID --> ORCH
+  ORCH --> TUTOR & HW & RPT
+  ORCH <--> MEM2
+  TUTOR & HW & RPT --> FM
+  ORCH --> GW
+  AC -.OTEL.-> OBS
+  RPT -.回寫.-> SQL2
+  ETTS2 --> OUT2(["孩子聽到回覆"])
+  AC --> OUT2
+
+  classDef e fill:#b4622d,stroke:#8f4d21,color:#fff
+  classDef c fill:#2e5f8a,stroke:#24496b,color:#fff
+  classDef g fill:#8a6d1f,stroke:#6b5418,color:#fff
+  classDef io fill:#3f4a52,stroke:#2c343a,color:#fff
+  class ASR2,ELLM2,ETTS2,SCAF2 e
+  class ORCH,TUTOR,HW,RPT,MEM2,GW,FM,OBS c
+  class KILL,AWSO,CONS,DEID g
+  class SQL2,OUT2 io
