@@ -41,8 +41,29 @@ def _client():
     每個測試查的是 ``/api/status`` 請求當下讀取的環境變數與
     ``cloud_llm_engine`` 狀態，不依賴 app 啟動時的快照，共用同一個
     client 不影響測試語意。
+
+    **這個 fixture 是 module-scoped，比 ``conftest.py`` 的 function-scoped
+    ``isolate_vocab`` 先 setup。** ``lifespan`` 會呼叫 ``store.seed_units()``
+    + ``_replay_materials()``，把 Unit 3~6 教材灌回 ``scaffold.VOCAB``
+    （136 → 164 個詞）——這件事在*第一個測試*的 ``isolate_vocab`` 拍照之前
+    就發生了，害它拍到的「測試前的樣子」其實已經是被污染後的狀態，之後
+    怎麼「還原」都還原不回乾淨的 136 詞，讓 ``test_curriculum_data.py`` 這種
+    斷言「VOCAB 幾乎全是官方字表」的測試只要跑在這個檔案後面就會紅。
+    在這裡把 VOCAB 拉回乾淨狀態，讓後面每個測試的 ``isolate_vocab`` 快照
+    從乾淨的基準開始。
     """
+    from server import guardrails, scaffold
+
+    snapshot = {zh: dict(v) for zh, v in scaffold.VOCAB.items()}
+    zh_keys = list(scaffold._ZH_KEYS_BY_LEN)
     with TestClient(app) as client:
+        scaffold.VOCAB.clear()
+        scaffold.VOCAB.update(snapshot)
+        scaffold._ZH_KEYS_BY_LEN[:] = zh_keys
+        try:
+            guardrails._safe_en_words.cache_clear()
+        except AttributeError:
+            pass
         yield client
 
 

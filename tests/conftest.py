@@ -76,6 +76,30 @@ def isolate_vocab():
 
 
 @pytest.fixture(autouse=True)
+def _no_real_prewarm(monkeypatch):
+    """關掉 lifespan 的背景引擎預熱，別讓測試套件累積真實雲端連線嘗試。
+
+    ``server/app.py`` 的 ``_prewarm_engines`` 在每次 app 啟動時都會 spawn 一個
+    背景 daemon thread，裡面真的會呼叫 ``cloud_llm_engine.generate_chat()``
+    嘗試建立雲端連線（為了讓正式環境第一輪真實對話不撞上
+    ``CLOUD_LLM_TIMEOUT_S``，見該函式註解）。這件事對正式環境是對的——只
+    啟動一次 app。但測試套件裡有幾十個檔案各自 ``TestClient(app)``，每次都
+    重新觸發一次 lifespan；開發環境沒有 AWS 憑證，這些背景呼叫會卡著等
+    失敗，累積的資源競爭足以讓某些對逾時敏感的測試（例如
+    ``test_e2e.py::test_network_mode_switch_affects_live_ws_session`` 的
+    ``asyncio.to_thread`` 呼叫）偶爾來不及在預算內完成，靜默降級，斷言就紅了
+    ——症狀是「單獨跑會過、跟其他測試一起跑就紅」，且紅的組合每次不一定
+    一樣，因為觸發門檻是**背景執行緒的累積數量**，不是特定某個測試。
+
+    沒有任何測試依賴真正的預熱行為（沒有測試斷言 prewarm 側效應），所以
+    全域關掉不影響測試語意，只是拿掉一個會累積的資源競爭源頭。
+    """
+    from server import app as app_module
+
+    monkeypatch.setattr(app_module, "_prewarm_engines", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def clear_active_game():
     """清掉裝置級的遊戲狀態（``server.pipeline._active_game``）。
 
