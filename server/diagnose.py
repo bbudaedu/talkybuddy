@@ -594,8 +594,8 @@ def _build_diagnosis_prompt(interactions: list[dict], prev: dict | None) -> str:
         "（student_text 為學生原話、ai_response_text 為 AI 學伴回應、"
         "asr_confidence 為語音辨識信心 0-1、scores 為單次互動三維評分 0-100）：\n"
         + json.dumps(brief, ensure_ascii=False)
-        + "\n\n前次診斷（可能為 null）：\n"
-        + json.dumps(prev, ensure_ascii=False)
+        + "\n\n前次診斷摘要（可能為 null）：\n"
+        + json.dumps(_prev_brief(prev), ensure_ascii=False)
         + "\n\n請產出今日學習診斷，僅輸出一個 JSON 物件（不得有 markdown 圍欄或其他文字），"
         "所有文字內容用繁體中文（台灣用語），schema 與此範例完全一致：\n"
         + json.dumps(schema_example, ensure_ascii=False)
@@ -603,8 +603,37 @@ def _build_diagnosis_prompt(interactions: list[dict], prev: dict | None) -> str:
         "instructions 三欄分別給老師課堂活動、裝置端練習主題、同儕配對方式的具體建議；"
         "companion_directive 是給即時陪聊玩偶的下一輪策略（difficulty 依趨勢、"
         "next_goal/topic/example_questions 具體可帶入對話），example_questions 用英文、其餘用繁體中文。"
+        # 長度上限是**正確性要求，不是排版偏好**：這裡要的是嚴格 JSON，模型一旦
+        # 寫超過 maxTokens 就會被攔腰截斷、parse 失敗、整份診斷靜默降級回規則式。
+        # 2026-08-02 就是這樣間歇失敗的：第一次呼叫成功後產生了 prev，第二次
+        # 因為要「呼應前次診斷」而越寫越長，直接撞上上限。沒有這段約束，輸出
+        # 長度會隨歷史累積無上限成長，maxTokens 調多高都只是延後爆炸。
+        "\n\n長度上限（務必遵守，超過會導致輸出被截斷而無法解析）："
+        "strengths 與 weaknesses 各最多 3 項、每項不超過 40 字；"
+        "emotional_status 不超過 40 字；instructions 每欄不超過 50 字；"
+        "next_goal / topic / fallback_hint 各不超過 30 字；example_questions 最多 3 句。"
     )
     return prompt
+
+
+def _prev_brief(prev: dict | None) -> dict | None:
+    """把前次診斷壓成趨勢比較所需的最小集合。
+
+    prompt 原本是 `json.dumps(prev)` 整份塞進去——而 prev 是上一輪的完整輸出
+    （含 instructions 三欄、companion_directive、level_state）。那等於每一輪都把
+    前一輪的全文再餵一次，prompt 隨歷史單調成長，模型也更傾向長篇呼應前文。
+    模型要判斷趨勢（difficulty up/hold/down）真正需要的只有分數、等級，以及
+    前次點出的弱點，好確認有沒有改善。
+    """
+    if not prev:
+        return None
+    return {
+        "date": prev.get("date"),
+        "scores": prev.get("scores"),
+        "level": (prev.get("level_state") or {}).get("level")
+        or (prev.get("companion_directive") or {}).get("level"),
+        "weaknesses": (prev.get("weaknesses") or [])[:3],
+    }
 
 
 def _parse_diagnosis_text(text: str) -> dict:
@@ -663,15 +692,18 @@ def _call_bedrock_api(interactions: list[dict], prev: dict | None, cfg: dict) ->
     （relay → 規則式 mock）。
     """
     prompt = _build_diagnosis_prompt(interactions, prev)
-    # maxTokens 1024 → 1536：2026-08-02 實測診斷輸出（中文 strengths/weaknesses/
-    # instructions 全展開）落在 1200–1350 字元，1024 token 會把 JSON 攔腰截斷，
-    # `_parse_diagnosis_text` 丟 JSONDecodeError 後靜默降級成 rule——看起來就跟
-    # 「沒憑證」一模一樣，極難分辨。多給的 token 只有在真的用到時才計費。
+    # maxTokens 1024 → 3072（2026-08-02 分兩次調整）。1024 會把中文 JSON 攔腰
+    # 截斷，`_parse_diagnosis_text` 丟 JSONDecodeError 後靜默降級成 rule——看起來
+    # 跟「沒憑證」一模一樣，極難分辨。1536 仍不夠：有 prev 時模型會為了呼應前次
+    # 診斷而越寫越長，線上實測就是這樣間歇失敗的。
+    #
+    # **真正的修法是 prompt 裡的長度上限與 `_prev_brief`**，這個數字只是安全網：
+    # 沒有那兩者，maxTokens 調多高都只是延後爆炸。多給的 token 只有真的用到才計費。
     text = bedrock_converse.converse_text(
         _BEDROCK_SYSTEM,
         prompt,
         cfg=cfg,
-        max_tokens=1536,
+        max_tokens=3072,
         timeout_s=_API_TIMEOUT_SEC,
     )
     return _parse_diagnosis_text(text)

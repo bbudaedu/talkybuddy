@@ -15,7 +15,10 @@ Messages API（自架中轉），本模組走 `boto3 bedrock-runtime.converse()`
 
 from __future__ import annotations
 
+import logging
 import os
+
+_log = logging.getLogger(__name__)
 
 # 預設 region：us-west-2。
 #
@@ -224,6 +227,15 @@ def converse_chat(
         messages=_to_messages(messages),
         inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
     )
+    # 截斷只留一行警告，**不拋例外**：對話路徑（cloud_llm）被砍尾的回覆仍然
+    # 可用，玩偶少講半句遠好過整輪降級。但要求嚴格 JSON 的呼叫端（diagnose）
+    # 拿到的會是壞掉的 JSON，2026-08-02 就是這樣讓教師端診斷間歇掉回 rule，
+    # 而現場只看得到一個 JSONDecodeError，看不出是「輸出太長」。
+    if payload.get("stopReason") == "max_tokens":
+        _log.warning(
+            "Bedrock 回應在 maxTokens=%s 被截斷（model=%s）——要求嚴格 JSON 的"
+            "呼叫端會 parse 失敗，請提高上限或在 prompt 限制輸出長度",
+            max_tokens, cfg.get("model_id"))
     return _extract_text(payload)
 
 
