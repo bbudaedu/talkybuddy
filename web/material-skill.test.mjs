@@ -5,6 +5,9 @@ import {
   buildMetadata,
   buildSkillMarkdown,
   buildProbeSentence,
+  needsFallback,
+  FALLBACK_RESULT,
+  buildFallbackReply,
 } from "./material-skill.js";
 
 /* /api/material 的真實回傳形狀（見 server/agents/material.py 的公開契約）。 */
@@ -109,4 +112,73 @@ test("buildProbeSentence 用第一個詞條造出一句中英夾雜的學生話"
 test("buildProbeSentence 沒有詞條時回 null，呼叫端據此不送出", () => {
   assert.equal(buildProbeSentence([]), null);
   assert.equal(buildProbeSentence(undefined), null);
+});
+
+/* ---------------- 回退（現場保命） ---------------- */
+
+test("needsFallback：呼叫失敗回 null 時要回退", () => {
+  assert.equal(needsFallback(null), true);
+  assert.equal(needsFallback(undefined), true);
+});
+
+test("needsFallback：一條都沒採用時要回退", () => {
+  /* 全數退回不是錯誤，是正常保護機制（詞已在字庫）。但畫面會空一片，
+     台上看起來就是壞了。這種情況也要接手。 */
+  assert.equal(needsFallback({ accepted_count: 0, entries: [] }), true);
+});
+
+test("needsFallback：有採用到就用真結果，不准偷換", () => {
+  const real = { accepted_count: 3, entries: [{ en: "beach", zh: "海邊" }] };
+  assert.equal(needsFallback(real), false);
+});
+
+test("FALLBACK_RESULT 的 source 不是 cloud 也不是 rule", () => {
+  /* 這兩個值都代表「這一輪真的跑了」。回退資料若冒用，畫面上的徽章就在
+     說謊。必須是獨立的第三種狀態，讓 UI 標成「預備展示資料」。 */
+  assert.notEqual(FALLBACK_RESULT.source, "cloud");
+  assert.notEqual(FALLBACK_RESULT.source, "rule");
+  assert.equal(FALLBACK_RESULT.source, "demo");
+});
+
+test("FALLBACK_RESULT 是完整可渲染的結果，不會讓畫面空掉", () => {
+  assert.ok(FALLBACK_RESULT.entries.length >= 4, "回退資料詞條太少，畫面撐不起來");
+  assert.ok(FALLBACK_RESULT.topic, "回退資料缺 topic");
+  for (const e of FALLBACK_RESULT.entries) {
+    for (const k of ["zh", "en", "cat", "np", "sent"]) {
+      assert.ok(e[k], `回退詞條缺欄位 ${k}：${JSON.stringify(e)}`);
+    }
+  }
+});
+
+test("回退資料可以直接餵進 buildMetadata / buildSkillMarkdown", () => {
+  const meta = buildMetadata(FALLBACK_RESULT, "Unit 8");
+  assert.ok(Object.keys(meta.vocab).length >= 4);
+  const md = buildSkillMarkdown(FALLBACK_RESULT, "Unit 8");
+  assert.ok(md.includes(FALLBACK_RESULT.entries[0].en));
+});
+
+test("buildFallbackReply 用畫面上實際那批詞造回覆，不是寫死的", () => {
+  /* 試講也可能連不上（/ws/talk 走 WebSocket，現場是手機熱點）。
+     但萃取可能是真的、只有試講掛掉——這時回退回覆若寫死講 morning，
+     孩子畫面上說的是「我今天學到 beach」，兩段就對不起來了。 */
+  const real = [{ zh: "海邊", en: "beach", cat: "place", np: "the beach",
+                  sent: "We swim at the beach in summer." }];
+  const reply = buildFallbackReply(real);
+  assert.ok(reply.includes("beach"), `沒帶到目標詞：${reply}`);
+  assert.ok(reply.includes("We swim at the beach in summer."),
+            `沒帶到該詞的例句：${reply}`);
+});
+
+test("buildFallbackReply 與 buildProbeSentence 講的是同一個詞", () => {
+  /* 這兩個一起構成畫面上的一問一答，用的必須是同一個詞條。 */
+  const es = FALLBACK_RESULT.entries;
+  const asked = buildProbeSentence(es);
+  const reply = buildFallbackReply(es);
+  assert.ok(reply.includes(es[0].en));
+  assert.ok(asked.includes(es[0].en));
+});
+
+test("buildFallbackReply 沒有詞條時退回預備那批，不回空字串", () => {
+  const reply = buildFallbackReply([]);
+  assert.ok(reply.includes(FALLBACK_RESULT.entries[0].en), reply);
 });

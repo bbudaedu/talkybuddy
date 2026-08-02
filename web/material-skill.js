@@ -111,3 +111,62 @@ export function buildProbeSentence(entries) {
   if (!first || !first.en) return null;
   return `我今天學到 ${first.en}`;
 }
+
+/* ==========================================================================
+ * 現場保命：真呼叫失敗或全數退回時的回退
+ *
+ * 這頁在台上只有一次機會，而它依賴的東西全都可能當場出事：現場網路是手機
+ * 熱點、萃取要往 AgentCore／Bedrock 跑一趟、`/ws/talk` 還要再開一條
+ * WebSocket。另外「全數退回」根本不是錯誤（詞已在字庫就會被擋，見
+ * `scaffold._is_valid_material_entry`），但畫面會空一片，台上看起來就是壞了。
+ *
+ * **回退資料是 2026-08-02 用 `hackathon/課程Unit 8.md` 對 164 詞基準線實跑
+ * 出來的真結果**（採用 8／退回 0），不是編的。之所以要強調：`source` 標成
+ * 獨立的 `"demo"` 而不是冒用 `cloud`／`rule`，UI 會據此把徽章寫成「預備展示
+ * 資料」——畫面上任何一刻都不會宣稱「這一輪真的跑了」。
+ * ========================================================================== */
+
+/** 這次的回傳需不需要換成回退資料。 */
+export function needsFallback(result) {
+  if (!result) return true;
+  if (!(result.accepted_count > 0)) return true;
+  return false;
+}
+
+export const FALLBACK_RESULT = {
+  topic: "時間詞彙與週末活動安排",
+  source: "demo",
+  accepted_count: 8,
+  rejected_count: 0,
+  entries: [
+    { zh: "早上", en: "morning", cat: "time", np: "the morning",
+      sent: "I read a book in the morning." },
+    { zh: "下午", en: "afternoon", cat: "time", np: "the afternoon",
+      sent: "We play games in the afternoon." },
+    { zh: "晚上", en: "evening", cat: "time", np: "the evening",
+      sent: "Dad comes home in the evening." },
+    { zh: "夜晚", en: "night", cat: "time", np: "night",
+      sent: "I sleep at night." },
+    { zh: "今天", en: "today", cat: "time", np: "today",
+      sent: "Today is a sunny day." },
+    { zh: "明天", en: "tomorrow", cat: "time", np: "tomorrow",
+      sent: "Let's go swimming tomorrow." },
+    { zh: "週末", en: "weekend", cat: "time", np: "the weekend",
+      sent: "I visit Grandma on the weekend." },
+    { zh: "每天", en: "every day", cat: "time", np: "every day",
+      sent: "I drink milk every day." },
+  ],
+};
+
+/** 試講連不上時的玩偶回覆，**從畫面上實際那批詞造**。
+ *
+ * 不能寫死：萃取可能是真的、只有試講掛掉，這時畫面上孩子說的是
+ * 「我今天學到 beach」，回覆若固定講 morning，一問一答就對不起來。
+ * 沒有詞條時才退回預備那批。句型比照 buildProbeSentence，兩者成對。
+ */
+export function buildFallbackReply(entries) {
+  const list = (entries && entries.length) ? entries : FALLBACK_RESULT.entries;
+  const e = list[0];
+  return `哇，${e.en} 是${e.zh}，很棒的字呢！我們一起來說說看：`
+    + `${e.sent} 你也試試看跟著說一次。`;
+}

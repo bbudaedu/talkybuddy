@@ -81,6 +81,10 @@
   .badge.cloud .dot{background:var(--cloud)}
   .badge.edge{background:rgba(168,110,0,.13);border-color:rgba(168,110,0,.42);color:var(--amber)}
   .badge.edge .dot{background:var(--amber)}
+  /* 回退資料：中性灰，刻意**不**用 cloud 的藍——那個顏色在這頁代表
+     「這一輪真的打到雲端了」，借來用等於視覺上說謊。 */
+  .badge.demo{background:rgba(0,0,0,.05);border-color:var(--line);color:var(--ink-2)}
+  .badge.demo .dot{background:var(--ink-3)}
 
   /* ---- 詞條表 ---- */
   table{width:100%;border-collapse:collapse;font-size:13.5px}
@@ -153,7 +157,9 @@
     <p>
       老師丟進課本單元的 markdown，教材 agent 萃取出目標詞彙，
       詞條當場併進全班字庫；玩偶下一輪就會用這些字帶讀。
-      最後一段可以直接<b>試講一句</b>驗證——那打的是真正的對話 pipeline，不是模擬。
+      最後一段可以直接<b>試講一句</b>驗證，打的是真正的對話 pipeline。
+      連不上或詞條全被退回時會改用預備展示資料，<b>徽章會自己標示</b>——
+      畫面不會假裝那一輪真的跑了。
       <a href="/teacher">← 回教師儀表板</a>
     </p>
   </header>
@@ -254,7 +260,8 @@
 </div>
 
 <script type="module">
-import { mdToPlainText, buildMetadata, buildSkillMarkdown, buildProbeSentence }
+import { mdToPlainText, buildMetadata, buildSkillMarkdown, buildProbeSentence,
+         needsFallback, FALLBACK_RESULT, buildFallbackReply }
   from "/static/material-skill.js";
 
 var authToken = (typeof localStorage !== 'undefined' && localStorage.getItem('tb_token')) || '';
@@ -305,9 +312,19 @@ $('extractBtn').addEventListener('click', function () {
     if (!r.ok) throw new Error('萃取失敗（HTTP ' + r.status + '）');
     return r.json();
   }).then(function (res) {
-    lastResult = res; lastTitle = title;
-    render(res, title);
-    setMsg('extractMsg', '完成', 'ok');
+    return res;
+  }).catch(function (err) {
+    /* 403（角色不對）要讓人看到，那是操作錯誤不是現場意外；其餘一律回退。 */
+    if (/tutor/.test(err.message || '')) throw err;
+    return null;
+  }).then(function (res) {
+    /* 回退時機有兩種：呼叫掛了（res 為 null），或一條都沒採用——後者不是
+       錯誤（詞已在字庫就會被擋），但畫面會空一片，台上看起來就是壞了。 */
+    var fell = needsFallback(res);
+    lastResult = fell ? FALLBACK_RESULT : res;
+    lastTitle = title;
+    render(lastResult, title);
+    setMsg('extractMsg', fell ? '已改用預備展示資料' : '完成', fell ? '' : 'ok');
   }).catch(function (err) {
     setMsg('extractMsg', err.message || '萃取失敗', 'err');
   }).finally(function () { $('extractBtn').disabled = false; });
@@ -325,9 +342,19 @@ function render(res, title) {
 
   $('entriesSub').textContent = '主題：' + (res.topic || '（未標註）');
 
-  var cloud = res.source === 'cloud';
-  $('srcBadge').className = 'badge ' + (cloud ? 'cloud' : 'edge');
-  $('srcLbl').textContent = cloud ? '雲端 agent 萃取（AgentCore / Bedrock）' : '邊緣端規則式萃取';
+  /* 三種狀態要分得開。cloud/rule 都代表「這一輪真的跑了」，回退資料若冒用
+     其中任何一個，畫面就在說謊——所以 demo 是獨立的第三種，標籤也講明它是
+     先前實跑的結果，不是這一輪算出來的。 */
+  if (res.source === 'demo') {
+    $('srcBadge').className = 'badge demo';
+    $('srcLbl').textContent = '預備展示資料（先前實跑結果，非本次呼叫）';
+  } else if (res.source === 'cloud') {
+    $('srcBadge').className = 'badge cloud';
+    $('srcLbl').textContent = '雲端 agent 萃取（AgentCore / Bedrock）';
+  } else {
+    $('srcBadge').className = 'badge edge';
+    $('srcLbl').textContent = '邊緣端規則式萃取';
+  }
   $('countLbl').textContent = '採用 ' + (res.accepted_count || 0) +
     ' 條／退回 ' + (res.rejected_count || 0) + ' 條';
 
@@ -376,16 +403,26 @@ $('probeBtn').addEventListener('click', function () {
   $('probeBtn').disabled = true;
   setMsg('probeMsg', '連線中…', '');
   $('probeOut').textContent = '';
+  /* 孩子那句在按下當下就畫出來，**不能等 ws.onopen**——連不上時 onopen
+     根本不會觸發，畫面上會變成玩偶自己在對空氣講話。 */
+  bubble('孩子', sentence);
 
   var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
   var ws = new WebSocket(proto + location.host + '/ws/talk?token=' + encodeURIComponent(authToken));
   var done = false;
-  var timer = setTimeout(function () {
-    if (!done) { done = true; setMsg('probeMsg', '逾時，玩偶沒有回應', 'err'); ws.close(); $('probeBtn').disabled = false; }
-  }, 15000);
+  /* 逾時／連不上都改放預備回覆，不留一個空的對話框在台上。標籤講明它不是
+     這一輪跑出來的。10 秒是刻意比 15 秒短的：台上乾等 15 秒比看到回退還糟。 */
+  function fallbackReply(why) {
+    if (done) return;
+    done = true; clearTimeout(timer);
+    bubble('玩偶', buildFallbackReply(lastResult && lastResult.entries));
+    setMsg('probeMsg', '預備展示資料（' + why + '，非本次對話產生）', '');
+    try { ws.close(); } catch (e) {}
+    $('probeBtn').disabled = false;
+  }
+  var timer = setTimeout(function () { fallbackReply('連線逾時'); }, 10000);
 
   ws.onopen = function () {
-    bubble('孩子', sentence);
     setMsg('probeMsg', '玩偶思考中…', '');
     ws.send(JSON.stringify({ type: 'text_input', text: sentence }));
   };
@@ -399,9 +436,8 @@ $('probeBtn').addEventListener('click', function () {
       ws.close(); $('probeBtn').disabled = false;
     }
   };
-  ws.onerror = function () {
-    if (!done) { done = true; clearTimeout(timer); setMsg('probeMsg', '連線失敗', 'err'); $('probeBtn').disabled = false; }
-  };
+  ws.onerror = function () { fallbackReply('連線失敗'); };
+  ws.onclose = function () { fallbackReply('連線中斷'); };
 });
 
 function bubble(who, text) {
