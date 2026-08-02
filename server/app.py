@@ -195,6 +195,21 @@ async def agentcore_page():
     return FileResponse(WEB_DIR / "agentcore.html")
 
 
+@app.get("/material")
+async def material_page():
+    """教材上傳頁：把既有的 `POST /api/material` 那條鏈變成看得見的。
+
+    功能本來就通了——老師上傳教材 → material agent 萃取 → 詞條經
+    `scaffold.register_material_vocab` 原地併進 `VOCAB`，而 homework／games／
+    profile 拿的是同一個參照，所以玩偶下一輪真的會用。先前完全沒有介面，
+    這條鏈只存在於測試裡。
+
+    刻意獨立一頁而不是塞進 teacher.html：那頁已經 1000 行，且它的敘事是
+    「看全班學習狀況」，教材上傳是另一件事（會改動全域字庫的寫入動作）。
+    """
+    return FileResponse(WEB_DIR / "material.html")
+
+
 # ---------------------------------------------------------------------------
 # REST API
 # ---------------------------------------------------------------------------

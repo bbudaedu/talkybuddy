@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>教材上傳 · 萃取成 skill — 說說學伴</title>
+<style>
+  :root{
+    --page:#f6f6f3; --surface:#ffffff; --surface-2:#fafaf7;
+    --ink:#17170f; --ink-2:#4c4a42; --ink-3:#84817a;
+    --line:rgba(0,0,0,.12); --line-soft:rgba(0,0,0,.07);
+    --cloud:#2c6fc4; --ok:#12805a; --amber:#a86e00; --bad:#b4321f;
+    --radius:14px;
+    color-scheme: light;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--page); color:var(--ink);
+    font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+    font-size:15px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  .wrap{max-width:960px;margin:0 auto;padding:36px 18px 56px}
+
+  header{margin-bottom:26px}
+  .kicker{
+    display:inline-flex;align-items:center;gap:7px;
+    font-family:ui-monospace,Menlo,monospace;font-size:11.5px;letter-spacing:.08em;
+    color:var(--ok);background:rgba(18,128,90,.10);
+    border:1px solid rgba(18,128,90,.32);border-radius:999px;padding:3px 11px;margin-bottom:12px;
+  }
+  .kicker i{width:6px;height:6px;border-radius:50%;background:var(--ok);display:inline-block}
+  h1{font-size:28px;font-weight:800;letter-spacing:.01em;line-height:1.35;text-wrap:balance}
+  header p{color:var(--ink-2);font-size:15px;margin-top:8px;max-width:64ch}
+  header a{color:var(--cloud)}
+
+  h2{font-size:18px;font-weight:800;margin-bottom:3px}
+  .sub{font-size:13.5px;color:var(--ink-3);margin-bottom:14px}
+  section{margin-bottom:30px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
+
+  /* ---- 步驟編號 ---- */
+  .step{display:inline-flex;align-items:center;justify-content:center;
+    width:22px;height:22px;border-radius:50%;background:var(--ink);color:#fff;
+    font-size:12.5px;font-weight:700;margin-right:8px;vertical-align:2px}
+
+  /* ---- 上傳區 ---- */
+  .drop{
+    border:1.5px dashed rgba(0,0,0,.24);border-radius:11px;padding:26px 20px;
+    text-align:center;background:var(--surface-2);cursor:pointer;transition:.15s;
+  }
+  .drop:hover,.drop.over{border-color:var(--cloud);background:rgba(44,111,196,.06)}
+  .drop b{display:block;font-size:15px;margin-bottom:3px}
+  .drop span{font-size:13px;color:var(--ink-3)}
+  input[type=file]{display:none}
+
+  label.fld{display:block;font-size:12.5px;color:var(--ink-3);margin:14px 0 5px}
+  input[type=text],textarea{
+    width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;
+    font-family:inherit;font-size:14px;color:var(--ink);background:var(--surface);
+  }
+  textarea{min-height:150px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.55}
+  input[type=text]:focus,textarea:focus{outline:2px solid rgba(44,111,196,.35);border-color:var(--cloud)}
+
+  button{
+    font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;
+    border:1px solid var(--ink);background:var(--ink);color:#fff;
+    border-radius:9px;padding:9px 18px;transition:.15s;
+  }
+  button:hover{opacity:.86}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--ink-2);border-color:var(--line)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+
+  /* ---- 徽章 ---- */
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-2);
+    border:1px solid var(--line);border-radius:999px;padding:3px 10px;
+    font-family:ui-monospace,Menlo,monospace}
+  .badge .dot{width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
+  .badge.cloud{background:rgba(44,111,196,.13);border-color:rgba(44,111,196,.42);color:var(--cloud)}
+  .badge.cloud .dot{background:var(--cloud)}
+  .badge.edge{background:rgba(168,110,0,.13);border-color:rgba(168,110,0,.42);color:var(--amber)}
+  .badge.edge .dot{background:var(--amber)}
+
+  /* ---- 詞條表 ---- */
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line-soft)}
+  th{font-size:12px;color:var(--ink-3);font-weight:600;background:var(--surface-2)}
+  td.en{font-family:ui-monospace,Menlo,monospace;font-weight:600}
+  td.cat{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--ink-3)}
+
+  pre{
+    background:#1c1c17;color:#e8e6dd;border-radius:11px;padding:15px 16px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.6;
+    overflow-x:auto;max-height:380px;
+  }
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+
+  .note{
+    font-size:13px;color:var(--ink-2);background:rgba(168,110,0,.08);
+    border:1px solid rgba(168,110,0,.28);border-radius:10px;padding:11px 13px;margin-top:12px;
+  }
+  .note b{color:var(--amber)}
+
+  .hidden{display:none}
+  .msg{font-size:13.5px;margin-top:10px}
+  .msg.err{color:var(--bad)}
+  .msg.ok{color:var(--ok)}
+
+  /* ---- 試講 ---- */
+  .bubble{
+    background:var(--surface-2);border:1px solid var(--line);border-radius:12px;
+    padding:12px 14px;margin-top:10px;font-size:14.5px;
+  }
+  .bubble .who{font-size:11.5px;color:var(--ink-3);display:block;margin-bottom:3px;
+    font-family:ui-monospace,Menlo,monospace}
+
+  /* ---- 登入遮罩 ---- */
+  .overlay{
+    position:fixed;inset:0;background:rgba(246,246,243,.97);z-index:50;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  /* .hidden 定義在前、specificity 又跟 .overlay 相同（都是單一 class），
+     所以 .overlay{display:flex} 會贏——登入成功後 classList.add('hidden')
+     等於沒作用，遮罩永遠蓋著。用複合選擇器（0,2,0）壓過去，與宣告順序無關。 */
+  .overlay.hidden{display:none}
+  .overlay .card{max-width:340px;width:100%}
+</style>
+</head>
+<body>
+
+<!-- 登入遮罩：教材上傳是 tutor 專屬動作（POST /api/material 會擋 403） -->
+<div class="overlay hidden" id="loginOverlay">
+  <div class="card">
+    <h2>老師登入</h2>
+    <p class="sub">教材上傳會改動全班字庫，僅限教師帳號。</p>
+    <form id="loginForm">
+      <label class="fld" for="loginEmail">帳號</label>
+      <input type="text" id="loginEmail" autocomplete="username" value="tutor@demo">
+      <label class="fld" for="loginPassword">密碼</label>
+      <input type="text" id="loginPassword" autocomplete="current-password">
+      <div class="row"><button type="submit" id="loginBtn">登入</button></div>
+      <div class="msg err" id="loginError"></div>
+    </form>
+  </div>
+</div>
+
+<div class="wrap" id="app">
+  <header>
+    <div class="kicker"><i></i>教材 → agent 萃取 → 聊天玩偶可調用</div>
+    <h1>上傳一份 .md 教材，看它變成玩偶會用的字</h1>
+    <p>
+      老師丟進課本單元的 markdown，教材 agent 萃取出目標詞彙，
+      詞條當場併進全班字庫；玩偶下一輪就會用這些字帶讀。
+      最後一段可以直接<b>試講一句</b>驗證——那打的是真正的對話 pipeline，不是模擬。
+      <a href="/teacher">← 回教師儀表板</a>
+    </p>
+  </header>
+
+  <!-- ① 上傳 -->
+  <section>
+    <h2><span class="step">1</span>上傳教材</h2>
+    <div class="sub">支援 .md／.markdown／.txt，也可以直接貼上文字。</div>
+    <div class="card">
+      <div class="drop" id="drop">
+        <b>把 .md 檔拖進來，或點這裡選檔</b>
+        <span>markdown 語法會先剝成純文字再送給 agent</span>
+      </div>
+      <input type="file" id="mdFile" accept=".md,.markdown,.txt,text/markdown,text/plain">
+
+      <label class="fld" for="title">教材標題</label>
+      <input type="text" id="title" placeholder="例：Unit 3 Weather">
+
+      <label class="fld" for="text">教材內容（可再編輯）</label>
+      <textarea id="text" placeholder="貼上教材文字，或從上面選一個 .md 檔"></textarea>
+
+      <div class="row">
+        <button id="extractBtn">送出萃取</button>
+        <span class="msg" id="extractMsg"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ② 萃取結果 -->
+  <section class="hidden" data-section="entries" id="secEntries">
+    <h2><span class="step">2</span>agent 萃取結果</h2>
+    <div class="sub" id="entriesSub"></div>
+    <div class="card">
+      <div class="row" style="margin-top:0;margin-bottom:12px">
+        <span class="badge" id="srcBadge"><span class="dot"></span><span id="srcLbl">—</span></span>
+        <span class="badge" id="countBadge"><span class="dot"></span><span id="countLbl">—</span></span>
+      </div>
+      <table>
+        <thead><tr><th>中文</th><th>英文</th><th>分類</th><th>名詞片語</th><th>例句</th></tr></thead>
+        <tbody id="entriesBody"></tbody>
+      </table>
+      <div class="note">
+        <b>已經生效：</b>上表詞條在送出當下就併進了 <span class="mono">scaffold.VOCAB</span>，
+        派作業、遊戲、帶讀共用同一份字庫，玩偶下一輪即可使用。
+      </div>
+      <div class="note" style="background:rgba(0,0,0,.035);border-color:var(--line)">
+        <b style="color:var(--ink-2)">「退回」不是失敗：</b>詞條若<b style="color:var(--ink-2)">已在字庫</b>就會被退回——
+        教材只能新增詞彙，不能覆蓋課綱既有的詞條（否則「獅子」可能被無聲改寫成別的字，
+        而且會持久化、每次重啟重放）。所以同一份教材上傳第二次，退回數會變高，那是保護機制在運作。
+        單次最多採用 <span class="mono">MATERIAL_MAX_ENTRIES</span>（8）條。
+      </div>
+    </div>
+  </section>
+
+  <!-- ③ metadata + SKILL.md -->
+  <section class="hidden" id="secOutputs">
+    <h2><span class="step">3</span>轉成聊天 agent 可調用的產出</h2>
+    <div class="sub">左邊是玩偶實際拿到的 metadata，右邊是可掛上 AgentCore Harness 的 skill 檔。</div>
+    <div class="grid2">
+      <div data-section="metadata">
+        <div class="row" style="margin-top:0;margin-bottom:8px;justify-content:space-between">
+          <b style="font-size:14px">metadata（聊天 agent 拿到的形狀）</b>
+          <button class="ghost" id="copyMeta">複製</button>
+        </div>
+        <pre id="metaOut"></pre>
+      </div>
+      <div data-section="skill">
+        <div class="row" style="margin-top:0;margin-bottom:8px;justify-content:space-between">
+          <b style="font-size:14px">SKILL.md</b>
+          <span>
+            <button class="ghost" id="copySkill">複製</button>
+            <button class="ghost" id="dlSkill">下載</button>
+          </span>
+        </div>
+        <pre id="skillOut"></pre>
+      </div>
+    </div>
+    <div class="note">
+      <b>還沒生效：</b>SKILL.md 是產生出來的檔案，要
+      <span class="mono">aws s3 sync</span> 到 skills bucket 再
+      <span class="mono">update-harness</span> 重新掛載才會對三個 agent 生效。
+      跟上一段的詞條合併是兩件不同程度的事。
+    </div>
+  </section>
+
+  <!-- ④ 試講 -->
+  <section class="hidden" id="secProbe">
+    <h2><span class="step">4</span>試講一句</h2>
+    <div class="sub">用剛萃取到的詞造一句學生話，送進真正的 <span class="mono">/ws/talk</span> 對話 pipeline。</div>
+    <div class="card">
+      <div class="row" style="margin-top:0">
+        <button id="probeBtn">試講一句</button>
+        <span class="msg" id="probeMsg"></span>
+      </div>
+      <div id="probeOut"></div>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+import { mdToPlainText, buildMetadata, buildSkillMarkdown, buildProbeSentence }
+  from "/static/material-skill.js";
+
+var authToken = (typeof localStorage !== 'undefined' && localStorage.getItem('tb_token')) || '';
+var lastResult = null;
+var lastTitle = '';
+
+function $(id) { return document.getElementById(id); }
+function authHeaders() {
+  var h = { 'Content-Type': 'application/json' };
+  if (authToken) h['Authorization'] = 'Bearer ' + authToken;
+  return h;
+}
+
+/* ---------- 檔案讀取 ---------- */
+function loadFile(file) {
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    $('text').value = mdToPlainText(String(reader.result || ''));
+    if (!$('title').value) $('title').value = file.name.replace(/\.(md|markdown|txt)$/i, '');
+  };
+  reader.readAsText(file);
+}
+$('drop').addEventListener('click', function () { $('mdFile').click(); });
+$('mdFile').addEventListener('change', function (e) { loadFile(e.target.files[0]); });
+['dragenter', 'dragover'].forEach(function (ev) {
+  $('drop').addEventListener(ev, function (e) { e.preventDefault(); $('drop').classList.add('over'); });
+});
+['dragleave', 'drop'].forEach(function (ev) {
+  $('drop').addEventListener(ev, function (e) { e.preventDefault(); $('drop').classList.remove('over'); });
+});
+$('drop').addEventListener('drop', function (e) {
+  if (e.dataTransfer && e.dataTransfer.files) loadFile(e.dataTransfer.files[0]);
+});
+
+/* ---------- 萃取 ---------- */
+$('extractBtn').addEventListener('click', function () {
+  var title = $('title').value.trim() || '未命名教材';
+  var text = $('text').value.trim();
+  if (!text) { setMsg('extractMsg', '請先給一份教材內容', 'err'); return; }
+  $('extractBtn').disabled = true;
+  setMsg('extractMsg', 'agent 萃取中…', '');
+  fetch('/api/material', {
+    method: 'POST', headers: authHeaders(),
+    body: JSON.stringify({ title: title, text: text })
+  }).then(function (r) {
+    if (r.status === 403) throw new Error('這個帳號不是 tutor，無法上傳教材');
+    if (!r.ok) throw new Error('萃取失敗（HTTP ' + r.status + '）');
+    return r.json();
+  }).then(function (res) {
+    lastResult = res; lastTitle = title;
+    render(res, title);
+    setMsg('extractMsg', '完成', 'ok');
+  }).catch(function (err) {
+    setMsg('extractMsg', err.message || '萃取失敗', 'err');
+  }).finally(function () { $('extractBtn').disabled = false; });
+});
+
+function setMsg(id, text, cls) {
+  var el = $(id); el.textContent = text; el.className = 'msg' + (cls ? ' ' + cls : '');
+}
+
+function render(res, title) {
+  var entries = res.entries || [];
+  $('secEntries').classList.remove('hidden');
+  $('secOutputs').classList.remove('hidden');
+  $('secProbe').classList.remove('hidden');
+
+  $('entriesSub').textContent = '主題：' + (res.topic || '（未標註）');
+
+  var cloud = res.source === 'cloud';
+  $('srcBadge').className = 'badge ' + (cloud ? 'cloud' : 'edge');
+  $('srcLbl').textContent = cloud ? '雲端 agent 萃取（AgentCore / Bedrock）' : '邊緣端規則式萃取';
+  $('countLbl').textContent = '採用 ' + (res.accepted_count || 0) +
+    ' 條／退回 ' + (res.rejected_count || 0) + ' 條';
+
+  var body = $('entriesBody');
+  body.textContent = '';
+  entries.forEach(function (e) {
+    var tr = document.createElement('tr');
+    [['zh', e.zh], ['en', e.en], ['cat', e.cat], ['np', e.np], ['sent', e.sent]]
+      .forEach(function (pair) {
+        var td = document.createElement('td');
+        td.className = pair[0];
+        td.textContent = pair[1] || '';
+        tr.appendChild(td);
+      });
+    body.appendChild(tr);
+  });
+
+  $('metaOut').textContent = JSON.stringify(buildMetadata(res, title), null, 2);
+  $('skillOut').textContent = buildSkillMarkdown(res, title);
+  $('probeOut').textContent = '';
+  setMsg('probeMsg', '', '');
+}
+
+/* ---------- 複製／下載 ---------- */
+function copy(text, btn) {
+  navigator.clipboard.writeText(text).then(function () {
+    var old = btn.textContent; btn.textContent = '已複製';
+    setTimeout(function () { btn.textContent = old; }, 1200);
+  });
+}
+$('copyMeta').addEventListener('click', function () { copy($('metaOut').textContent, this); });
+$('copySkill').addEventListener('click', function () { copy($('skillOut').textContent, this); });
+$('dlSkill').addEventListener('click', function () {
+  var blob = new Blob([$('skillOut').textContent], { type: 'text/markdown' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'SKILL.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+/* ---------- 試講一句 ---------- */
+$('probeBtn').addEventListener('click', function () {
+  var sentence = buildProbeSentence(lastResult && lastResult.entries);
+  if (!sentence) { setMsg('probeMsg', '這份教材沒有萃取到詞條，沒有可試講的目標詞', 'err'); return; }
+  $('probeBtn').disabled = true;
+  setMsg('probeMsg', '連線中…', '');
+  $('probeOut').textContent = '';
+
+  var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  var ws = new WebSocket(proto + location.host + '/ws/talk?token=' + encodeURIComponent(authToken));
+  var done = false;
+  var timer = setTimeout(function () {
+    if (!done) { done = true; setMsg('probeMsg', '逾時，玩偶沒有回應', 'err'); ws.close(); $('probeBtn').disabled = false; }
+  }, 15000);
+
+  ws.onopen = function () {
+    bubble('孩子', sentence);
+    setMsg('probeMsg', '玩偶思考中…', '');
+    ws.send(JSON.stringify({ type: 'text_input', text: sentence }));
+  };
+  ws.onmessage = function (ev) {
+    var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+    /* 只等 reply，收到就收工——tts_audio 是幾百 KB 的 base64，這頁用不到。 */
+    if (m.type === 'reply' && !done) {
+      done = true; clearTimeout(timer);
+      bubble('玩偶', m.text || '（沒有回覆文字）');
+      setMsg('probeMsg', '這是真正的對話 pipeline 回傳的', 'ok');
+      ws.close(); $('probeBtn').disabled = false;
+    }
+  };
+  ws.onerror = function () {
+    if (!done) { done = true; clearTimeout(timer); setMsg('probeMsg', '連線失敗', 'err'); $('probeBtn').disabled = false; }
+  };
+});
+
+function bubble(who, text) {
+  var d = document.createElement('div');
+  d.className = 'bubble';
+  var s = document.createElement('span'); s.className = 'who'; s.textContent = who;
+  d.appendChild(s);
+  d.appendChild(document.createTextNode(text));
+  $('probeOut').appendChild(d);
+}
+
+/* ---------- 登入 ---------- */
+function needLogin() {
+  return !authToken || localStorage.getItem('tb_role') !== 'tutor';
+}
+if (needLogin()) {
+  $('loginOverlay').classList.remove('hidden');
+  $('loginForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    $('loginError').textContent = '';
+    $('loginBtn').disabled = true;
+    fetch('/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: $('loginEmail').value.trim(), password: $('loginPassword').value })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('登入失敗');
+      return r.json();
+    }).then(function (res) {
+      if (res.role !== 'tutor') throw new Error('這個帳號不是教師');
+      authToken = res.token;
+      localStorage.setItem('tb_token', res.token);
+      localStorage.setItem('tb_role', res.role);
+      localStorage.setItem('tb_sub', res.sub);
+      $('loginOverlay').classList.add('hidden');
+    }).catch(function (err) {
+      $('loginError').textContent = err.message || '帳號或密碼錯誤，請重試';
+    }).finally(function () { $('loginBtn').disabled = false; });
+  });
+}
+</script>
+</body>
+</html>
