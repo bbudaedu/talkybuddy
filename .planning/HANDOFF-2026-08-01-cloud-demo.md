@@ -7,13 +7,19 @@
 ## 現況一句話
 
 雲端全線可用：`https://d1lh9vytcx1utq.cloudfront.net`（CloudFront→ALB→Fargate）。
-程式碼在 `feat/finals-cloud-demo`（已推 GitHub，**尚未併回 master**）。
+程式碼已併回 `master`。
+
+**2026-08-02 04:xx 更新**：教師診斷已真正走雲端（P1-1b 已修並部署），
+帶讀句對齊單元也已修（P1-1）。剩下的 P1 是第 2、3 項（material agent 的
+`cat` 分類、Unit 5 只提煉出 4 個詞），兩者都不影響 demo 畫面。
 
 ---
 
 ## P1 — 會被評審看到的
 
-### 1. 帶讀的目標句沒有對齊課本單元 ⚠️ 最該修
+### 1. 帶讀的目標句沒有對齊課本單元 — ✅ 已修（commit `06c340f`）
+
+問題本身已解決，以下原始記錄保留作為背景。
 
 **現象**（線上實測）：
 
@@ -35,28 +41,46 @@
 **繞過方式**（若不修）：demo 講「孩子開口 → 玩偶陪他說對」這個行為本身，
 不要強調帶讀句來自本週單元。
 
-### 1b. 教師診斷實際上沒有走雲端 ⚠️ 2026-08-02 新增
+### 1b. 教師診斷實際上沒有走雲端 — ✅ 已修並已部署（2026-08-02 04:xx）
 
-`/api/diagnoses` 最新幾筆的 `source` 都是 `rule`。2026-08-02 線上實測：跑滿 6 輪
-對話觸發背景診斷（`DIRECTIVE_REFRESH_EVERY=5`），新產生的那筆仍是 `rule`。
+**現在線上驗過 4/4 `source=cloud`、6.2–7.8s，教師端徽章顯示
+「由 AWS Bedrock（Claude）direct converse 產出」**，即本節原訂的判準。
+commit `fe14d91` → `5a462a0` → `37ecdb3`，image 已推 ECR 並滾動部署完成。
 
-**不是憑證問題**——Fargate 用自己的 IAM task role，與本機 `.env.aws` 無關。
-（診斷時若在本機用過期憑證測容器，會得到同樣的 `rule`，那是假象，別被誤導。）
+原本猜的兩個候選**都對，而且不只兩個——是三個 bug 疊在一起**，每修好一個
+才會露出下一個。這個形狀值得記住：
 
-**已做的只是改標籤**：教師端徽章文案從「離線規則式產出（未走雲端）」改為
-「邊緣端即時產出」（commit f9cba39）。**問題本身沒修。**
+1. **model 沒開通**。`bedrock_converse.DEFAULT_MODEL_ID` 是
+   `global.anthropic.claude-sonnet-5`，實打回 `AccessDeniedException: not
+   available for this account`。對話路徑用的是 haiku-4-5（該帳號可用），
+   **這就是為什麼對話正常、只有診斷是假的**。
+   退而求其次的 `sonnet-4-6`（AgentCore 用的那顆）也不行：同一份 prompt 要 21.8s。
+   → 診斷改用 haiku-4-5。
+2. **逾時**。`_API_TIMEOUT_SEC = 12`。我一開始拿兩筆假互動量到 7.1s 就放行，
+   **那是假綠燈**——呼叫端真正送的是 `list_interactions(limit=10)`，用線上真實
+   資料重量是 11.0s / 15.3s，正好跨在 12s 兩邊，所以間歇失敗。→ 放寬到 25s。
+3. **輸出被截斷**。prompt 對輸出長度毫無約束，而第一次成功後產生了 `prev`，
+   第二次模型為了呼應前次診斷就越寫越長，撞上 maxTokens →
+   `JSONDecodeError` → 靜默降級。**調高 maxTokens 只是延後爆炸**，真正的修法是
+   prompt 補明確長度上限 + 新增 `_prev_brief()`（原本把整份 prev 診斷塞回
+   prompt，等於每輪都把前一輪全文再餵一次，prompt 隨歷史單調成長）。
 
-**根因待查**：`server/diagnose.py` 的 `_call_anthropic_api()` 為何失敗。兩個候選：
-1. 診斷 model `global.anthropic.claude-sonnet-5` 沒開通——`sonnet-4-5` 昨天就是這樣，
-   而 `list-foundation-models`／preflight ④ 列的是「存在」不是「已開通」。
-   驗法：拿有效憑證真的 `converse` 一次那個 model id。
-2. 逾時（診斷走大模型，上界 12s）。
+**真正讓這個 bug 活了一整天的是靜默降級**：`generate_diagnosis` 的兩個
+`except` 是徹底的黑洞，連 log 都沒有，症狀只有徽章上的 `rule`——跟「沒憑證」
+長得一模一樣。已補 `_log.warning(exc_info=True)`（降級行為不變），
+`converse_chat` 也會在 `stopReason == max_tokens` 時警告。
+**補上日誌後，第 3 個 bug 一次就定位了。**
 
-要查 CloudWatch log 需要有效憑證。修好的判準：教師端徽章自己變成
-「由 AWS Bedrock（Claude）direct converse 產出」。
+順帶修掉一個被它掩蓋的地雷：`/api/network_mode` 原本在 `async def` 裡**同步**
+呼叫 `generate_diagnosis`。先前沒事只是因為 AccessDenied 在 0.3s 內就失敗——
+是 bug 掩蓋了 bug。修好後那裡會用整個 event loop 等 7 秒（現場有孩子在講話時
+那條 WebSocket 會一起卡住），已包進 `asyncio.to_thread`。
 
-**demo 繞過方式**：真正證明 AI 在跑的是「Agent 產出」卡片（派作業／週報，走 AgentCore）
-與學生端對話本身；診斷卡片可以講成「斷網時教師端照樣有診斷」的離線賣點。
+**下次換帳號必做**：實打 `converse` 每一顆 model id。`list-foundation-models`
+與 preflight ④ 列的是「存在」不是「已開通」。
+
+**量測方法的教訓**：探針要用**真實筆數**的資料。這條路徑的耗時與輸出長度都由
+`list_interactions(limit=10)` 的實際內容決定，拿兩筆假資料量出來的數字對它沒有意義。
 
 ### 2. material agent 的 `cat` 分類明顯錯誤
 
@@ -124,8 +148,29 @@ monkeypatch 攔截 entries 再逐條跑 `_is_valid_material_entry`）找出被�
 - **憑證會過期**：`/home/budaedu/talkybuddy/.env.aws` 是 workshop 臨時憑證。
   過期只影響操作 AWS，不影響已跑起來的 Fargate（它用自己的 task role）。
 - **Fargate 持續計費**：決賽結束記得 `aws ecs update-service --desired-count 0`。
-- **`feat/finals-cloud-demo` 尚未併回 master**：
-  `git checkout master && git merge feat/finals-cloud-demo && git push`
+- ~~**`feat/finals-cloud-demo` 尚未併回 master**~~ — 已併回，master 是最新的。
+- **兩個 API 細節**（2026-08-02 各浪費了一次來回）：
+  `/api/login` 的欄位是 `email` 不是 `username`；
+  切換網路模式的路由是 `/api/network_mode`（**底線**），不是 `network-mode`。
+- **重新部署的完整流程**（image 內建 `TALKYBUDDY_CLOUD_PROVIDER=bedrock`，
+  改 task definition 環境變數沒用，要 rebuild）：
+  ```
+  set -a && . ./.env.aws && set +a
+  aws ecr get-login-password --region us-west-2 | docker login --username AWS \
+    --password-stdin 953089054952.dkr.ecr.us-west-2.amazonaws.com
+  docker build -f deploy/aws/Dockerfile -t talkybuddy:x .
+  docker run --rm --entrypoint sh talkybuddy:x -c "grep ... /app/server/..."   # 先驗 image 內容
+  docker tag talkybuddy:x 953089054952.dkr.ecr.us-west-2.amazonaws.com/talkybuddy:latest
+  docker push 953089054952.dkr.ecr.us-west-2.amazonaws.com/talkybuddy:latest
+  aws ecs update-service --cluster talkybuddy --service talkybuddy --force-new-deployment
+  ```
+  **`rolloutState` 顯示 `COMPLETED` 時 `runningCount` 可能還是 0，那個綠燈不可信**；
+  要等到 `runningCount=1 / pendingCount=0 / deployments=1`。整輪約 3–5 分鐘。
+- **既有失敗測試 2 個**（與本次修正無關，改動前後都紅）：
+  `test_e2e.py::test_network_mode_switch_affects_live_ws_session`、
+  `test_student_identity.py::test_teacher_html_has_no_hardcoded_student_name`。
+  另有 3 個 `test_pipeline_cloud`／`test_pipeline` 測試曾間歇性失敗，但在原始
+  commit 上重跑也是綠的——是環境敏感的不穩定測試，不是被誰改壞的。
 
 ## 尚未完成（非程式）
 
