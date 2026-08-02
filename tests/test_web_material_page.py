@@ -96,6 +96,43 @@ def test_page_explains_why_entries_get_rejected(client):
     assert "已在字庫" in html or "已存在" in html, "頁面沒有解釋退回的原因"
 
 
+def test_login_prefill_actually_authenticates(client):
+    """頁面預填的帳號＋密碼要能真的登入成功。
+
+    比對字串沒有意義——真正要保證的是「現場按下登入就會過」。這條直接把
+    頁面上預填的兩個值餵進 `auth.authenticate`，種子帳號日後改動也會被抓到。
+    """
+    import re
+
+    from server import auth
+
+    html = resp_text(client)
+    email = re.search(r'id="loginEmail"[^>]*value="([^"]*)"', html)
+    password = re.search(r'id="loginPassword"[^>]*value="([^"]*)"', html)
+    assert email, "登入框沒有預填帳號"
+    assert password, "登入框沒有預填密碼"
+
+    ident = auth.authenticate(email.group(1), password.group(1))
+    assert ident is not None, "預填的帳號密碼登入失敗"
+    assert ident["role"] == "tutor", f"預填帳號的角色是 {ident['role']}，不是 tutor"
+
+
+def test_password_field_is_masked(client):
+    """密碼欄必須是 `type="password"`。
+
+    第一版寫成 `type="text"`，密碼會明文顯示在畫面上——這頁是要投影出去的，
+    等於把 demo 帳號密碼秀給全場。teacher.html／index.html 都是 password，
+    這頁不該是例外。
+    """
+    import re
+
+    html = resp_text(client)
+    tag = re.search(r"<input[^>]*id=\"loginPassword\"[^>]*>", html)
+    assert tag, "找不到密碼欄"
+    assert 'type="password"' in tag.group(0), \
+        f"密碼欄不是 type=\"password\"，會明文顯示：{tag.group(0)}"
+
+
 def test_login_prefill_is_a_real_tutor_account(client):
     """登入框預填的帳號必須真的存在，而且角色是 tutor。
 
