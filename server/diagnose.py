@@ -646,11 +646,15 @@ def _call_bedrock_api(interactions: list[dict], prev: dict | None, cfg: dict) ->
     （relay → 規則式 mock）。
     """
     prompt = _build_diagnosis_prompt(interactions, prev)
+    # maxTokens 1024 → 1536：2026-08-02 實測診斷輸出（中文 strengths/weaknesses/
+    # instructions 全展開）落在 1200–1350 字元，1024 token 會把 JSON 攔腰截斷，
+    # `_parse_diagnosis_text` 丟 JSONDecodeError 後靜默降級成 rule——看起來就跟
+    # 「沒憑證」一模一樣，極難分辨。多給的 token 只有在真的用到時才計費。
     text = bedrock_converse.converse_text(
         _BEDROCK_SYSTEM,
         prompt,
         cfg=cfg,
-        max_tokens=1024,
+        max_tokens=1536,
         timeout_s=_API_TIMEOUT_SEC,
     )
     return _parse_diagnosis_text(text)

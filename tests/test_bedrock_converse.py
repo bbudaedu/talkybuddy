@@ -109,31 +109,46 @@ def test_aws_region_used_when_bedrock_region_absent(_clean_env):
 # 永遠降級到 edge，等於雲端大腦白接。
 # ---------------------------------------------------------------------------
 
-def test_chat_role_defaults_to_a_faster_model_than_diag(_clean_env):
-    """對話路徑預設必須是比診斷路徑更快的小模型，否則 1.5s 上界必然逾時。"""
-    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
-    chat = bedrock_converse.resolve_config(role="chat")["model_id"]
-    diag = bedrock_converse.resolve_config(role="diag")["model_id"]
-    assert chat == bedrock_converse.DEFAULT_CHAT_MODEL_ID
-    assert diag == bedrock_converse.DEFAULT_MODEL_ID
-    assert chat != diag
+def test_each_role_resolves_its_own_default_and_env_override(_clean_env):
+    """角色分流結構本身要成立：各自的預設 + 各自的環境變數覆寫互不干擾。
 
-
-def test_chat_default_is_haiku_and_diag_default_is_sonnet(_clean_env):
-    """預設 model 以 `ap-east-2`（台北）實際可用的 profile 為準。
-
-    2026-07-26 實測：Sonnet 5 / Haiku 4.5 在台北只有 `global.` 前綴版本，
-    沒有 `apac.` geo 版本（唯一的 geo 是舊的 apac.anthropic.claude-sonnet-4）。
+    **2026-08-02 由 `test_chat_role_defaults_to_a_faster_model_than_diag` 改寫。**
+    原測試斷言 `chat != diag`，那是把「當時剛好選了兩顆不同的 model」寫成了不變量。
+    真正的不變量是**角色分流的機制**（每個 role 能各自被覆寫），不是兩顆 model
+    恰好不相等——診斷改用 haiku（見 DEFAULT_MODEL_ID 的註解）後兩者同顆，
+    但逾時仍分流（12s vs 1.5s），分流的價值完全沒有消失。
     """
     _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
-    assert (
-        bedrock_converse.resolve_config(role="chat")["model_id"]
-        == "global.anthropic.claude-haiku-4-5-20251001-v1:0"
-    )
-    assert (
-        bedrock_converse.resolve_config(role="diag")["model_id"]
-        == "global.anthropic.claude-sonnet-5"
-    )
+    assert (bedrock_converse.resolve_config(role="chat")["model_id"]
+            == bedrock_converse.DEFAULT_CHAT_MODEL_ID)
+    assert (bedrock_converse.resolve_config(role="diag")["model_id"]
+            == bedrock_converse.DEFAULT_MODEL_ID)
+
+    # 只覆寫 chat，diag 必須不受影響（反之亦然）
+    _clean_env.setenv("BEDROCK_MODEL_ID_CHAT", "chat-only-override")
+    assert bedrock_converse.resolve_config(role="chat")["model_id"] == "chat-only-override"
+    assert (bedrock_converse.resolve_config(role="diag")["model_id"]
+            == bedrock_converse.DEFAULT_MODEL_ID)
+
+
+def test_both_role_defaults_are_models_verified_by_a_real_converse_call(_clean_env):
+    """兩個角色的預設 model 都必須是**實打 converse 通過**的那顆。
+
+    **2026-08-02 診斷預設由 `global.anthropic.claude-sonnet-5` 改為 haiku-4-5。**
+    這條測試存在的理由就是那次事故：sonnet-5 在主辦帳號（953089054952）
+    `list-foundation-models` 列得出來，實打卻是 `AccessDeniedException:
+    not available for this account`。而 `diagnose.generate_diagnosis()` 的降級
+    是刻意靜默的，所以症狀只是教師端一直顯示 `source="rule"`——雲端診斷從
+    8/1 上線起沒有一次成功，整整一天沒有任何錯誤訊息浮上來。
+
+    **這條測試擋不住換帳號後的重演**（它只比對字串，不會真的打 API）。
+    換帳號/換 region 時唯一可信的驗法是真的 `converse` 一次每一顆 model id，
+    `list-foundation-models` 列的是「存在」不是「已開通」。
+    """
+    _clean_env.setenv("TALKYBUDDY_CLOUD_PROVIDER", "bedrock")
+    verified = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+    assert bedrock_converse.resolve_config(role="chat")["model_id"] == verified
+    assert bedrock_converse.resolve_config(role="diag")["model_id"] == verified
 
 
 def test_default_region_follows_the_competition_rules(_clean_env):

@@ -449,28 +449,44 @@ async def api_network_mode(body: NetworkModeBody,
     # cloud：補同步 + 產出新診斷（mock Hermes/Bedrock 雲端層）
     # D-03(a)：network_mode 由 edge 轉 cloud 的瞬間，立即補傳一次待同步紀錄，
     # 讓主持人插回網路後不必等孩子再說話，儀表板就會出現新診斷。
-    sync_result = sync_client.opportunistic_sync()
-    synced_n = sync_result.get("synced", 0)
-    new_diag = None
-    try:
-        recent = store.list_interactions(limit=10)
-        diagnoses = store.list_diagnoses()  # date 升冪 → 最後一筆是最新
-        prev = diagnoses[-1] if diagnoses else None
-        new_diag = diagnose.generate_diagnosis(recent, prev)
-        # 持久化那份帶上 student_id 供 /api/diagnoses 依學生過濾（Task 1/4）；
-        # 回應的 new_diagnosis 維持既有契約 key 集合，故存副本、不動 new_diag。
-        store.add_diagnosis({**new_diag, "student_id": store._student_id()})
-        # B1：把新診斷的 companion_directive 推進 pipeline 快取，即時路徑下輪即採用
-        # B3 接法 A：一併帶 level_state，讓 CEFR 難度/語言形式折進注入字串
-        pipeline._directive = diagnose.format_directive_for_prompt(
-            new_diag.get("companion_directive"), new_diag.get("level_state"))
-        # B2：同異步時機更新長期 profile（全量重算；失敗不影響同步）
-        all_inter = store.list_interactions(limit=500)
-        prof = profile.build_profile(all_inter, store.list_diagnoses(), store.get_profile())
-        store.save_profile(prof)
-    except Exception:
-        # 診斷失敗不影響同步結果（demo 韌性優先）
-        new_diag = None
+    #
+    # 整段（同步補傳 + 雲端診斷 + profile 重算）走 asyncio.to_thread，比照
+    # pipeline._refresh_directive 的既有骨架。**這不是可有可無的整理**：
+    # 2026-08-02 修好雲端診斷後，generate_diagnosis 會真的往 Bedrock 打一趟
+    # （實測 ~7s），SQLite 寫入與 build_profile 也都是阻塞呼叫。留在 async def
+    # 裡直接呼叫等於用整個 event loop 去等——現場只要有孩子正在講話，那條
+    # WebSocket 會一起卡住。先前之所以沒事，只是因為診斷都在 0.3s 內就
+    # AccessDenied 失敗了，那是 bug 掩蓋了 bug。
+    def _work() -> tuple[int, dict | None]:
+        sync_result = sync_client.opportunistic_sync()
+        synced = sync_result.get("synced", 0)
+        diag = None
+        try:
+            recent = store.list_interactions(limit=10)
+            diagnoses = store.list_diagnoses()  # date 升冪 → 最後一筆是最新
+            prev = diagnoses[-1] if diagnoses else None
+            diag = diagnose.generate_diagnosis(recent, prev)
+            # 持久化那份帶上 student_id 供 /api/diagnoses 依學生過濾（Task 1/4）；
+            # 回應的 new_diagnosis 維持既有契約 key 集合，故存副本、不動 diag。
+            store.add_diagnosis({**diag, "student_id": store._student_id()})
+            # B1：把新診斷的 companion_directive 推進 pipeline 快取，即時路徑下輪即採用
+            # B3 接法 A：一併帶 level_state，讓 CEFR 難度/語言形式折進注入字串
+            pipeline._directive = diagnose.format_directive_for_prompt(
+                diag.get("companion_directive"), diag.get("level_state"))
+            # B2：同異步時機更新長期 profile（全量重算；失敗不影響同步）
+            all_inter = store.list_interactions(limit=500)
+            prof = profile.build_profile(all_inter, store.list_diagnoses(),
+                                         store.get_profile())
+            store.save_profile(prof)
+        except Exception:
+            # 診斷失敗不影響同步結果（demo 韌性優先）。但不再無聲吞掉——
+            # 這條路徑靜默了整整一天的雲端診斷失敗，日誌是唯一的浮出管道。
+            logging.getLogger(__name__).exception(
+                "切回 cloud 時的雲端診斷失敗，仍回傳同步結果")
+            diag = None
+        return synced, diag
+
+    synced_n, new_diag = await asyncio.to_thread(_work)
     return {
         "network_mode": "cloud",
         "synced": synced_n,

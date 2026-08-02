@@ -39,7 +39,24 @@ DEFAULT_REGION = os.environ.get("BEDROCK_DEFAULT_REGION", "us-west-2")
 # list_models() 對實際帳號查證**——各帳號/region 可用的 profile 不同，
 # 寫死的字串很容易過期。可由 BEDROCK_MODEL_ID 覆蓋。
 # 這顆同時是「診斷路徑」與未指定 role 時的通用預設。
-DEFAULT_MODEL_ID = "global.anthropic.claude-sonnet-5"
+#
+# **2026-08-02 由 `global.anthropic.claude-sonnet-5` 改過來，兩個獨立理由：**
+#
+# 1. sonnet-5 在主辦帳號（953089054952）實打是 `AccessDeniedException:
+#    not available for this account`。而 generate_diagnosis() 的降級是刻意
+#    靜默的，所以教師端只看得到 source="rule"——雲端診斷從 8/1 上線起就沒有
+#    一次跑成功過，且沒有任何錯誤訊息浮上來。對話路徑用的是下面的 haiku-4-5
+#    （該帳號可用），這就是為什麼對話正常、只有診斷是假的。
+# 2. 退而求其次的 sonnet-4-6（實打可用，AgentCore 就用它）**不適合這條路徑**：
+#    同一份診斷 prompt 實測 21.8s，超過 _API_TIMEOUT_SEC，而且 1024 maxTokens
+#    會把中文 JSON 攔腰截斷 → `JSONDecodeError`。haiku-4-5 實測 7.1s / 7.2s
+#    兩次都 parse 成功。
+#
+# 所以診斷與對話目前同一顆 model，但**逾時仍分流**（12s vs 1.5s），_ROLE_MODELS
+# 的角色分流結構保留：日後換帳號若 sonnet 系可用且夠快，只要改這一行。
+# 換帳號務必重跑實打 converse 驗證，`list-foundation-models` 列的是「存在」不是
+# 「已開通」。
+DEFAULT_MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 # 對話路徑（cloud_llm）專屬預設。兩條路徑的逾時上界差 8 倍——對話是
 # 1.5s（cloud_llm._TIMEOUT_S，斷網橋段 D-03 的驗收上界）、診斷是 12s
