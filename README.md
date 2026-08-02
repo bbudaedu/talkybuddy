@@ -2,6 +2,15 @@
 
 一隻會聽、會想、會說的英語學伴玩偶，設計給師資與網路都不穩定的偏鄉國小教室——**孩子開口對話走邊緣，離線也不中斷；老師端的差異化教學判斷走雲端，多一份 AI 協助但不是必需品**。同一份教材，系統依每個孩子的練習狀況分派不同的路：超前的給延伸、落後的降階並請老師介入。
 
+> **English**: TalkyBuddy is an English-speaking companion toy for children in
+> Taiwanese rural elementary schools, where teacher shortages and unreliable
+> connectivity are the norm. Conversation and scaffolded read-along run fully
+> offline on-device; a cloud layer (Amazon Bedrock Converse + AgentCore) adds
+> per-student diagnostics, differentiated homework, and parent reports when
+> connectivity allows — cloud is a bonus, never a requirement. One shared
+> lesson, one path per child: ahead students get extension material, behind
+> students get reinforcement and a flag for teacher follow-up.
+
 ## 為什麼做這個
 
 台灣偏鄉國中英語「待加強」比例已超過五成，是一般地區的近兩倍；偏遠地區代理教師比例逼近四分之一，且逐年上升。政府投入資源發放平板，但缺的從來不是硬體，是能陪一個孩子反覆開口練習、又不會累的那個人。完整的數據查證過程與出處見 [`docs/NEEDS_EVIDENCE.md`](docs/NEEDS_EVIDENCE.md)。

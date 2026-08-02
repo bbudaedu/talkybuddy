@@ -5,7 +5,7 @@
 下面這段是那之前寫的，已經不是現況）　**決賽**：2026-08-01
 
 **狀態：客戶端已接線、契約已對齊真實 API，2026-08-01 08:57 已在主辦方 workshop 帳號
-（`953089054952`／`WSParticipantRole`、`us-west-2`）完成佈建並收到真實 InvokeHarness
+（`<AWS_ACCOUNT_ID>`／`WSParticipantRole`、`us-west-2`）完成佈建並收到真實 InvokeHarness
 回應（`stopReason=end_turn`，可解析出決策 JSON）。**
 
 這一行的每個字都要能被指著問。拆開講：

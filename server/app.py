@@ -184,6 +184,17 @@ async def teacher_page():
     return FileResponse(WEB_DIR / "teacher.html")
 
 
+@app.get("/agentcore")
+async def agentcore_page():
+    """AgentCore 說明頁：靜態頁面，記錄一次正式站實測的證據快照。
+
+    先前只部署在正式站容器裡、沒有進 git——container 若用當時的 master
+    重建，這頁會直接消失。這裡補齊版本控制，內容原封不動（含實測時間戳
+    與數字），不重新驗證：那是某一次觀測的紀錄，不是即時查詢。
+    """
+    return FileResponse(WEB_DIR / "agentcore.html")
+
+
 # ---------------------------------------------------------------------------
 # REST API
 # ---------------------------------------------------------------------------

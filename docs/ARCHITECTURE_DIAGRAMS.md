@@ -239,7 +239,7 @@ flowchart TB
 |---|---|---|
 | 客戶端已接線 | 已實作 | `server/agentcore.py`；三個 agent 的降級鏈第一層 |
 | API 契約已對齊 | 已驗證（非僅離線） | 2026-08-01 08:57 收到真實 `InvokeHarness` 回應，`stopReason=end_turn`，可 `json.loads` 出決策 JSON；離線驗證仍在（`tests/test_agentcore_client.py`） |
-| 佈建腳本 | `--apply` 已成功 | 於主辦方 workshop 帳號（`953089054952`／`WSParticipantRole`、`us-west-2`）實際跑通，非僅 `--dry-run`；三個只有真跑才會暴露的坑已修（IAM Description 限 ASCII、`UpdateHarness`/`CreateHarness` 形狀不同、`allowedTools` 需顯式設 `[]`），見 commit `f9f6f88`（2026-08-01 14:40） |
+| 佈建腳本 | `--apply` 已成功 | 於主辦方 workshop 帳號（`<AWS_ACCOUNT_ID>`／`WSParticipantRole`、`us-west-2`）實際跑通，非僅 `--dry-run`；三個只有真跑才會暴露的坑已修（IAM Description 限 ASCII、`UpdateHarness`/`CreateHarness` 形狀不同、`allowedTools` 需顯式設 `[]`），見 commit `f9f6f88`（2026-08-01 14:40） |
 | **實際佈建** | **已佈建、已驗證** | Memory（`TalkyBuddyStudentMemory-iQqstO61N0`）+ Harness ×4（Orchestrator／Homework／Report／Material）+ IAM role（`TalkyBuddyAgentCoreExecution`）全部 READY；`orchestrator.decide_next_actions()` 端到端驗證回傳 `source:"cloud"`、內容引用 profile 真實興趣欄位，非僅裸 boto3 呼叫 |
 | 自建 orchestrator | 可用回退 | `server/agents/`，決策/執行分離、schema 驗證、白名單投影、規則式保底——AgentCore 失敗時的第二層，不是備胎 |
 

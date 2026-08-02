@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentCore 怎麼運作 — 說說學伴</title>
+<style>
+  :root{
+    --page:#f6f6f3; --surface:#ffffff; --surface-2:#fafaf7;
+    --ink:#17170f; --ink-2:#4c4a42; --ink-3:#84817a;
+    --line:rgba(0,0,0,.12); --line-soft:rgba(0,0,0,.07);
+    --wire:rgba(0,0,0,.28);
+    --cloud:#2c6fc4;
+    --ok:#12805a;
+    --amber:#a86e00;
+    --radius:14px;
+    color-scheme: light;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--page); color:var(--ink);
+    font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+    font-size:15px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  .wrap{max-width:960px;margin:0 auto;padding:36px 18px 56px}
+
+  header{margin-bottom:22px}
+  .kicker{
+    display:inline-flex;align-items:center;gap:7px;
+    font-family:ui-monospace,Menlo,monospace;font-size:11.5px;letter-spacing:.08em;
+    color:var(--ok);background:rgba(18,128,90,.10);
+    border:1px solid rgba(18,128,90,.32);border-radius:999px;padding:3px 11px;margin-bottom:12px;
+  }
+  .kicker i{width:6px;height:6px;border-radius:50%;background:var(--ok);display:inline-block}
+  h1{font-size:28px;font-weight:800;letter-spacing:.01em;line-height:1.35;text-wrap:balance}
+  header p{color:var(--ink-2);font-size:15px;margin-top:8px;max-width:62ch}
+
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:20px 0 32px}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:13px 16px}
+  .kpi .v{font-family:ui-monospace,Menlo,monospace;font-size:24px;font-weight:700;
+    font-variant-numeric:tabular-nums;line-height:1.15}
+  .kpi .l{font-size:12px;color:var(--ink-3);margin-top:3px}
+
+  h2{font-size:18px;font-weight:800;margin-bottom:3px}
+  .sub{font-size:13.5px;color:var(--ink-3);margin-bottom:14px}
+  section{margin-bottom:32px}
+
+  /* ================= 架構圖（放大） ================= */
+  .diagram{
+    background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    padding:32px 28px 26px;
+  }
+  .region{
+    display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--cloud);
+    font-family:ui-monospace,Menlo,monospace;margin-bottom:26px;
+    border:1px solid rgba(44,111,196,.32);background:rgba(44,111,196,.06);
+    border-radius:999px;padding:5px 14px;
+  }
+  .region i{width:9px;height:9px;border-radius:50%;background:var(--cloud);display:inline-block}
+
+  .stack{display:flex;flex-direction:column;align-items:center}
+
+  .input{
+    border:1.5px dashed rgba(0,0,0,.22);border-radius:11px;padding:12px 26px;
+    font-size:15px;font-weight:600;color:var(--ink-2);background:var(--surface-2);
+  }
+
+  /* 直線連接器 */
+  .wire{width:2px;height:26px;background:var(--wire);position:relative}
+  .wire.arrow::after{
+    content:"";position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);
+    border-left:6px solid transparent;border-right:6px solid transparent;
+    border-top:9px solid var(--wire);
+  }
+
+  .boss{
+    border:2.5px solid var(--cloud);background:rgba(44,111,196,.07);
+    border-radius:14px;padding:22px 40px;text-align:center;min-width:400px;
+    box-shadow:0 2px 0 rgba(44,111,196,.14);
+  }
+  .boss b{font-size:26px;font-weight:800;color:var(--cloud);display:block;letter-spacing:.01em}
+  .boss span{font-size:15px;color:var(--ink-2);display:block;margin-top:5px}
+  .boss em{font-style:normal;display:block;font-size:12.5px;color:var(--ink-3);margin-top:8px;
+    font-family:ui-monospace,Menlo,monospace}
+
+  /* 三分支連接器 */
+  .branch{width:100%;max-width:760px;height:40px;position:relative;margin-top:0}
+  .branch .trunk{position:absolute;left:50%;top:0;width:2px;height:18px;
+    background:var(--wire);transform:translateX(-50%)}
+  .branch .rail{position:absolute;left:16.66%;right:16.66%;top:18px;height:2px;background:var(--wire)}
+  .branch .leg{position:absolute;top:18px;width:2px;height:22px;background:var(--wire)}
+  .branch .leg::after{
+    content:"";position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);
+    border-left:6px solid transparent;border-right:6px solid transparent;
+    border-top:9px solid var(--wire);
+  }
+  .branch .leg.a{left:16.66%} .branch .leg.b{left:50%} .branch .leg.c{left:83.34%}
+
+  .workers{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;width:100%;max-width:760px}
+  .w{
+    border:2px solid var(--line);border-radius:12px;padding:18px 16px;
+    background:var(--surface);text-align:center;
+  }
+  .w b{font-size:19px;font-weight:800;display:block;letter-spacing:.01em}
+  .w span{font-size:14px;color:var(--ink-2);display:block;margin-top:6px;line-height:1.55}
+
+  .mem{
+    margin-top:26px;width:100%;max-width:760px;
+    border:2px solid rgba(168,110,0,.45);background:rgba(168,110,0,.07);
+    border-radius:12px;padding:16px 22px;
+    display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
+  }
+  .mem b{font-size:19px;font-weight:800;color:var(--amber)}
+  .mem span{font-size:14px;color:var(--ink-2);text-align:right;line-height:1.5}
+
+  .foot-note{font-size:13.5px;color:var(--ink-3);margin-top:24px;text-align:center;line-height:1.7}
+
+  /* ================= 證據 ================= */
+  .ev{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px}
+  .ev + .ev{margin-top:12px}
+  .ev h3{font-size:15px;font-weight:800;margin-bottom:2px;display:flex;align-items:center;gap:8px}
+  .chk{width:18px;height:18px;border-radius:50%;background:rgba(18,128,90,.13);
+    border:1px solid rgba(18,128,90,.4);color:var(--ok);font-size:10.5px;
+    display:inline-flex;align-items:center;justify-content:center;flex:none;font-weight:700}
+  .ev .d{font-size:13px;color:var(--ink-3);margin-bottom:12px}
+  pre.code{
+    background:var(--surface-2);border:1px solid var(--line-soft);border-radius:10px;
+    padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;
+    line-height:1.75;overflow-x:auto;white-space:pre;color:var(--ink-2);
+  }
+  pre.code .k{color:var(--cloud)} pre.code .s{color:#8a5c00} pre.code .g{color:var(--ok);font-weight:700}
+
+  .tl{display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding-top:6px}
+  .tl .n{display:flex;flex-direction:column;align-items:center;min-width:126px;flex:none}
+  .tl .dot{width:11px;height:11px;border-radius:50%;background:var(--ok);
+    box-shadow:0 0 0 3.5px rgba(18,128,90,.16);margin-bottom:8px}
+  .tl .t{font-family:ui-monospace,Menlo,monospace;font-size:13.5px;font-weight:700}
+  .tl .x{font-size:12px;color:var(--ink-3);text-align:center;margin-top:2px;max-width:118px;line-height:1.45}
+  .tl .seg{flex:1;min-width:22px;height:2px;background:var(--line);margin-top:5px;position:relative}
+  .tl .seg em{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-style:normal;
+    font-family:ui-monospace,monospace;font-size:11.5px;color:var(--ok);white-space:nowrap}
+
+  footer{font-size:11.5px;color:var(--ink-3);font-family:ui-monospace,Menlo,monospace;
+    border-top:1px solid var(--line);padding-top:14px;line-height:1.8}
+
+  @media (max-width:780px){
+    .boss{min-width:0;width:100%;padding:18px 20px}
+    .boss b{font-size:22px}
+    .branch{display:none}
+    .workers{grid-template-columns:1fr;gap:10px;margin-top:18px}
+    .w{text-align:left;display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .w span{margin-top:0;text-align:right;font-size:12.5px}
+    .w span br{display:none}
+    .mem{flex-direction:column;align-items:flex-start}
+    .mem span{text-align:left}
+    .kpis{grid-template-columns:1fr 1fr}
+    h1{font-size:23px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="kicker"><i></i>2026-08-01 決賽現場實測</div>
+    <h1>AgentCore 在說說學伴裡負責什麼</h1>
+    <p>孩子練完英文之後的教學決策——要不要派作業、要不要發家長週報——交給 AgentCore 上的四個 agent 處理。這類判斷可以延後、可以重試，斷網時整塊消失也不影響孩子繼續對話。</p>
+  </header>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v">132</div><div class="l">今日真實呼叫次數</div></div>
+    <div class="kpi"><div class="v">4</div><div class="l">獨立 agent</div></div>
+    <div class="kpi"><div class="v">5.0<span style="font-size:15px">s</span></div><div class="l">實測決策耗時</div></div>
+    <div class="kpi"><div class="v">3</div><div class="l">層降級，斷網不斷課</div></div>
+  </div>
+
+  <section>
+    <h2>架構</h2>
+    <p class="sub">一個決策者、三個執行者，外加一份跨場記憶</p>
+
+    <div class="diagram">
+      <div class="region"><i></i>AgentCore · us-west-2</div>
+
+      <div class="stack">
+        <div class="input">孩子練習後產生的四維診斷</div>
+        <div class="wire arrow"></div>
+
+        <div class="boss">
+          <b>Orchestrator</b>
+          <span>決策判斷——要不要派作業／發週報</span>
+          <em>只做決策，不執行</em>
+        </div>
+
+        <div class="branch">
+          <div class="trunk"></div>
+          <div class="rail"></div>
+          <div class="leg a"></div>
+          <div class="leg b"></div>
+          <div class="leg c"></div>
+        </div>
+
+        <div class="workers">
+          <div class="w"><b>Homework</b><span>依弱項產生<br>針對性作業</span></div>
+          <div class="w"><b>Report</b><span>產生家長<br>學習週報</span></div>
+          <div class="w"><b>Material</b><span>教材詞彙分類<br>興趣萃取</span></div>
+        </div>
+
+        <div class="mem">
+          <b>AgentCore Memory</b>
+          <span>跨 session 記住孩子的興趣與弱項<br>actorId 雜湊化，不存明文</span>
+        </div>
+      </div>
+
+      <p class="foot-note">派工與否集中在 Orchestrator 一處判斷，<br>失敗降級因此不會散落在三個 agent 各自處理。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>證據</h2>
+    <p class="sub">今天對正式站實測，非模擬資料</p>
+
+    <div class="ev">
+      <h3><span class="chk">✓</span>它真的在決策，不是掉到備援</h3>
+      <div class="d">繞過三層降級鏈直接呼叫 harness——成功就是成功，沒有模糊空間。</div>
+      <pre class="code"><span class="k">輸入</span>  發音兩輪內從 65 掉到 55，累計 5 回合
+<span class="k">回傳</span>  <span class="g">5.00s</span>
+{
+  <span class="s">"actions"</span>: [<span class="s">"homework"</span>, <span class="s">"report"</span>],
+  <span class="s">"reason"</span>: <span class="s">"發音分數從65持續下滑至55，呈現明顯退步趨勢，
+             需立即派作業加強練習；同時累計已達5回合，
+             適合產出報告供教師掌握學習狀況。"</span>,
+  <span class="s">"priority"</span>: <span class="s">"high"</span>
+}</pre>
+    </div>
+
+    <div class="ev">
+      <h3><span class="chk">✓</span>正式站對話 5 輪，AgentCore 幾秒內就動了</h3>
+      <div class="d">背景導師每 5 回合刷新一次。對 <span class="mono">cloudfront.net</span> 講完第 5 句後，CloudWatch 立刻出現新的呼叫紀錄。</div>
+      <div class="tl">
+        <div class="n"><div class="dot"></div><div class="t">15:45:43</div><div class="x">第 5 輪對話完成</div></div>
+        <div class="seg"><em>+5s</em></div>
+        <div class="n"><div class="dot"></div><div class="t">15:45:48</div><div class="x">CloudWatch 新紀錄 #1</div></div>
+        <div class="seg"><em>+4s</em></div>
+        <div class="n"><div class="dot"></div><div class="t">15:45:52</div><div class="x">CloudWatch 新紀錄 #2</div></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    CloudWatch Logs <span>/aws/bedrock-agentcore/runtimes/*</span>（us-west-2）· 正式站 <span>d1lh9vytcx1utq.cloudfront.net</span><br>
+    數據截至 2026-08-01 15:45，經直接呼叫與正式站真實對話取得。
+  </footer>
+
+</div>
+</body>
+</html>
