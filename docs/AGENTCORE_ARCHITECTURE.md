@@ -1,28 +1,37 @@
 # 說說學伴 × Amazon Bedrock AgentCore — 架構重新設計
 
-**日期**：2026-07-26（2026-07-29 更正 region／測試數／決賽日期；2026-08-01 更正狀態行與 region）　**決賽**：2026-08-01
+**日期**：2026-07-26（2026-07-29 更正 region／測試數／決賽日期；2026-08-01 00:12 更正狀態行與 region；
+**2026-08-01 08:57 再更新：已在主辦方 workshop 帳號完成 `--apply` 並收到真實 InvokeHarness 回應**，
+下面這段是那之前寫的，已經不是現況）　**決賽**：2026-08-01
 
-**狀態：客戶端已接線、契約已對齊真實 API，但從未在任何 AWS 帳號實際
-provision 或 invoke 過。**
+**狀態：客戶端已接線、契約已對齊真實 API，2026-08-01 08:57 已在主辦方 workshop 帳號
+（`953089054952`／`WSParticipantRole`、`us-west-2`）完成佈建並收到真實 InvokeHarness
+回應（`stopReason=end_turn`，可解析出決策 JSON）。**
 
 這一行的每個字都要能被指著問。拆開講：
 
 | 講什麼 | 憑據 |
 |---|---|
 | 客戶端已接線 | `server/agentcore.py`；三個 agent 的降級鏈第一層 |
-| 契約已對齊真實 API | `InvokeHarness` 回 EventStream（不是 dict）已修正，並用本機 botocore service model 離線釘住欄位名稱（`tests/test_agentcore_client.py`）。**2026-08-01 之前這裡解的是 Converse 的形狀，對真實 API 一次都沒成功過** |
-| 佈建腳本可用 | `deploy/aws/provision_agentcore.py --dry-run` exit 0，形狀全過；`arn` 欄位與官方執行角色權限已修正並有測試 |
-| **未驗證的部分** | 沒有跑過 `--apply`，沒有真的建立過 Harness，沒有收過一次真實的 InvokeHarness 回應。上述全部是離線推導 + service model 比對的結果 |
+| 契約已對齊真實 API | `InvokeHarness` 回 EventStream（不是 dict）已修正，並用本機 botocore service model 離線釘住欄位名稱（`tests/test_agentcore_client.py`）。**2026-08-01 之前這裡解的是 Converse 的形狀，對真實 API 一次都沒成功過**；08:57 起已用真實 API 驗證過 |
+| 佈建腳本可用 | `deploy/aws/provision_agentcore.py --apply` 已在主辦方帳號實際跑通（非僅 `--dry-run`）；三個只有真跑才會暴露的坑已修（IAM Description 限 ASCII、`UpdateHarness`/`CreateHarness` 形狀不同、`allowedTools` 需顯式設 `[]`），見 commit `f9f6f88`（14:40） |
+| **已佈建、已驗證** | Memory（`TalkyBuddyStudentMemory-iQqstO61N0`）＋ Harness ×4（Orchestrator／Homework／Report／Material）＋ IAM role（`TalkyBuddyAgentCoreExecution`）全部 READY |
 
-不要把這份文件讀成「AgentCore 已經在跑」。它現在的正確讀法是：
-**該接的線都接了、該對的契約都對了，剩下的只有帶著憑證按下 `--apply`。**
+**但仍有兩個但書，不要跳過**：
+1. `source` 欄位（見各 agent 回傳）只有 `cloud`／`rule` 兩值，**分不出這一輪走的是 AgentCore 還是純 Bedrock**——降級鏈第一層失敗會靜默摔到第二層。要證明「這一輪確實是 AgentCore」，得回頭比對日誌，不能只看 API 回應本身。
+2. 這是**佈建當下**驗證過的狀態，不是持續保證——IAM 角色傳播延遲、workshop 帳號憑證效期、配額都可能讓它在幾小時後又失敗。**現場前務必重新驗證一次**，不要把這個時間點的驗證結果當成「現在也一定通」的證據。
+3. Gateway／Identity／Policy／Evaluations 幾格仍是設計，沒有實作，見下方〈先講清楚現況〉表格。
 
 ---
 
 ## 1. 先講清楚現況
 
-**目前的三個 agent 在預設設定下完全沒有用到 AgentCore**（`TALKYBUDDY_AGENT_BACKEND`
-未設為 `agentcore` 時，`resolve_config()` 回 None，走 Bedrock Converse）。
+**本機開發預設不會用到 AgentCore**（沒設對應的 harness ARN 環境變數時，
+`agent_backends.resolve()` 回 `(None, bedrock_cfg)`，走 Bedrock Converse；
+見 `server/agent_backends.py`，取代了本節原本描述的單一開關機制）。**但決賽
+實際部署的 Fargate task definition 已經帶了四組 harness ARN**，所以雲端主線
+現場走的降級鏈是 AgentCore → Bedrock → 規則式，不是本機開發那組預設值——
+兩者是不同環境，不要混為一談。
 
 | 元件 | 現況 |
 |---|---|

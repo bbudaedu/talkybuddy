@@ -55,6 +55,14 @@ class StubLLM:
             time.sleep(self._delay_s)  # 模擬耗時生成（在 to_thread 中執行）
         return self._reply
 
+    def generate_chat(self, messages, *, system, target, enforce_readalong=True) -> str | None:
+        # 這個 stub 兼扮 edge 與 cloud 兩種角色；cloud 分支自 c1b9c85 起改走
+        # generate_chat，不補這個方法會被 pipeline.py 的例外處理吃掉，
+        # 靜默落到 edge，測試斷言的是「回覆內容」，看不出是哪一層失敗。
+        if self._delay_s:
+            time.sleep(self._delay_s)
+        return self._reply
+
 
 class StubTTS:
     """假 TTS：回固定 wav bytes（或 None 代表不可用）。"""

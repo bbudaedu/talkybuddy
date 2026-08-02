@@ -31,6 +31,14 @@ class _StubCloud:
         self.called = True
         return self._text
 
+    def generate_chat(self, messages, *, system, target, enforce_readalong=True):
+        # 雲端分支自 c1b9c85 起改走 generate_chat（即時陪聊契約），不再打
+        # generate()——這個 stub 若只有 generate() 會被 pipeline.py 的
+        # `except Exception: candidate = None` 吃掉，靜默落到 edge，看起來
+        # 像雲端沒被呼叫，其實是 stub 介面沒跟上。
+        self.called = True
+        return self._text
+
 
 class _StubTTS:
     def available(self):

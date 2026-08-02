@@ -240,6 +240,13 @@ class _CountingLLM:
         self.calls += 1
         return f"{self.label}回覆：跟我說一遍：I see a cat"
 
+    def generate_chat(self, messages, *, system, target, enforce_readalong=True):
+        # 雲端分支自 c1b9c85 起改走 generate_chat；不補會讓 cloud_stub 在
+        # pipeline.py 的例外處理裡被靜默吃掉，落到 edge，測試看到的假象是
+        # 「切 cloud 模式後還是呼叫了 edge」，其實是這個 stub 沒跟上介面。
+        self.calls += 1
+        return f"{self.label}回覆：跟我說一遍：I see a cat"
+
 
 def test_network_mode_switch_affects_live_ws_session(monkeypatch):
     """NETCUT-01 活體 WS 回歸測試：不重整頁面、不重連 WS，切換飛航模式後下一回合真的走 edge。
